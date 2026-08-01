@@ -2,7 +2,7 @@
 import type { Ref } from 'vue'
 
 type PageKey = 'dashboard' | 'tasks' | 'projects' | 'analytics' | 'calendar' | 'team' | 'reports' | 'messages' | 'settings' | 'help'
-type ModalKey = 'task' | 'project' | 'event' | 'report' | 'member' | 'team-filter' | 'logout' | null
+type ModalKey = 'task' | 'project' | 'event' | 'report' | 'member' | 'team-filter' | null
 type ProjectCardMember = {
   id?: string | number
   email?: string
@@ -14,7 +14,14 @@ type ProjectCardMember = {
   job_title?: string
 }
 
-const activePage = ref<PageKey>('dashboard')
+const route = useRoute()
+const router = useRouter()
+const pageKeys: PageKey[] = ['dashboard', 'tasks', 'projects', 'analytics', 'calendar', 'team', 'reports', 'messages', 'settings', 'help']
+const pageFromQuery = (value: unknown): PageKey => {
+  const page = Array.isArray(value) ? value[0] : value
+  return typeof page === 'string' && pageKeys.includes(page as PageKey) ? page as PageKey : 'dashboard'
+}
+const activePage = ref<PageKey>(pageFromQuery(route.query.page))
 const settingsTab = ref<'profile' | 'security'>('profile')
 const modal = ref<ModalKey>(null)
 const openDropdown = ref<string | null>(null)
@@ -88,6 +95,9 @@ const hoveredMonthlyMonth = ref<string | null>(null)
 const hoveredEfficiencyMonth = ref<string | null>(null)
 const mobileSidebarOpen = ref(false)
 const taskPage = ref(1)
+const taskViewMode = ref<'list' | 'kanban'>('list')
+const draggedTaskId = ref('')
+const updatingTaskId = ref('')
 const projectPage = ref(1)
 const reportPage = ref(1)
 const today = new Date()
@@ -281,6 +291,11 @@ const includesQuery = (row: Array<string | number> | string, query: string) => {
 const filteredTasks = computed(() =>
   tasks.value.filter((task) => includesQuery(task, taskSearch.value) && (dropdownValues.priority === 'All Priorities' || String(task[2]) === dropdownValues.priority))
 )
+const kanbanColumns = computed(() => [
+  { key: 'not_started', label: 'Not Started', color: 'bg-slate-400', tasks: filteredTasks.value.filter((task) => String(task[3]).toLowerCase() === 'not started') },
+  { key: 'in_progress', label: 'In Progress', color: 'bg-task-blue', tasks: filteredTasks.value.filter((task) => String(task[3]).toLowerCase() === 'in progress') },
+  { key: 'completed', label: 'Completed', color: 'bg-task-success', tasks: filteredTasks.value.filter((task) => String(task[3]).toLowerCase() === 'completed') }
+])
 const filteredProjects = computed(() => projects.value.filter((project) => includesQuery(project, projectSearch.value)))
 const filteredTeam = computed(() => team.value)
 const filteredReports = computed(() => reports.value.filter((report) => includesQuery(report, reportSearch.value)))
@@ -561,6 +576,7 @@ const pageCopy: Record<PageKey, { title: string; subtitle: string; eyebrow?: str
 
 const setPage = (key: PageKey) => {
   activePage.value = key
+  void router.replace({ query: { ...route.query, page: key === 'dashboard' ? undefined : key } })
   if (key === 'settings' && settingsTab.value === 'profile') settingsTab.value = 'profile'
   if (key === 'team') loadMembersFromBackend()
   actionMenu.value = null
@@ -568,7 +584,7 @@ const setPage = (key: PageKey) => {
 }
 
 const focusTaskSearch = () => {
-  activePage.value = 'tasks'
+  setPage('tasks')
   actionMenu.value = null
 }
 
@@ -596,16 +612,11 @@ const loadProfile = async () => {
   }
 }
 
-const handleLogout = () => {
+const handleLogout = async () => {
   actionMenu.value = null
   openDropdown.value = null
-  modal.value = 'logout'
-}
-
-const confirmLogout = () => {
   taskFlowApi.logout()
-  modal.value = null
-  navigateTo('/login')
+  await navigateTo('/login')
 }
 
 const notify = (message: string, type: 'info' | 'success' | 'error' = 'info') => {
@@ -646,6 +657,10 @@ watch(apiError, (message) => {
 }, { immediate: true })
 
 watch(isDarkTheme, syncRootThemeClass)
+
+watch(() => route.query.page, (page) => {
+  activePage.value = pageFromQuery(page)
+})
 
 onMounted(() => {
   document.addEventListener('click', closeFloatingMenus)
@@ -1095,6 +1110,33 @@ const editProject = (project: Array<string | number>) => {
   if (!editingProjectMembers.value.length) editingProjectMembers.value = projectDetails.map((member) => member.id === undefined || member.id === null ? '' : String(member.id)).filter(Boolean)
   if (!projectMemberLabels.value.length) projectMemberLabels.value = team.value.filter((member) => editingProjectMembers.value.includes(teamMemberId(member))).map(teamMemberName).filter(Boolean)
   modal.value = 'project'
+}
+
+const updateTaskStatus = async (task: Array<string | number>, status: string) => {
+  const id = String(task[6] || '')
+  if (!id || updatingTaskId.value === id) return
+
+  updatingTaskId.value = id
+  try {
+    await taskFlowApi.patchTask(id, {
+      status,
+      ...(status === 'completed' ? { progress: 100 } : {})
+    })
+    task[3] = projectDisplayStatus(status)
+    if (status === 'completed') task[5] = 100
+    notify(`Task moved to ${projectDisplayStatus(status)}`, 'success')
+  } catch (error) {
+    console.error('Task status update failed.', error)
+    notifyError(taskFlowApiErrorMessage(error, 'Task status update failed'))
+  } finally {
+    updatingTaskId.value = ''
+    draggedTaskId.value = ''
+  }
+}
+
+const dropTaskInColumn = (status: string) => {
+  const task = tasks.value.find((item) => String(item[6] || '') === draggedTaskId.value)
+  if (task) void updateTaskStatus(task, status)
 }
 
 const patchProjectStatus = async (project: Array<string | number>, status: string) => {
@@ -1602,7 +1644,7 @@ const iconPath = (name: string) => {
   <main :class="['tf-shell', isDarkTheme ? 'tf-dark' : '']">
     <section class="tf-window">
       <div v-if="mobileSidebarOpen" class="tf-mobile-overlay" @click="mobileSidebarOpen = false" />
-      <aside :class="['tf-sidebar flex w-[210px] shrink-0 flex-col gap-4 border-r border-task-line bg-white px-4 py-5', mobileSidebarOpen ? 'is-open' : '']">
+      <aside :class="['tf-sidebar flex w-[230px] shrink-0 flex-col gap-4 border-r border-task-line bg-white px-4 py-5', mobileSidebarOpen ? 'is-open' : '']">
         <button type="button" class="tf-icon-button absolute right-3 top-3 md:hidden" aria-label="Close menu" @click="mobileSidebarOpen = false">
           <svg viewBox="0 0 24 24" class="h-4 w-4" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M18 6 6 18M6 6l12 12" /></svg>
         </button>
@@ -1781,6 +1823,10 @@ const iconPath = (name: string) => {
           <div class="mb-5 flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
             <h2 class="text-lg font-bold">All Tasks</h2>
             <div class="flex flex-col gap-3 sm:flex-row sm:items-center">
+              <div class="inline-flex rounded-ui border border-task-line bg-slate-100 p-1">
+                <button type="button" :class="['rounded-md px-3 py-2 text-sm font-semibold transition', taskViewMode === 'list' ? 'bg-white text-task-blue shadow-sm' : 'text-task-muted']" @click="taskViewMode = 'list'">List</button>
+                <button type="button" :class="['rounded-md px-3 py-2 text-sm font-semibold transition', taskViewMode === 'kanban' ? 'bg-white text-task-blue shadow-sm' : 'text-task-muted']" @click="taskViewMode = 'kanban'">Kanban</button>
+              </div>
               <label class="relative w-full sm:w-auto">
                 <input v-model="taskSearchInput" class="tf-input w-full pr-10 sm:w-80" placeholder="Search tasks..." />
                 <span v-if="searchLoading.task" class="tf-search-spinner" />
@@ -1804,6 +1850,7 @@ const iconPath = (name: string) => {
             </div>
           </div>
           <div v-if="searchLoading.task" class="tf-search-overlay"><span class="tf-search-loader" /> Searching tasks...</div>
+          <div v-if="taskViewMode === 'list'">
           <table class="w-full text-left text-sm">
             <thead class="bg-slate-100 text-task-muted"><tr><th class="rounded-l-ui p-3">Task</th><th class="p-3">Assignee</th><th class="p-3">Priority</th><th class="p-3">Status</th><th class="p-3">Due Date</th><th class="p-3">Progress</th><th class="rounded-r-ui p-3 text-right">Actions</th></tr></thead>
             <tbody class="divide-y divide-task-line">
@@ -1812,6 +1859,42 @@ const iconPath = (name: string) => {
               </tr>
             </tbody>
           </table>
+          </div>
+          <div v-else class="grid min-w-[900px] gap-4 overflow-x-auto pb-2 lg:grid-cols-3">
+            <section
+              v-for="column in kanbanColumns"
+              :key="column.key"
+              class="min-h-[430px] rounded-ui border border-task-line bg-slate-50 p-3"
+              @dragover.prevent
+              @drop.prevent="dropTaskInColumn(column.key)"
+            >
+              <header class="mb-3 flex items-center justify-between px-1">
+                <div class="flex items-center gap-2"><span :class="['h-2.5 w-2.5 rounded-full', column.color]" /><h3 class="font-bold">{{ column.label }}</h3></div>
+                <span class="grid h-7 min-w-7 place-items-center rounded-full bg-white px-2 text-xs font-bold text-task-muted shadow-sm">{{ column.tasks.length }}</span>
+              </header>
+              <div class="space-y-3">
+                <article
+                  v-for="task in column.tasks"
+                  :key="String(task[6] || `${task[0]}-${task[4]}`)"
+                  :draggable="Boolean(task[6])"
+                  :class="['cursor-grab rounded-ui border border-task-line bg-white p-4 shadow-card transition hover:-translate-y-0.5 hover:border-task-blue active:cursor-grabbing', updatingTaskId === String(task[6]) ? 'pointer-events-none opacity-60' : '']"
+                  @dragstart="draggedTaskId = String(task[6] || '')"
+                  @dragend="draggedTaskId = ''"
+                >
+                  <div class="mb-3 flex items-start justify-between gap-3"><h4 class="font-bold leading-5">{{ task[0] }}</h4><span :class="['tf-pill shrink-0', badgeClass(String(task[2]))]">{{ task[2] }}</span></div>
+                  <p v-if="task[7]" class="mb-3 text-xs font-medium text-task-blue">{{ task[7] }}</p>
+                  <div class="mb-3 flex items-center justify-between text-xs text-task-muted"><span class="truncate pr-3">{{ task[1] }}</span><span>{{ task[4] }}</span></div>
+                  <div class="mb-3 flex items-center gap-2"><div class="h-2 flex-1 rounded-full bg-slate-200"><div class="h-full rounded-full bg-task-blue" :style="{ width: `${task[5]}%` }" /></div><span class="text-xs font-semibold">{{ task[5] }}%</span></div>
+                  <select class="tf-input w-full cursor-pointer" :value="column.key" :disabled="updatingTaskId === String(task[6]) || !task[6]" @change="updateTaskStatus(task, ($event.target as HTMLSelectElement).value)">
+                    <option value="not_started">Not Started</option>
+                    <option value="in_progress">In Progress</option>
+                    <option value="completed">Completed</option>
+                  </select>
+                </article>
+                <div v-if="!column.tasks.length" class="grid min-h-28 place-items-center rounded-ui border border-dashed border-task-line bg-white/60 px-4 text-center text-sm text-task-muted">Drop tasks here</div>
+              </div>
+            </section>
+          </div>
           <p v-if="!filteredTasks.length" class="py-8 text-center text-sm text-task-muted">No tasks matched your filters.</p>
           <div class="mt-5 flex items-center justify-between text-xs text-task-muted"><span>Showing {{ filteredTasks.length }} of {{ tasks.length }} Tasks</span><div class="flex gap-2"><button class="tf-icon-button" type="button" @click="setListPage('task', taskPage - 1)">‹</button><button v-for="page in [1, 2, 3]" :key="page" :class="[taskPage === page ? 'tf-primary' : 'tf-icon-button', 'h-9 w-9 p-0']" type="button" @click="setListPage('task', page)">{{ page }}</button><button class="tf-icon-button" type="button" @click="setListPage('task', taskPage + 1)">›</button></div></div>
         </section>
@@ -2075,7 +2158,7 @@ const iconPath = (name: string) => {
         <section v-else-if="activePage === 'settings'" class="tf-panel min-h-[640px] p-5">
           <div class="mb-6 border-b border-task-line pb-5"><h2 class="text-lg font-bold">Account Settings</h2><p class="mt-1 text-sm text-task-muted">Update your profile information and password.</p></div>
           <div class="grid items-start gap-5 xl:grid-cols-2">
-          <div v-if="settingsTab === 'profile'" class="max-w-[720px]"><h2 class="mb-5 text-lg font-bold">My Profile</h2><div class="rounded-ui border border-task-line p-5"><div class="mb-6 flex flex-wrap items-center gap-4"><span class="grid h-16 w-16 place-items-center overflow-hidden rounded-ui bg-[#EEE9FF] text-xl font-bold text-[#6F55D9]"><img v-if="profileAvatarPreview" :src="profileAvatarPreview" alt="Profile avatar preview" class="h-full w-full object-cover" /><span v-else>{{ profileFormInitials }}</span></span><input ref="profileAvatarInput" class="hidden" type="file" accept="image/*" @change="handleProfileAvatar" /><button class="h-8 rounded-full border border-task-line px-4 shadow-button" @click="chooseProfileAvatar">Change Image</button><button v-if="profileForm.avatar" class="h-8 rounded-full border border-task-line px-4 text-sm text-task-muted shadow-button" @click="removeProfileAvatar">Remove</button></div><div class="grid gap-4 md:grid-cols-2"><label class="text-sm font-semibold">First Name<input v-model="profileForm.firstName" class="tf-input mt-2 w-full" /></label><label class="text-sm font-semibold">Last Name<input v-model="profileForm.lastName" class="tf-input mt-2 w-full" /></label></div><label class="mt-4 block text-sm font-semibold">Email Address<input v-model="profileForm.email" class="tf-input mt-2 w-full" readonly /></label><label class="mt-4 block text-sm font-semibold">Phone Number<input v-model="profileForm.phone" class="tf-input mt-2 w-full" inputmode="numeric" placeholder="+998 91 638 31 91" @input="handleProfilePhoneInput" /></label><label class="mt-4 block text-sm font-semibold">Role<input v-model="profileForm.role" class="tf-input mt-2 w-full" /></label><div v-if="hasSavedProfileInfo" class="mt-4 rounded-ui bg-task-blueSoft p-3 text-sm text-task-muted"><span class="font-semibold text-task-ink">Saved user:</span> {{ [profileName, savedProfile.role, savedProfile.email].filter(Boolean).join(' · ') }}</div><div class="mt-6 flex justify-end gap-3"><button class="tf-icon-button w-auto px-4" @click="resetProfile">Cancel</button><button class="tf-primary" @click="saveSettings('Profile')">Save Changes</button></div></div></div>
+          <div v-if="settingsTab === 'profile'" class="max-w-[720px]"><h2 class="mb-5 text-lg font-bold">My Profile</h2><div class="rounded-ui border border-task-line p-5"><div class="mb-6"><input ref="profileAvatarInput" class="hidden" type="file" accept="image/*" @change="handleProfileAvatar" /><button type="button" class="group relative block h-20 w-20 rounded-ui" aria-label="Change profile image" title="Change profile image" @click="chooseProfileAvatar"><span class="grid h-full w-full place-items-center overflow-hidden rounded-ui bg-[#EEE9FF] text-xl font-bold text-[#6F55D9]"><img v-if="profileAvatarPreview" :src="profileAvatarPreview" alt="Profile avatar preview" class="h-full w-full object-cover transition group-hover:brightness-90" /><span v-else>{{ profileFormInitials }}</span></span><span class="absolute -bottom-1 -right-1 grid h-8 w-8 place-items-center rounded-full border-2 border-white bg-task-blue text-white shadow-lg transition group-hover:bg-task-blueDark"><svg viewBox="0 0 24 24" class="h-4 w-4" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 20h9" /><path d="M16.5 3.5a2.1 2.1 0 0 1 3 3L8 18l-4 1 1-4Z" /></svg></span></button></div><div class="grid gap-4 md:grid-cols-2"><label class="text-sm font-semibold">First Name<input v-model="profileForm.firstName" class="tf-input mt-2 w-full" /></label><label class="text-sm font-semibold">Last Name<input v-model="profileForm.lastName" class="tf-input mt-2 w-full" /></label></div><label class="mt-4 block text-sm font-semibold">Email Address<input v-model="profileForm.email" class="tf-input mt-2 w-full" readonly /></label><label class="mt-4 block text-sm font-semibold">Phone Number<input v-model="profileForm.phone" class="tf-input mt-2 w-full" inputmode="numeric" placeholder="+998 91 638 31 91" @input="handleProfilePhoneInput" /></label><label class="mt-4 block text-sm font-semibold">Role<input v-model="profileForm.role" class="tf-input mt-2 w-full" /></label><div class="mt-6 flex justify-end gap-3"><button class="tf-icon-button w-auto px-4" @click="resetProfile">Cancel</button><button class="tf-primary" @click="saveSettings('Profile')">Save Changes</button></div></div></div>
           <div class="max-w-[720px] space-y-5">
             <h2 class="text-lg font-bold">Security</h2>
             <div class="rounded-ui border border-task-line p-5">
@@ -2148,20 +2231,9 @@ const iconPath = (name: string) => {
 
     <div v-if="modal" class="fixed inset-0 z-50 grid place-items-center bg-slate-900/50 p-3 sm:p-6">
       <div :class="['flex max-h-[calc(100vh-24px)] w-full flex-col overflow-hidden rounded-ui bg-[#E3EAF2] shadow-2xl sm:max-h-[calc(100vh-48px)]', modal === 'project' || modal === 'event' ? 'max-w-[720px]' : 'max-w-[560px]']">
-        <div class="flex shrink-0 items-center justify-between px-6 py-4"><h2 class="text-xl font-bold">{{ modal === 'task' ? 'Create Task' : modal === 'project' ? 'Create New Project' : modal === 'event' ? 'Add New Event' : modal === 'report' ? 'Custom Report Builder' : modal === 'member' ? 'Add Department Member' : modal === 'logout' ? 'Log out' : 'Filter Staff' }}</h2><button class="text-3xl leading-none" @click="modal = null">×</button></div>
+        <div class="flex shrink-0 items-center justify-between px-6 py-4"><h2 class="text-xl font-bold">{{ modal === 'task' ? 'Create Task' : modal === 'project' ? 'Create New Project' : modal === 'event' ? 'Add New Event' : modal === 'report' ? 'Custom Report Builder' : modal === 'member' ? 'Add Department Member' : 'Filter Staff' }}</h2><button class="text-3xl leading-none" @click="modal = null">×</button></div>
         <div class="m-2 min-h-0 overflow-y-auto rounded-ui bg-white p-4">
-          <template v-if="modal === 'logout'">
-            <div class="flex items-start gap-4">
-              <span class="grid h-12 w-12 shrink-0 place-items-center rounded-full bg-task-blueSoft text-task-blue">
-                <svg viewBox="0 0 24 24" class="h-6 w-6" fill="none" stroke="currentColor" stroke-width="1.9"><path :d="iconPath('logout')" /></svg>
-              </span>
-              <div>
-                <p class="text-lg font-semibold text-task-ink">Are you sure you want to log out?</p>
-                <p class="mt-1 text-sm text-task-muted">Your current session will be closed and you will need to sign in again.</p>
-              </div>
-            </div>
-          </template>
-          <template v-else-if="modal === 'team-filter'">
+          <template v-if="modal === 'team-filter'">
             <div class="grid gap-4 md:grid-cols-2"><label v-for="field in [['Department','department'],['Role','role'],['Skills','skills'],['Status','status']]" :key="field[1]">{{ field[0] }}<div class="tf-dropdown mt-2"><button type="button" class="tf-dropdown-button" @click="openDropdown = openDropdown === field[1] ? null : String(field[1])"><span>{{ dropdownValues[String(field[1])] }}</span><svg viewBox="0 0 20 20" class="h-4 w-4 shrink-0 text-task-muted transition" fill="none" stroke="currentColor" stroke-width="2"><path d="m5 7.5 5 5 5-5" /></svg></button><div v-if="openDropdown === field[1]" class="tf-dropdown-menu"><button v-for="option in dropdownOptions[String(field[1])]" :key="option" type="button" class="tf-dropdown-option" @click="setDropdownValue(String(field[1]), option)"><span>{{ option }}</span><span v-if="dropdownValues[String(field[1])] === option">✓</span></button></div></div></label></div><div class="mt-5 rounded-ui bg-slate-100 p-4"><p class="font-bold">Workload</p><input type="range" class="mt-3 w-full accent-task-blue" value="70" /><div class="flex justify-between text-sm text-task-muted"><span>0%</span><span>Current: 70%</span><span>100%</span></div></div>
           </template>
           <template v-else-if="modal === 'member'">
@@ -2471,8 +2543,7 @@ const iconPath = (name: string) => {
           </template>
           <div class="sticky bottom-0 -mx-4 -mb-4 mt-4 flex justify-end gap-3 border-t border-task-line bg-white px-4 py-3">
             <button class="tf-icon-button w-auto px-4" @click="modal = null">Cancel</button>
-            <button v-if="modal === 'logout'" class="tf-primary" @click="confirmLogout">Log out</button>
-            <button v-else class="tf-primary" @click="submitModal">{{ modal === 'report' ? 'Generate Report' : modal === 'event' ? 'Create Event' : modal === 'project' ? (editingProjectId ? 'Update Project' : 'Create Project') : modal === 'member' ? 'Add Member' : modal === 'team-filter' ? 'Apply' : 'Create Task' }}</button>
+            <button class="tf-primary" @click="submitModal">{{ modal === 'report' ? 'Generate Report' : modal === 'event' ? 'Create Event' : modal === 'project' ? (editingProjectId ? 'Update Project' : 'Create Project') : modal === 'member' ? 'Add Member' : modal === 'team-filter' ? 'Apply' : 'Create Task' }}</button>
           </div>
         </div>
       </div>

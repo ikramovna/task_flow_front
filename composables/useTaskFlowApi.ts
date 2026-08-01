@@ -37,6 +37,9 @@ type MeProfile = {
 }
 
 type ApiTask = {
+  id?: string
+  project?: string
+  project_name?: string
   title: string
   status?: string
   priority?: string
@@ -507,6 +510,12 @@ export const useTaskFlowApi = () => {
       method: 'DELETE'
     })
 
+  const patchTask = async (id: string, task: Partial<ApiTask>) =>
+    await apiFetch<ApiTask>(`/tasks/${id}/`, {
+      method: 'PATCH',
+      body: task
+    })
+
   const listEvents = async (query: Record<string, string | number | undefined> = {}) => {
     const params = new URLSearchParams()
     Object.entries(query).forEach(([key, value]) => {
@@ -649,7 +658,10 @@ export const useTaskFlowApi = () => {
     titleCase(task.priority),
     titleCase(task.status),
     formatDate(task.due_date),
-    task.progress ?? 0
+    task.progress ?? 0,
+    task.id || '',
+    task.project_name || '',
+    task.project || ''
   ]
 
   const mapProject = (project: ApiProject) => [
@@ -765,6 +777,7 @@ export const useTaskFlowApi = () => {
     updateProject,
     patchProject,
     deleteProject,
+    patchTask,
     loadDashboardData,
     mapTask,
     mapProject,
