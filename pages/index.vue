@@ -1,6 +1,10 @@
 <script setup lang="ts">
 import type { Ref } from 'vue'
 
+definePageMeta({
+  alias: ['/tasks', '/projects', '/analytics', '/calendar', '/team', '/reports', '/messages', '/settings', '/help']
+})
+
 type PageKey = 'dashboard' | 'tasks' | 'projects' | 'analytics' | 'calendar' | 'team' | 'reports' | 'messages' | 'settings' | 'help'
 type ModalKey = 'task' | 'project' | 'event' | 'report' | 'member' | 'team-filter' | null
 type ProjectCardMember = {
@@ -21,7 +25,12 @@ const pageFromQuery = (value: unknown): PageKey => {
   const page = Array.isArray(value) ? value[0] : value
   return typeof page === 'string' && pageKeys.includes(page as PageKey) ? page as PageKey : 'dashboard'
 }
-const activePage = ref<PageKey>(pageFromQuery(route.query.page))
+const pageFromRoute = (): PageKey => {
+  const pathPage = route.path.replace(/^\//, '').split('/')[0]
+  if (pageKeys.includes(pathPage as PageKey)) return pathPage as PageKey
+  return pageFromQuery(route.query.page)
+}
+const activePage = ref<PageKey>(pageFromRoute())
 const settingsTab = ref<'profile' | 'security'>('profile')
 const modal = ref<ModalKey>(null)
 const openDropdown = ref<string | null>(null)
@@ -53,6 +62,7 @@ const dropdownOptions: Record<string, string[]> = {
 }
 const taskFlowStore = useTaskFlowStore()
 const taskFlowApi = useTaskFlowApi()
+const runtimeConfig = useRuntimeConfig()
 
 await taskFlowStore.loadBackendData()
 
@@ -100,6 +110,10 @@ const draggedTaskId = ref('')
 const updatingTaskId = ref('')
 const projectPage = ref(1)
 const reportPage = ref(1)
+const teamPage = ref(1)
+const pageSize = 10
+const projectPriorityFilter = ref('All Priorities')
+const workloadFilter = ref(70)
 const today = new Date()
 const calendarYear = ref(today.getFullYear())
 const currentMonthIndex = today.getMonth()
@@ -125,7 +139,7 @@ const notificationToggles = reactive<Record<string, boolean>>({
   'Task Deadline Reminder': false,
   'Task Overdue Alert': true
 })
-const unreadNotificationCount = ref(2)
+const unreadNotificationCount = ref(0)
 const security2fa = ref(true)
 const savedProfile = reactive({
   firstName: '',
@@ -193,6 +207,7 @@ type CalendarEvent = {
   eventType: string
   meetingUrl: string
   description: string
+  attendees: number
 }
 
 const form = reactive({
@@ -202,6 +217,7 @@ const form = reactive({
   startDate: '',
   dueDate: '',
   projectManager: '',
+  category: '',
   eventType: 'Meeting',
   eventTime: '',
   eventEndTime: '',
@@ -212,10 +228,10 @@ const form = reactive({
 const eventTypeOptions = ['Meeting', 'Review', 'Workshop']
 const taskStatusOptions = ['In Progress', 'Completed', 'Not Started']
 const taskFormStatus = ref('In Progress')
-const memberUserId = ref('')
+const memberFirstName = ref('')
+const memberLastName = ref('')
 const memberRole = ref('member')
 const memberRoleOptions = ['member', 'manager', 'admin']
-const eventColorOptions = ['bg-task-blue', 'bg-task-success', 'bg-[#EF4444]', 'bg-[#8B5CF6]']
 const editingProjectId = ref('')
 const editingProjectWorkspace = ref('')
 const editingProjectDepartment = ref('')
@@ -228,6 +244,13 @@ const projectMemberSearch = ref('')
 const projectMembersLoading = ref(false)
 const eventAttendeeIds = ref<string[]>([])
 const eventAttendeeLabels = ref<string[]>([])
+const eventAttendeePickerOpen = ref(false)
+const eventAttendeeSearch = ref('')
+const eventColorById = reactive<Record<string, string>>({})
+const reportType = ref('Productivity')
+const reportStatus = ref('All Statuses')
+const reportExportFormat = ref<'PDF' | 'Excel' | 'CSV'>('PDF')
+const reportTypeOptions = ['Productivity', 'Team Performance', 'Project Status', 'Time Tracking']
 const openProjectDatePicker = ref<'startDate' | 'dueDate' | null>(null)
 const datePickerView = reactive({
   year: currentYear,
@@ -296,11 +319,25 @@ const kanbanColumns = computed(() => [
   { key: 'in_progress', label: 'In Progress', color: 'bg-task-blue', tasks: filteredTasks.value.filter((task) => String(task[3]).toLowerCase() === 'in progress') },
   { key: 'completed', label: 'Completed', color: 'bg-task-success', tasks: filteredTasks.value.filter((task) => String(task[3]).toLowerCase() === 'completed') }
 ])
-const filteredProjects = computed(() => projects.value.filter((project) => includesQuery(project, projectSearch.value)))
-const filteredTeam = computed(() => team.value)
+const filteredProjects = computed(() => projects.value.filter((project) => includesQuery(project, projectSearch.value) && (projectPriorityFilter.value === 'All Priorities' || String(project[2]) === projectPriorityFilter.value)))
+const filteredTeam = computed(() => team.value.filter((member) => Number(member[4] || 0) <= workloadFilter.value))
 const filteredReports = computed(() => reports.value.filter((report) => includesQuery(report, reportSearch.value)))
 const filteredMessages = computed(() => messages.value.filter((name) => includesQuery(name, messageSearch.value)))
 const filteredFaqs = computed<string[]>(() => [])
+const pageCount = (length: number) => Math.max(1, Math.ceil(length / pageSize))
+const paginate = <T>(items: T[], page: number) => items.slice((page - 1) * pageSize, page * pageSize)
+const paginatedTasks = computed(() => paginate(filteredTasks.value, taskPage.value))
+const paginatedProjects = computed(() => paginate(filteredProjects.value, projectPage.value))
+const paginatedTeam = computed(() => paginate(filteredTeam.value, teamPage.value))
+const paginatedReports = computed(() => paginate(filteredReports.value, reportPage.value))
+const taskPageCount = computed(() => pageCount(filteredTasks.value.length))
+const projectPageCount = computed(() => pageCount(filteredProjects.value.length))
+const teamPageCount = computed(() => pageCount(filteredTeam.value.length))
+const reportPageCount = computed(() => pageCount(filteredReports.value.length))
+watch([taskSearch, () => dropdownValues.priority], () => { taskPage.value = 1 })
+watch([projectSearch, projectPriorityFilter], () => { projectPage.value = 1 })
+watch([teamSearch, workloadFilter], () => { teamPage.value = 1 })
+watch(reportSearch, () => { reportPage.value = 1 })
 const taskStatusCounts = computed(() => {
   const total = tasks.value.length
   const countByStatus = (status: string) => tasks.value.filter((task) => String(task[3]).toLowerCase() === status).length
@@ -428,10 +465,18 @@ const calendarEvents = computed<CalendarEvent[]>(() =>
         meridiem: startsAt.getHours() >= 12 ? 'PM' : 'AM',
         title: String(event[1] || 'Untitled Event'),
         time: eventTimeText(startsAt, endsAt && !Number.isNaN(endsAt.getTime()) ? endsAt : null),
-        color: eventColorClass(eventType),
+        color: eventColorById[String(event[0] || '')] || eventColorClass(eventType),
         eventType,
         meetingUrl: String(event[6] || ''),
-        description: String(event[7] || '')
+        description: String(event[7] || ''),
+        attendees: (() => {
+          try {
+            const details = JSON.parse(String(event[8] || '[]'))
+            return Array.isArray(details) && details.length ? details.length : event.slice(9).filter(Boolean).length
+          } catch {
+            return event.slice(9).filter(Boolean).length
+          }
+        })()
       }
     })
     .filter((event): event is CalendarEvent => Boolean(event))
@@ -443,8 +488,13 @@ const selectedDayEvents = computed(() => {
 })
 const eventDays = computed(() => new Set(currentMonthEvents.value.map((event) => event.day)))
 const isTodayCell = (day: number | null) => day === currentDay && calendarMonthIndex.value === currentMonthIndex && calendarYear.value === currentYear
+const fallbackTrendMonths = Array.from({ length: 6 }, (_, index) => {
+  const date = new Date(currentYear, currentMonthIndex - 5 + index, 1)
+  return [date.toLocaleDateString('en-US', { month: 'short' }), 0, 0] as Array<string | number>
+})
+const monthlyTrendSource = computed(() => monthlyProgress.value.length ? monthlyProgress.value.slice(-6) : fallbackTrendMonths)
 const monthlyProgressData = computed(() => {
-  return monthlyProgress.value.map((item, index, items) => {
+  return monthlyTrendSource.value.map((item, index, items) => {
     const completed = Number(item[1] || 0)
     const previous = Number(items[index - 1]?.[1] || 0)
     const diff = completed - previous
@@ -460,17 +510,19 @@ const monthlyProgressData = computed(() => {
   })
 })
 const efficiencyTrendData = computed(() =>
-  team.value
-    .filter((member) => Number.isFinite(Number(member[4])))
-    .slice(0, 6)
-    .map((member, index, items) => {
-      const value = Number(member[4] || 0)
-      const previous = Number(items[index - 1]?.[4] || 0)
+  monthlyTrendSource.value
+    .map((item, index, items) => {
+      const completed = Number(item[1] || 0)
+      const created = Number(item[2] || 0)
+      const value = created > 0 ? Math.min(Math.round((completed / created) * 100), 100) : 0
+      const previousCompleted = Number(items[index - 1]?.[1] || 0)
+      const previousCreated = Number(items[index - 1]?.[2] || 0)
+      const previous = previousCreated > 0 ? Math.min(Math.round((previousCompleted / previousCreated) * 100), 100) : 0
       const diff = value - previous
       return {
-        month: String(member[0] || `Member ${index + 1}`),
+        month: String(item[0] || `Month ${index + 1}`),
         value,
-        from: 'previous member',
+        from: 'monthly analytics',
         growth: index === 0 || previous === 0 ? '0%' : `${diff >= 0 ? '+' : ''}${Math.round((diff / previous) * 100)}%`
       }
     })
@@ -557,7 +609,7 @@ const productivityTrendData = computed(() =>
   }))
 )
 
-const eventLabelForDay = (day: number) => currentMonthEvents.value.find((event) => event.day === day)?.title ?? ''
+const eventForDay = (day: number) => currentMonthEvents.value.find((event) => event.day === day)
 
 const eventFullDate = (event: CalendarEvent) => `${String(event.day).padStart(2, '0')} ${monthNames[event.month]} ${event.year}`
 
@@ -576,7 +628,7 @@ const pageCopy: Record<PageKey, { title: string; subtitle: string; eyebrow?: str
 
 const setPage = (key: PageKey) => {
   activePage.value = key
-  void router.replace({ query: { ...route.query, page: key === 'dashboard' ? undefined : key } })
+  void router.push(key === 'dashboard' ? '/' : `/${key}`)
   if (key === 'settings' && settingsTab.value === 'profile') settingsTab.value = 'profile'
   if (key === 'team') loadMembersFromBackend()
   actionMenu.value = null
@@ -620,6 +672,11 @@ const handleLogout = async () => {
 }
 
 const notify = (message: string, type: 'info' | 'success' | 'error' = 'info') => {
+  const requestedReport = reports.value.find((report) => message === `${report[0]} downloaded`)
+  if (requestedReport) {
+    void downloadReport(requestedReport)
+    return
+  }
   if (message === 'Member create needs user and department ids from backend') {
     if (canManageDepartment.value) openModal('member')
     else notifyError('You do not have permission to add members')
@@ -658,8 +715,9 @@ watch(apiError, (message) => {
 
 watch(isDarkTheme, syncRootThemeClass)
 
-watch(() => route.query.page, (page) => {
-  activePage.value = pageFromQuery(page)
+watch([() => route.path, () => route.query.page], () => {
+  activePage.value = pageFromRoute()
+  if (route.query.page && route.path === '/') void router.replace(activePage.value === 'dashboard' ? '/' : `/${activePage.value}`)
 })
 
 onMounted(() => {
@@ -904,18 +962,6 @@ const normalizeTimeValue = (value: string) => {
   return `${String(hour).padStart(2, '0')}:${String(minute).padStart(2, '0')}`
 }
 
-const maskTimeInput = (field: 'eventTime' | 'eventEndTime', event: Event) => {
-  const target = event.target as HTMLInputElement
-  const digits = target.value.replace(/\D/g, '').slice(0, 4)
-  const formatted = digits.length > 2 ? `${digits.slice(0, 2)}:${digits.slice(2)}` : digits
-  form[field] = formatted
-  target.value = formatted
-}
-
-const finalizeTimeInput = (field: 'eventTime' | 'eventEndTime') => {
-  form[field] = normalizeTimeValue(form[field])
-}
-
 const projectPayloadFromForm = (workspace: string, status = 'in_progress') => {
   const startDate = parseProjectDate(form.startDate) || editingProjectStartDate.value || todayIsoDate()
   const dueDate = parseProjectDate(form.dueDate) || startDate
@@ -958,11 +1004,13 @@ const replaceProjectRow = (id: string, project: Array<string | number>) => {
   state.value.projects.splice(index, 1, project)
 }
 
-const setListPage = (list: 'task' | 'project' | 'report', page: number) => {
-  const target = Math.min(Math.max(page, 1), 3)
+const setListPage = (list: 'task' | 'project' | 'team' | 'report', page: number) => {
+  const max = list === 'task' ? taskPageCount.value : list === 'project' ? projectPageCount.value : list === 'team' ? teamPageCount.value : reportPageCount.value
+  const target = Math.min(Math.max(page, 1), max)
   if (list === 'task') taskPage.value = target
   if (list === 'project') projectPage.value = target
   if (list === 'report') reportPage.value = target
+  if (list === 'team') teamPage.value = target
 }
 
 const openModal = (value: Exclude<ModalKey, null>) => {
@@ -973,6 +1021,7 @@ const openModal = (value: Exclude<ModalKey, null>) => {
   form.startDate = todayIsoDate()
   form.dueDate = value === 'event' ? `${calendarYear.value}-${String(calendarMonthIndex.value + 1).padStart(2, '0')}-${String(selectedCalendarDay.value ?? 1).padStart(2, '0')}` : todayIsoDate()
   form.projectManager = String(departmentTeam.value[0]?.[0] || '')
+  form.category = ''
   form.eventType = 'Meeting'
   form.eventTime = value === 'event' ? '09:00' : ''
   form.eventEndTime = value === 'event' ? '10:30' : ''
@@ -980,12 +1029,15 @@ const openModal = (value: Exclude<ModalKey, null>) => {
   form.meetingLink = ''
   form.description = ''
   if (value === 'member') {
-    memberUserId.value = ''
+    memberFirstName.value = ''
+    memberLastName.value = ''
     memberRole.value = 'member'
   }
   if (value === 'event') {
     eventAttendeeIds.value = []
     eventAttendeeLabels.value = []
+    eventAttendeePickerOpen.value = false
+    eventAttendeeSearch.value = ''
   }
   if (value === 'project') {
     editingProjectId.value = ''
@@ -997,6 +1049,11 @@ const openModal = (value: Exclude<ModalKey, null>) => {
     projectMemberOptions.value = [...team.value]
     projectMemberPickerOpen.value = false
     projectMemberSearch.value = ''
+  }
+  if (value === 'report') {
+    reportType.value = 'Productivity'
+    reportStatus.value = 'All Statuses'
+    reportExportFormat.value = 'PDF'
   }
   modal.value = value
 }
@@ -1058,19 +1115,20 @@ const removeEventAttendee = (member: string) => {
   if (index >= 0) eventAttendeeIds.value.splice(index, 1)
 }
 
-const addEventAttendee = () => {
-  const candidate = team.value.find((member) => {
+const availableEventAttendees = computed(() => {
+  const query = eventAttendeeSearch.value.trim().toLowerCase()
+  return departmentTeam.value.filter((member) => {
     const id = teamMemberId(member)
-    return id && !eventAttendeeIds.value.includes(id)
+    return id && !eventAttendeeIds.value.includes(id) && (!query || `${teamMemberName(member)} ${teamMemberEmail(member)}`.toLowerCase().includes(query))
   })
+})
 
-  if (candidate) {
-    eventAttendeeIds.value.push(teamMemberId(candidate))
-    eventAttendeeLabels.value.push(teamMemberName(candidate))
-    return
-  }
-
-  notify('No more staff to add')
+const selectEventAttendee = (member: Array<string | number>) => {
+  const id = teamMemberId(member)
+  if (!id || eventAttendeeIds.value.includes(id)) return
+  eventAttendeeIds.value.push(id)
+  eventAttendeeLabels.value.push(teamMemberName(member))
+  eventAttendeeSearch.value = ''
 }
 
 const viewProject = async (project: Array<string | number>) => {
@@ -1231,16 +1289,24 @@ const submitModal = async () => {
       notifyError('Workspace and department are required')
       return
     }
-    if (!/^\d+$/.test(memberUserId.value.trim())) {
-      notifyError('Enter a valid numeric user ID')
+    if (!memberFirstName.value.trim() || !memberLastName.value.trim()) {
+      notifyError('First name and last name are required')
       return
     }
 
     try {
+      const createdUser = await taskFlowApi.createUser({
+        first_name: memberFirstName.value.trim(),
+        last_name: memberLastName.value.trim()
+      })
+      if (createdUser.id === undefined || createdUser.id === null || String(createdUser.id) === '') {
+        notifyError('Created user id was not returned by backend')
+        return
+      }
       await taskFlowApi.createMember({
         workspace: workspaceId.value,
         department: effectiveDepartmentId.value,
-        user: Number(memberUserId.value),
+        user: createdUser.id,
         role: memberRole.value,
         is_active: true
       })
@@ -1301,12 +1367,46 @@ const submitModal = async () => {
   }
 
   if (modal.value === 'report') {
-    notify('Reports can be created after backend endpoint is connected')
+    if (!title) {
+      notifyError('Report name is required')
+      return
+    }
+    let resolvedWorkspace = ''
+    try {
+      resolvedWorkspace = await resolveWorkspaceId()
+      if (!resolvedWorkspace) {
+        notifyError('Workspace is required from backend')
+        return
+      }
+      const created = await taskFlowApi.createReport({
+        workspace: resolvedWorkspace,
+        name: title,
+        report_type: reportType.value.toLowerCase().replace(/\s+/g, '_'),
+        parameters: JSON.stringify({
+          start_date: parseProjectDate(form.startDate),
+          end_date: parseProjectDate(form.dueDate),
+          priority: dropdownValues.priority === 'All Priorities' ? null : projectEnum(dropdownValues.priority),
+          status: reportStatus.value === 'All Statuses' ? null : projectEnum(reportStatus.value),
+          export_format: reportExportFormat.value.toLowerCase()
+        })
+      })
+      state.value.reports.unshift(taskFlowApi.mapReport(created))
+      notify('Report created', 'success')
+    } catch (error) {
+      console.error('Report create failed.', error)
+      notifyError(taskFlowApiErrorMessage(error, 'Report create failed'))
+      return
+    }
   }
 
   if (modal.value === 'event') {
     if (!title) {
       notifyError('Event title is required')
+      return
+    }
+    if (!eventAttendeeIds.value.length) {
+      notifyError('Select at least one attendee')
+      eventAttendeePickerOpen.value = true
       return
     }
 
@@ -1326,7 +1426,10 @@ const submitModal = async () => {
 
     try {
       const created = await taskFlowApi.createEvent(payload)
-      state.value.events.unshift(taskFlowApi.mapEvent(created))
+      const mappedEvent = taskFlowApi.mapEvent(created)
+      const createdEventId = String(mappedEvent[0] || '')
+      if (createdEventId) eventColorById[createdEventId] = form.eventColor
+      state.value.events.unshift(mappedEvent)
       notify('Event created')
     } catch (error) {
       console.error('Event save failed.', error)
@@ -1410,6 +1513,49 @@ const togglePasswordVisibility = (field: 'current' | 'next' | 'confirm') => {
 
 const exportReports = () => {
   notify(`Exported ${filteredReports.value.length} reports`)
+}
+
+const reportDownloadUrl = (file: string) => {
+  if (/^https?:\/\//i.test(file)) return file
+  const apiBase = String(runtimeConfig.public.apiBase || '')
+  if (!apiBase) return file
+  try {
+    return new URL(file, `${new URL(apiBase).origin}/`).toString()
+  } catch {
+    return file
+  }
+}
+
+const downloadReport = async (report: Array<string | number>) => {
+  let currentReport = report
+  const reportId = String(report[5] || '')
+
+  if (!String(currentReport[6] || '') && reportId) {
+    try {
+      const refreshed = taskFlowApi.mapReport(await taskFlowApi.getReport(reportId))
+      const index = state.value.reports.findIndex((item) => String(item[5] || '') === reportId)
+      if (index >= 0) state.value.reports.splice(index, 1, refreshed)
+      currentReport = refreshed
+    } catch (error) {
+      console.error('Report download refresh failed.', error)
+      notifyError(taskFlowApiErrorMessage(error, 'Report download failed'))
+      return
+    }
+  }
+
+  const file = String(currentReport[6] || '')
+  if (!file) {
+    notify(String(currentReport[4] || '').toLowerCase() === 'processing' ? 'Report is still processing' : 'Report file is not available yet')
+    return
+  }
+
+  const link = document.createElement('a')
+  link.href = reportDownloadUrl(file)
+  link.download = file.split('/').pop()?.split('?')[0] || `${String(currentReport[0] || 'report')}.pdf`
+  link.rel = 'noopener'
+  document.body.appendChild(link)
+  link.click()
+  link.remove()
 }
 
 const createSupportRequest = (card: string) => {
@@ -1716,6 +1862,7 @@ const iconPath = (name: string) => {
             <label class="relative hidden sm:block">
               <svg viewBox="0 0 24 24" class="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-task-muted" fill="none" stroke="currentColor" stroke-width="1.7"><path :d="iconPath('search')" /></svg>
               <input v-model="taskSearchInput" class="tf-input w-[230px] pl-9 pr-10" placeholder="Search tasks..." @focus="focusTaskSearch" @input="focusTaskSearch" />
+              <button v-if="taskSearchInput && !searchLoading.task" type="button" class="tf-search-clear" aria-label="Clear search" @click="clearSearch('task')">×</button>
               <span v-if="searchLoading.task" class="tf-search-spinner" />
             </label>
             <button type="button" class="tf-icon-button relative" @click="openNotifications">
@@ -1823,12 +1970,19 @@ const iconPath = (name: string) => {
           <div class="mb-5 flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
             <h2 class="text-lg font-bold">All Tasks</h2>
             <div class="flex flex-col gap-3 sm:flex-row sm:items-center">
-              <div class="inline-flex rounded-ui border border-task-line bg-slate-100 p-1">
-                <button type="button" :class="['rounded-md px-3 py-2 text-sm font-semibold transition', taskViewMode === 'list' ? 'bg-white text-task-blue shadow-sm' : 'text-task-muted']" @click="taskViewMode = 'list'">List</button>
-                <button type="button" :class="['rounded-md px-3 py-2 text-sm font-semibold transition', taskViewMode === 'kanban' ? 'bg-white text-task-blue shadow-sm' : 'text-task-muted']" @click="taskViewMode = 'kanban'">Kanban</button>
+              <div class="inline-flex h-11 shrink-0 items-center rounded-full border border-[#D7E1EC] bg-[#F1F5F9] p-1 shadow-inner" role="tablist" aria-label="Task view">
+                <button type="button" role="tab" :aria-selected="taskViewMode === 'list'" :class="['inline-flex h-9 items-center gap-2 rounded-full px-4 text-sm font-semibold transition-all duration-200', taskViewMode === 'list' ? 'bg-white text-task-blue shadow-[0_2px_8px_rgba(37,103,173,0.16)] ring-1 ring-task-blue/10' : 'text-task-muted hover:bg-white/70 hover:text-task-ink']" @click="taskViewMode = 'list'">
+                  <svg viewBox="0 0 20 20" class="h-4 w-4" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"><path d="M6.5 5h10M6.5 10h10M6.5 15h10" /><circle cx="3" cy="5" r=".7" fill="currentColor" stroke="none" /><circle cx="3" cy="10" r=".7" fill="currentColor" stroke="none" /><circle cx="3" cy="15" r=".7" fill="currentColor" stroke="none" /></svg>
+                  List
+                </button>
+                <button type="button" role="tab" :aria-selected="taskViewMode === 'kanban'" :class="['inline-flex h-9 items-center gap-2 rounded-full px-4 text-sm font-semibold transition-all duration-200', taskViewMode === 'kanban' ? 'bg-white text-task-blue shadow-[0_2px_8px_rgba(37,103,173,0.16)] ring-1 ring-task-blue/10' : 'text-task-muted hover:bg-white/70 hover:text-task-ink']" @click="taskViewMode = 'kanban'">
+                  <svg viewBox="0 0 20 20" class="h-4 w-4" fill="none" stroke="currentColor" stroke-width="1.7"><rect x="2.5" y="3" width="4" height="14" rx="1.2" /><rect x="8" y="3" width="4" height="9" rx="1.2" /><rect x="13.5" y="3" width="4" height="12" rx="1.2" /></svg>
+                  Kanban
+                </button>
               </div>
               <label class="relative w-full sm:w-auto">
                 <input v-model="taskSearchInput" class="tf-input w-full pr-10 sm:w-80" placeholder="Search tasks..." />
+                <button v-if="taskSearchInput && !searchLoading.task" type="button" class="tf-search-clear" aria-label="Clear task search" @click="clearSearch('task')">×</button>
                 <span v-if="searchLoading.task" class="tf-search-spinner" />
               </label>
               <div class="tf-dropdown w-full sm:w-auto">
@@ -1854,7 +2008,7 @@ const iconPath = (name: string) => {
           <table class="w-full text-left text-sm">
             <thead class="bg-slate-100 text-task-muted"><tr><th class="rounded-l-ui p-3">Task</th><th class="p-3">Assignee</th><th class="p-3">Priority</th><th class="p-3">Status</th><th class="p-3">Due Date</th><th class="p-3">Progress</th><th class="rounded-r-ui p-3 text-right">Actions</th></tr></thead>
             <tbody class="divide-y divide-task-line">
-              <tr v-for="task in filteredTasks" :key="`${task[0]}-${task[4]}`">
+              <tr v-for="task in paginatedTasks" :key="`${task[0]}-${task[4]}`">
                 <td class="p-3 text-task-muted">{{ task[0] }}</td><td class="p-3"><div class="flex items-center gap-2"><div class="flex -space-x-2"><span v-for="i in 2" :key="i" class="grid h-6 w-6 place-items-center rounded-full border border-white bg-slate-300 text-[9px] font-bold text-white">{{ String(task[1]).slice(i - 1, i) }}</span></div>{{ task[1] }}</div></td><td class="p-3"><span :class="['tf-pill', badgeClass(String(task[2]))]">{{ task[2] }}</span></td><td class="p-3"><span :class="['tf-pill', badgeClass(String(task[3]))]">{{ task[3] }}</span></td><td class="p-3 text-task-muted">{{ task[4] }}</td><td class="p-3"><div class="flex items-center gap-2"><div class="h-2 w-20 rounded-full bg-slate-200"><div class="h-full rounded-full bg-task-blue" :style="{ width: `${task[5]}%` }" /></div><span>{{ task[5] }}%</span></div></td><td class="relative p-3 text-right"><div class="relative inline-flex"><button type="button" class="tf-icon-button" @click="toggleActionMenu(`task-${task[0]}`)"><svg viewBox="0 0 24 24" class="h-4 w-4" fill="none" stroke="currentColor" stroke-width="2"><path :d="iconPath('dots')" /></svg></button><div v-if="actionMenu === `task-${task[0]}`" class="tf-action-menu"><button type="button" class="tf-action-item" @click="actionMenu = null">View</button><button type="button" class="tf-action-item" @click="runAction('edit', 'task', String(task[0]))">Edit</button><button type="button" class="tf-action-item" @click="runAction('duplicate', 'task', String(task[0]))">Duplicate</button><button type="button" class="tf-action-item tf-action-danger" @click="runAction('delete', 'task', String(task[0]))">Delete</button></div></div></td>
               </tr>
             </tbody>
@@ -1896,23 +2050,23 @@ const iconPath = (name: string) => {
             </section>
           </div>
           <p v-if="!filteredTasks.length" class="py-8 text-center text-sm text-task-muted">No tasks matched your filters.</p>
-          <div class="mt-5 flex items-center justify-between text-xs text-task-muted"><span>Showing {{ filteredTasks.length }} of {{ tasks.length }} Tasks</span><div class="flex gap-2"><button class="tf-icon-button" type="button" @click="setListPage('task', taskPage - 1)">‹</button><button v-for="page in [1, 2, 3]" :key="page" :class="[taskPage === page ? 'tf-primary' : 'tf-icon-button', 'h-9 w-9 p-0']" type="button" @click="setListPage('task', page)">{{ page }}</button><button class="tf-icon-button" type="button" @click="setListPage('task', taskPage + 1)">›</button></div></div>
+          <div v-if="filteredTasks.length > pageSize" class="mt-5 flex items-center justify-between text-xs text-task-muted"><span>Showing {{ paginatedTasks.length }} of {{ filteredTasks.length }} Tasks</span><div class="flex gap-2"><button class="tf-icon-button" type="button" @click="setListPage('task', taskPage - 1)">‹</button><button v-for="page in taskPageCount" :key="page" :class="[taskPage === page ? 'tf-primary' : 'tf-icon-button', 'h-9 w-9 p-0']" type="button" @click="setListPage('task', page)">{{ page }}</button><button class="tf-icon-button" type="button" @click="setListPage('task', taskPage + 1)">›</button></div></div>
         </section>
 
         <section v-else-if="activePage === 'projects'" class="space-y-4">
           <div class="tf-panel grid gap-4 p-4 sm:grid-cols-4"><div v-for="item in projectStats" :key="item[1]" :class="['rounded-ui p-8 text-center', item[2]]"><p class="text-3xl font-bold">{{ item[0] }}</p><p class="text-sm text-task-muted">{{ item[1] }}</p></div></div>
           <div class="tf-panel relative p-5">
-            <div class="mb-5 flex flex-col gap-3 md:flex-row md:items-center md:justify-between"><h2 class="text-lg font-bold">All Projects</h2><div class="flex flex-col gap-3 sm:flex-row"><label class="relative w-full sm:w-auto"><input v-model="projectSearchInput" class="tf-input w-full pr-10 sm:w-80" placeholder="Search projects..." /><span v-if="searchLoading.project" class="tf-search-spinner" /></label><button class="tf-icon-button w-full px-4 sm:w-auto" type="button" @click="clearSearch('project')">Clear</button><button v-if="canManageDepartment" class="tf-primary w-full sm:w-auto" type="button" @click="openModal('project')">New Projects</button></div></div>
+            <div class="mb-5 flex flex-col gap-3 md:flex-row md:items-center md:justify-between"><h2 class="text-lg font-bold">All Projects</h2><div class="flex flex-col gap-3 sm:flex-row"><label class="relative w-full sm:w-auto"><input v-model="projectSearchInput" class="tf-input w-full pr-10 sm:w-80" placeholder="Search projects..." /><button v-if="projectSearchInput && !searchLoading.project" type="button" class="tf-search-clear" aria-label="Clear project search" @click="clearSearch('project')">×</button><span v-if="searchLoading.project" class="tf-search-spinner" /></label><div class="tf-dropdown"><button type="button" class="tf-filter-pill w-full sm:w-auto" @click="openDropdown = openDropdown === 'projectFilter' ? null : 'projectFilter'"><svg viewBox="0 0 24 24" class="h-4 w-4" fill="none" stroke="currentColor"><path :d="iconPath('filter')" /></svg>{{ projectPriorityFilter === 'All Priorities' ? 'Filter' : projectPriorityFilter }}</button><div v-if="openDropdown === 'projectFilter'" class="tf-dropdown-menu min-w-48"><button v-for="option in dropdownOptions.priority" :key="option" type="button" class="tf-dropdown-option" @click="projectPriorityFilter = option; openDropdown = null">{{ option }}</button></div></div><button v-if="canManageDepartment" class="tf-primary w-full sm:w-auto" type="button" @click="openModal('project')">New Projects</button></div></div>
             <div v-if="searchLoading.project" class="tf-search-overlay"><span class="tf-search-loader" /> Searching projects...</div>
             <div class="grid gap-4 lg:grid-cols-3">
-              <article v-for="project in filteredProjects" :key="project[0]" class="rounded-ui border border-task-line p-4">
+              <article v-for="project in paginatedProjects" :key="project[0]" class="rounded-ui border border-task-line p-4">
                 <div class="mb-3 flex items-start justify-between"><h3 class="text-lg font-bold">{{ project[0] }}</h3><div class="relative"><button type="button" class="tf-icon-button" @click="toggleActionMenu(`project-${project[0]}`)"><svg viewBox="0 0 24 24" class="h-4 w-4" fill="none" stroke="currentColor"><path :d="iconPath('dots')" /></svg></button><div v-if="actionMenu === `project-${project[0]}`" class="tf-action-menu"><button type="button" class="tf-action-item" @click="viewProject(project)">View</button><button v-if="canManageDepartment" type="button" class="tf-action-item" @click="editProject(project)">Edit</button><button v-if="canManageDepartment" type="button" class="tf-action-item" @click="patchProjectStatus(project, 'completed')">Mark Completed</button><button v-if="canManageDepartment" type="button" class="tf-action-item" @click="patchProjectStatus(project, 'archived')">Archive</button><button v-if="canManageDepartment" type="button" class="tf-action-item tf-action-danger" @click="deleteProject(project)">Delete</button></div></div></div>
                 <div class="mb-4 flex gap-2"><span :class="['tf-pill', badgeClass(String(project[1]))]">{{ project[1] }}</span><span :class="['tf-pill', badgeClass(String(project[2]))]">{{ project[2] }}</span></div>
-                <div class="rounded-ui bg-slate-100 p-3"><div class="mb-2 flex justify-between text-sm"><span class="text-task-muted">Progress</span><span>{{ project[3] }}%</span></div><div class="h-2 rounded-full bg-slate-200"><div class="h-full rounded-full bg-task-blue" :style="{ width: `${project[3]}%` }" /></div><div class="mt-3 flex justify-between text-sm text-task-muted"><span>{{ project[4] }}</span><span>Due: {{ project[5] }}</span></div></div>
+                <div class="rounded-ui bg-slate-100 p-3"><div class="mb-2 flex justify-between text-sm"><span class="text-task-muted">Progress</span><span>{{ project[3] }}%</span></div><div class="h-2 rounded-full bg-slate-200"><div class="h-full rounded-full bg-task-blue" :style="{ width: `${project[3]}%` }" /></div><p class="mt-3 text-sm text-task-muted">{{ project[4] }}</p><div class="mt-2 flex items-center justify-between text-sm text-task-muted"><div class="flex -space-x-2"><span v-for="member in projectMemberDetailsOf(project).slice(0, 4)" :key="String(member.id || member.email)" class="grid h-7 w-7 place-items-center overflow-hidden rounded-full border-2 border-white bg-task-blueSoft text-[9px] font-bold text-task-blue" :title="projectMemberName(member)"><img v-if="member.avatar" :src="member.avatar" :alt="projectMemberName(member)" class="h-full w-full object-cover" /><span v-else>{{ initials(projectMemberName(member)) }}</span></span><span v-if="projectMemberDetailsOf(project).length > 4" class="grid h-7 w-7 place-items-center rounded-full border-2 border-white bg-task-blue text-[10px] font-bold text-white">+{{ projectMemberDetailsOf(project).length - 4 }}</span></div><span>Due: {{ project[5] }}</span></div></div>
               </article>
             </div>
             <p v-if="!filteredProjects.length" class="py-8 text-center text-sm text-task-muted">No projects found.</p>
-            <div class="mt-5 flex items-center justify-between text-xs text-task-muted"><span>Showing {{ filteredProjects.length }} of {{ projects.length }} Projects</span><div class="flex gap-2"><button class="tf-icon-button" type="button" @click="setListPage('project', projectPage - 1)">‹</button><button v-for="page in [1, 2, 3]" :key="page" :class="[projectPage === page ? 'tf-primary' : 'tf-icon-button', 'h-9 w-9 p-0']" type="button" @click="setListPage('project', page)">{{ page }}</button><button class="tf-icon-button" type="button" @click="setListPage('project', projectPage + 1)">›</button></div></div>
+            <div v-if="filteredProjects.length > pageSize" class="mt-5 flex items-center justify-between text-xs text-task-muted"><span>Showing {{ paginatedProjects.length }} of {{ filteredProjects.length }} Projects</span><div class="flex gap-2"><button class="tf-icon-button" type="button" @click="setListPage('project', projectPage - 1)">‹</button><button v-for="page in projectPageCount" :key="page" :class="[projectPage === page ? 'tf-primary' : 'tf-icon-button', 'h-9 w-9 p-0']" type="button" @click="setListPage('project', page)">{{ page }}</button><button class="tf-icon-button" type="button" @click="setListPage('project', projectPage + 1)">›</button></div></div>
           </div>
         </section>
 
@@ -2018,7 +2172,7 @@ const iconPath = (name: string) => {
                       v-for="bar in efficiencyTrendData"
                       :key="bar.month"
                       type="button"
-                      class="group relative flex justify-center outline-none"
+                      class="group relative flex h-[180px] items-end justify-center outline-none"
                       :aria-label="`${bar.month}: efficiency ${bar.value}`"
                       @mouseenter="hoveredEfficiencyMonth = bar.month"
                       @focus="hoveredEfficiencyMonth = bar.month"
@@ -2122,8 +2276,8 @@ const iconPath = (name: string) => {
                         <span v-if="isTodayCell(cell.day)" class="rounded-full bg-task-blue px-2 py-0.5 text-[10px] font-bold text-white">Today</span>
                       </span>
                       <div class="mt-3 min-h-[26px] w-full">
-                        <span v-if="eventDays.has(cell.day)" class="block truncate rounded-full bg-task-blueSoft px-2 py-1 text-xs text-task-blue">
-                          {{ eventLabelForDay(cell.day) }}
+                        <span v-if="eventForDay(cell.day)" :class="['block truncate rounded-full px-2 py-1 text-xs text-white', eventForDay(cell.day)?.color]">
+                          {{ eventForDay(cell.day)?.title }}
                         </span>
                       </div>
                     </button>
@@ -2134,21 +2288,21 @@ const iconPath = (name: string) => {
             </div>
           </div>
           <aside class="space-y-4">
-            <div class="tf-panel p-5"><h2 class="text-lg font-bold">{{ selectedCalendarDay ? `${String(selectedCalendarDay).padStart(2, '0')} ${monthNames[calendarMonthIndex]} ${calendarYear}` : `${monthNames[calendarMonthIndex]} ${calendarYear} Events` }}</h2><div class="mt-4 space-y-4"><button v-for="event in selectedDayEvents" :key="event.id" type="button" class="flex w-full gap-4 rounded-ui bg-slate-100 p-4 text-left transition hover:bg-task-blueSoft"><span :class="['grid h-12 w-12 place-items-center rounded-full text-center text-xs font-bold text-white', event.color]">{{ String(event.day).padStart(2, '0') }}<br />{{ event.meridiem }}</span><div><p class="font-bold">{{ event.title }}</p><p class="text-xs text-task-muted">{{ eventFullDate(event) }}</p><p class="text-xs text-task-muted">{{ event.time }}</p><p class="mt-2 text-xs text-task-muted">6 attendees</p></div></button><p v-if="!selectedDayEvents.length" class="text-sm text-task-muted">No events for this day.</p></div></div>
+            <div class="tf-panel p-5"><h2 class="text-lg font-bold">{{ selectedCalendarDay ? `${String(selectedCalendarDay).padStart(2, '0')} ${monthNames[calendarMonthIndex]} ${calendarYear}` : `${monthNames[calendarMonthIndex]} ${calendarYear} Events` }}</h2><div class="mt-4 space-y-4"><button v-for="event in selectedDayEvents" :key="event.id" type="button" class="flex w-full gap-4 rounded-ui bg-slate-100 p-4 text-left transition hover:bg-task-blueSoft"><span :class="['grid h-12 w-12 place-items-center rounded-full text-center text-xs font-bold text-white', event.color]">{{ String(event.day).padStart(2, '0') }}<br />{{ event.meridiem }}</span><div><p class="font-bold">{{ event.title }}</p><p class="text-xs text-task-muted">{{ eventFullDate(event) }}</p><p class="text-xs text-task-muted">{{ event.time }}</p><p class="mt-2 text-xs text-task-muted">{{ event.attendees }} attendees</p></div></button><p v-if="!selectedDayEvents.length" class="text-sm text-task-muted">No events for this day.</p></div></div>
           </aside>
         </section>
 
         <section v-else-if="activePage === 'team'" class="space-y-4">
           <div class="tf-panel grid gap-4 p-4 sm:grid-cols-3"><div v-for="item in teamStats" :key="item[1]" :class="['rounded-ui p-8 text-center', item[2]]"><p class="text-3xl font-bold">{{ item[0] }}</p><p class="text-sm text-task-muted">{{ item[1] }}</p></div></div>
-          <div class="tf-panel relative overflow-x-auto p-5"><div class="mb-5 flex flex-col gap-3 md:flex-row md:items-center md:justify-between"><h2 class="text-lg font-bold">All Staff</h2><div class="flex flex-col gap-3 sm:flex-row"><label class="relative w-full sm:w-auto"><input v-model="teamSearchInput" class="tf-input w-full pr-10 sm:w-80" placeholder="Search staff..." /><span v-if="searchLoading.team" class="tf-search-spinner" /></label><button class="tf-icon-button w-full px-4 sm:w-auto" @click="openModal('team-filter')">Filter</button><button class="tf-primary w-full sm:w-auto" @click="notify('Member create needs user and department ids from backend')">Add Member</button></div></div><div v-if="searchLoading.team" class="tf-search-overlay"><span class="tf-search-loader" /> Searching staff...</div><table class="w-full min-w-[900px] text-left text-sm"><thead class="bg-slate-100 text-task-muted"><tr><th class="rounded-l-ui p-3 font-semibold">Staff</th><th class="p-3 font-semibold">Role</th><th class="p-3 font-semibold">Contact</th><th class="p-3 font-semibold">Efficiency</th><th class="p-3 font-semibold">Completed</th><th class="p-3 font-semibold">In Progress</th><th class="rounded-r-ui p-3 text-right font-semibold">Actions</th></tr></thead><tbody class="divide-y divide-task-line"><tr v-for="member in filteredTeam" :key="String(member[9] || member[7] || member[0])" class="transition hover:bg-slate-50"><td class="p-3"><div class="flex items-center gap-3"><div class="grid h-9 w-9 place-items-center rounded-full bg-slate-300 text-xs font-bold text-white">{{ initials(String(member[0])) }}</div><div><p class="font-semibold text-task-ink">{{ member[0] }}</p><p class="text-xs text-task-muted">{{ member[2] }}</p></div></div></td><td class="p-3 text-task-muted">{{ member[1] }}</td><td class="p-3 text-task-muted">{{ member[3] }}</td><td class="p-3"><div class="flex items-center gap-2"><div class="h-2 w-24 rounded-full bg-slate-200"><div class="h-full rounded-full bg-task-blue" :style="{ width: `${member[4]}%` }" /></div><span class="font-medium">{{ member[4] }}%</span></div></td><td class="p-3 font-medium">{{ member[5] }}</td><td class="p-3 font-medium">{{ member[6] }}</td><td class="relative p-3 text-right"><div class="relative inline-flex"><button type="button" class="tf-icon-button" @click="toggleActionMenu(`team-${member[9] || member[7] || member[0]}`)"><svg viewBox="0 0 24 24" class="h-4 w-4" fill="none" stroke="currentColor"><path :d="iconPath('dots')" /></svg></button><div v-if="actionMenu === `team-${member[9] || member[7] || member[0]}`" class="tf-action-menu"><button type="button" class="tf-action-item" @click="actionMenu = null">View profile</button><button type="button" class="tf-action-item" @click="updateMemberStatus(member, String(member[12]) === 'Inactive')">{{ String(member[12]) === 'Inactive' ? 'Activate' : 'Deactivate' }}</button><button type="button" class="tf-action-item tf-action-danger" @click="deleteMember(member)">Remove member</button></div></div></td></tr></tbody></table><p v-if="!filteredTeam.length" class="py-8 text-center text-sm text-task-muted">No staff found.</p></div>
+          <div class="tf-panel relative overflow-x-auto p-5"><div class="mb-5 flex flex-col gap-3 md:flex-row md:items-center md:justify-between"><h2 class="text-lg font-bold">All Staff</h2><div class="flex flex-col gap-3 sm:flex-row"><label class="relative w-full sm:w-auto"><input v-model="teamSearchInput" class="tf-input w-full pr-10 sm:w-80" placeholder="Search staff..." /><button v-if="teamSearchInput && !searchLoading.team" type="button" class="tf-search-clear" aria-label="Clear staff search" @click="clearSearch('team')">×</button><span v-if="searchLoading.team" class="tf-search-spinner" /></label><button class="tf-icon-button w-full px-4 sm:w-auto" @click="openModal('team-filter')">Filter</button><button class="tf-primary w-full sm:w-auto" @click="notify('Member create needs user and department ids from backend')">Add Member</button></div></div><div v-if="searchLoading.team" class="tf-search-overlay"><span class="tf-search-loader" /> Searching staff...</div><table class="w-full min-w-[900px] text-left text-sm"><thead class="bg-slate-100 text-task-muted"><tr><th class="rounded-l-ui p-3 font-semibold">Staff</th><th class="p-3 font-semibold">Role</th><th class="p-3 font-semibold">Contact</th><th class="p-3 font-semibold">Efficiency</th><th class="p-3 font-semibold">Completed</th><th class="p-3 font-semibold">In Progress</th><th class="rounded-r-ui p-3 text-right font-semibold">Actions</th></tr></thead><tbody class="divide-y divide-task-line"><tr v-for="member in paginatedTeam" :key="String(member[9] || member[7] || member[0])" class="transition hover:bg-slate-50"><td class="p-3"><div class="flex items-center gap-3"><div class="grid h-9 w-9 place-items-center rounded-full bg-slate-300 text-xs font-bold text-white">{{ initials(String(member[0])) }}</div><div><p class="font-semibold text-task-ink">{{ member[0] }}</p><p class="text-xs text-task-muted">{{ member[2] }}</p></div></div></td><td class="p-3 text-task-muted">{{ member[1] }}</td><td class="p-3 text-task-muted">{{ member[3] }}</td><td class="p-3"><div class="flex items-center gap-2"><div class="h-2 w-24 rounded-full bg-slate-200"><div class="h-full rounded-full bg-task-blue" :style="{ width: `${member[4]}%` }" /></div><span class="font-medium">{{ member[4] }}%</span></div></td><td class="p-3 font-medium">{{ member[5] }}</td><td class="p-3 font-medium">{{ member[6] }}</td><td class="relative p-3 text-right"><div class="relative inline-flex"><button type="button" class="tf-icon-button" @click="toggleActionMenu(`team-${member[9] || member[7] || member[0]}`)"><svg viewBox="0 0 24 24" class="h-4 w-4" fill="none" stroke="currentColor"><path :d="iconPath('dots')" /></svg></button><div v-if="actionMenu === `team-${member[9] || member[7] || member[0]}`" class="tf-action-menu"><button type="button" class="tf-action-item" @click="actionMenu = null">View profile</button><button type="button" class="tf-action-item" @click="updateMemberStatus(member, String(member[12]) === 'Inactive')">{{ String(member[12]) === 'Inactive' ? 'Activate' : 'Deactivate' }}</button><button type="button" class="tf-action-item tf-action-danger" @click="deleteMember(member)">Remove member</button></div></div></td></tr></tbody></table><p v-if="!filteredTeam.length" class="py-8 text-center text-sm text-task-muted">No staff found.</p><div v-if="filteredTeam.length > pageSize" class="mt-5 flex justify-end gap-2"><button class="tf-icon-button" @click="setListPage('team', teamPage - 1)">‹</button><button v-for="page in teamPageCount" :key="page" :class="[teamPage === page ? 'tf-primary' : 'tf-icon-button', 'h-9 w-9 p-0']" @click="setListPage('team', page)">{{ page }}</button><button class="tf-icon-button" @click="setListPage('team', teamPage + 1)">›</button></div></div>
         </section>
 
         <section v-else-if="activePage === 'reports'" class="space-y-4">
-          <div class="tf-panel relative p-5"><div class="mb-5 flex flex-col gap-3 md:flex-row md:items-center md:justify-between"><h2 class="text-lg font-bold">Recent Reports</h2><div class="flex flex-col gap-3 sm:flex-row"><label class="relative w-full sm:w-auto"><input v-model="reportSearchInput" class="tf-input w-full pr-10 sm:w-64" placeholder="Search here..." /><span v-if="searchLoading.report" class="tf-search-spinner" /></label><button class="tf-icon-button w-full px-4 sm:w-auto" @click="clearSearch('report')">Clear</button><button class="tf-icon-button w-full px-4 sm:w-auto" @click="exportReports">Export</button><button class="tf-primary w-full sm:w-auto" @click="openModal('report')">Custom Reports</button></div></div><div v-if="searchLoading.report" class="tf-search-overlay"><span class="tf-search-loader" /> Searching reports...</div><table class="w-full text-left text-sm"><thead class="bg-slate-100 text-task-muted"><tr><th class="rounded-l-ui p-3">Report Name</th><th class="p-3">Type</th><th class="p-3">Date Generated</th><th class="p-3">Generated By</th><th class="p-3">Status</th><th class="rounded-r-ui p-3 text-right">Action</th></tr></thead><tbody><tr v-for="report in filteredReports" :key="report[0]"><td class="p-4">{{ report[0] }}</td><td>{{ report[1] }}</td><td>{{ report[2] }}</td><td>{{ report[3] }}</td><td><span :class="['tf-pill', badgeClass(report[4])]">{{ report[4] }}</span></td><td class="relative text-right"><div class="relative inline-flex"><button type="button" class="tf-icon-button" @click="toggleActionMenu(`report-${report[0]}`)"><svg viewBox="0 0 24 24" class="h-4 w-4" fill="none" stroke="currentColor" stroke-width="2"><path :d="iconPath('dots')" /></svg></button><div v-if="actionMenu === `report-${report[0]}`" class="tf-action-menu"><button type="button" class="tf-action-item" @click="notify(`${report[0]} downloaded`); actionMenu = null">Download</button><button type="button" class="tf-action-item" @click="generateReport(String(report[0])); actionMenu = null">Regenerate</button><button type="button" class="tf-action-item tf-action-danger" @click="runAction('delete', 'report', String(report[0]))">Delete</button></div></div></td></tr></tbody></table><div class="mt-5 flex items-center justify-between text-xs text-task-muted"><span>Showing {{ filteredReports.length }} of {{ reports.length }} Reports</span><div class="flex gap-2"><button class="tf-icon-button" type="button" @click="setListPage('report', reportPage - 1)">‹</button><button v-for="page in [1, 2, 3]" :key="page" :class="[reportPage === page ? 'tf-primary' : 'tf-icon-button', 'h-9 w-9 p-0']" type="button" @click="setListPage('report', page)">{{ page }}</button><button class="tf-icon-button" type="button" @click="setListPage('report', reportPage + 1)">›</button></div></div></div>
+          <div class="tf-panel relative p-5"><div class="mb-5 flex flex-col gap-3 md:flex-row md:items-center md:justify-between"><h2 class="text-lg font-bold">Recent Reports</h2><div class="flex flex-col gap-3 sm:flex-row"><label class="relative w-full sm:w-auto"><input v-model="reportSearchInput" class="tf-input w-full pr-10 sm:w-64" placeholder="Search here..." /><button v-if="reportSearchInput && !searchLoading.report" type="button" class="tf-search-clear" aria-label="Clear report search" @click="clearSearch('report')">×</button><span v-if="searchLoading.report" class="tf-search-spinner" /></label><button class="tf-icon-button w-full px-4 sm:w-auto" @click="exportReports">Export</button><button class="tf-primary w-full sm:w-auto" @click="openModal('report')">Custom Reports</button></div></div><div v-if="searchLoading.report" class="tf-search-overlay"><span class="tf-search-loader" /> Searching reports...</div><table class="w-full text-left text-sm"><thead class="bg-slate-100 text-task-muted"><tr><th class="rounded-l-ui p-3">Report Name</th><th class="p-3">Type</th><th class="p-3">Date Generated</th><th class="p-3">Generated By</th><th class="p-3">Status</th><th class="rounded-r-ui p-3 text-right">Action</th></tr></thead><tbody><tr v-for="report in paginatedReports" :key="report[0]"><td class="p-4">{{ report[0] }}</td><td>{{ report[1] }}</td><td>{{ report[2] }}</td><td>{{ report[3] }}</td><td><span :class="['tf-pill', badgeClass(report[4])]">{{ report[4] }}</span></td><td class="text-right"><button type="button" class="tf-icon-button" title="Download report" @click="notify(`${report[0]} downloaded`)"><svg viewBox="0 0 24 24" class="h-4 w-4" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 3v12m0 0 4-4m-4 4-4-4M5 21h14" /></svg></button></td></tr></tbody></table><div v-if="filteredReports.length > pageSize" class="mt-5 flex items-center justify-between text-xs text-task-muted"><span>Showing {{ paginatedReports.length }} of {{ filteredReports.length }} Reports</span><div class="flex gap-2"><button class="tf-icon-button" type="button" @click="setListPage('report', reportPage - 1)">‹</button><button v-for="page in reportPageCount" :key="page" :class="[reportPage === page ? 'tf-primary' : 'tf-icon-button', 'h-9 w-9 p-0']" type="button" @click="setListPage('report', page)">{{ page }}</button><button class="tf-icon-button" type="button" @click="setListPage('report', reportPage + 1)">›</button></div></div></div>
         </section>
 
         <section v-else-if="activePage === 'messages'" class="tf-panel grid h-[650px] overflow-hidden p-0 lg:grid-cols-[290px_1fr]">
-          <aside class="relative border-r border-task-line p-5"><h2 class="font-bold">Recent Messages</h2><label class="relative mt-4 block"><input v-model="messageSearchInput" class="tf-input w-full pr-10" placeholder="Search here..." /><span v-if="searchLoading.message" class="tf-search-spinner" /></label><div v-if="searchLoading.message" class="tf-search-overlay"><span class="tf-search-loader" /> Searching...</div><div class="mt-4 divide-y divide-task-line"><button v-for="name in filteredMessages" :key="name" :class="['flex w-full items-center gap-3 py-3 text-left', activeMessage === name ? 'bg-task-blueSoft' : '']" @click="activeMessage = name"><span class="grid h-11 w-11 place-items-center rounded-full bg-slate-300 font-bold text-white">{{ initials(name) }}</span><span class="min-w-0 flex-1"><b class="block truncate">{{ name }}</b></span></button><p v-if="!filteredMessages.length" class="py-8 text-sm text-task-muted">No messages.</p></div></aside>
+          <aside class="relative border-r border-task-line p-5"><h2 class="font-bold">Recent Messages</h2><label class="relative mt-4 block"><input v-model="messageSearchInput" class="tf-input w-full pr-10" placeholder="Search here..." /><button v-if="messageSearchInput && !searchLoading.message" type="button" class="tf-search-clear" aria-label="Clear message search" @click="clearSearch('message')">×</button><span v-if="searchLoading.message" class="tf-search-spinner" /></label><div v-if="searchLoading.message" class="tf-search-overlay"><span class="tf-search-loader" /> Searching...</div><div class="mt-4 divide-y divide-task-line"><button v-for="name in filteredMessages" :key="name" :class="['flex w-full items-center gap-3 py-3 text-left', activeMessage === name ? 'bg-task-blueSoft' : '']" @click="activeMessage = name"><span class="grid h-11 w-11 place-items-center rounded-full bg-slate-300 font-bold text-white">{{ initials(name) }}</span><span class="min-w-0 flex-1"><b class="block truncate">{{ name }}</b></span></button><p v-if="!filteredMessages.length" class="py-8 text-sm text-task-muted">No messages.</p></div></aside>
           <div class="flex min-w-0 flex-col items-center justify-center p-6 text-center text-task-muted">
             <p class="text-base font-semibold text-task-ink">{{ activeMessage || 'No conversation selected' }}</p>
             <p class="mt-2 text-sm">Messages data will appear here when it comes from backend.</p>
@@ -2230,15 +2384,15 @@ const iconPath = (name: string) => {
     </section>
 
     <div v-if="modal" class="fixed inset-0 z-50 grid place-items-center bg-slate-900/50 p-3 sm:p-6">
-      <div :class="['flex max-h-[calc(100vh-24px)] w-full flex-col overflow-hidden rounded-ui bg-[#E3EAF2] shadow-2xl sm:max-h-[calc(100vh-48px)]', modal === 'project' || modal === 'event' ? 'max-w-[720px]' : 'max-w-[560px]']">
+      <div :class="['flex max-h-[calc(100vh-24px)] w-full flex-col overflow-hidden rounded-[22px] bg-[#E3EAF2] shadow-2xl sm:max-h-[calc(100vh-48px)]', modal === 'project' || modal === 'event' || modal === 'report' ? 'max-w-[720px]' : 'max-w-[560px]']">
         <div class="flex shrink-0 items-center justify-between px-6 py-4"><h2 class="text-xl font-bold">{{ modal === 'task' ? 'Create Task' : modal === 'project' ? 'Create New Project' : modal === 'event' ? 'Add New Event' : modal === 'report' ? 'Custom Report Builder' : modal === 'member' ? 'Add Department Member' : 'Filter Staff' }}</h2><button class="text-3xl leading-none" @click="modal = null">×</button></div>
         <div class="m-2 min-h-0 overflow-y-auto rounded-ui bg-white p-4">
           <template v-if="modal === 'team-filter'">
-            <div class="grid gap-4 md:grid-cols-2"><label v-for="field in [['Department','department'],['Role','role'],['Skills','skills'],['Status','status']]" :key="field[1]">{{ field[0] }}<div class="tf-dropdown mt-2"><button type="button" class="tf-dropdown-button" @click="openDropdown = openDropdown === field[1] ? null : String(field[1])"><span>{{ dropdownValues[String(field[1])] }}</span><svg viewBox="0 0 20 20" class="h-4 w-4 shrink-0 text-task-muted transition" fill="none" stroke="currentColor" stroke-width="2"><path d="m5 7.5 5 5 5-5" /></svg></button><div v-if="openDropdown === field[1]" class="tf-dropdown-menu"><button v-for="option in dropdownOptions[String(field[1])]" :key="option" type="button" class="tf-dropdown-option" @click="setDropdownValue(String(field[1]), option)"><span>{{ option }}</span><span v-if="dropdownValues[String(field[1])] === option">✓</span></button></div></div></label></div><div class="mt-5 rounded-ui bg-slate-100 p-4"><p class="font-bold">Workload</p><input type="range" class="mt-3 w-full accent-task-blue" value="70" /><div class="flex justify-between text-sm text-task-muted"><span>0%</span><span>Current: 70%</span><span>100%</span></div></div>
+            <div class="grid gap-4 md:grid-cols-2"><label v-for="field in [['Department','department'],['Role','role'],['Skills','skills'],['Status','status']]" :key="field[1]">{{ field[0] }}<div class="tf-dropdown mt-2"><button type="button" class="tf-dropdown-button" @click="openDropdown = openDropdown === field[1] ? null : String(field[1])"><span>{{ dropdownValues[String(field[1])] }}</span><svg viewBox="0 0 20 20" class="h-4 w-4 shrink-0 text-task-muted transition" fill="none" stroke="currentColor" stroke-width="2"><path d="m5 7.5 5 5 5-5" /></svg></button><div v-if="openDropdown === field[1]" class="tf-dropdown-menu"><button v-for="option in dropdownOptions[String(field[1])]" :key="option" type="button" class="tf-dropdown-option" @click="setDropdownValue(String(field[1]), option)"><span>{{ option }}</span><span v-if="dropdownValues[String(field[1])] === option">✓</span></button></div></div></label></div><div class="mt-5 rounded-ui bg-slate-100 p-4"><p class="font-bold">Workload</p><input v-model.number="workloadFilter" type="range" min="0" max="100" class="mt-3 w-full accent-task-blue" /><div class="flex justify-between text-sm text-task-muted"><span>0%</span><span>Current: {{ workloadFilter }}%</span><span>100%</span></div></div>
           </template>
           <template v-else-if="modal === 'member'">
             <div class="rounded-ui bg-task-blueSoft p-4 text-sm text-task-muted">The member will be added to your current department automatically.</div>
-            <label class="mt-4 block text-sm font-semibold">User ID<input v-model="memberUserId" class="tf-input mt-2 h-12 w-full" inputmode="numeric" placeholder="Enter existing user ID" /></label>
+            <div class="mt-4 grid gap-4 sm:grid-cols-2"><label class="block text-sm font-semibold">First Name<input v-model="memberFirstName" class="tf-input mt-2 h-12 w-full" placeholder="Enter first name" autocomplete="given-name" /></label><label class="block text-sm font-semibold">Last Name<input v-model="memberLastName" class="tf-input mt-2 h-12 w-full" placeholder="Enter last name" autocomplete="family-name" /></label></div>
             <label class="mt-4 block text-sm font-semibold">Role<div class="tf-dropdown mt-2"><button type="button" class="tf-dropdown-button h-12" @click="openDropdown = openDropdown === 'memberRole' ? null : 'memberRole'"><span class="capitalize">{{ memberRole }}</span><svg viewBox="0 0 20 20" class="h-4 w-4 text-task-muted" fill="none" stroke="currentColor" stroke-width="2"><path d="m5 7.5 5 5 5-5" /></svg></button><div v-if="openDropdown === 'memberRole'" class="tf-dropdown-menu"><button v-for="role in memberRoleOptions" :key="role" type="button" class="tf-dropdown-option capitalize" @click="memberRole = role; openDropdown = null"><span>{{ role }}</span><span v-if="memberRole === role">✓</span></button></div></div></label>
           </template>
           <template v-else-if="modal === 'task'">
@@ -2353,13 +2507,11 @@ const iconPath = (name: string) => {
                 Time
                 <div class="mt-2 grid grid-cols-[1fr_auto_1fr] items-center gap-3">
                   <label class="relative">
-                    <input v-model="form.eventTime" class="tf-input h-11 w-full pr-10" inputmode="numeric" maxlength="5" placeholder="09:00" @input="maskTimeInput('eventTime', $event)" @blur="finalizeTimeInput('eventTime')" />
-                    <svg viewBox="0 0 24 24" class="absolute right-3 top-1/2 h-5 w-5 -translate-y-1/2 text-task-muted" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M12 6v6l4 2M12 22a10 10 0 1 1 0-20 10 10 0 0 1 0 20Z" /></svg>
+                    <input v-model="form.eventTime" type="time" class="tf-input h-11 w-full cursor-text" step="60" aria-label="Event start time" />
                   </label>
                   <span class="text-task-muted">to</span>
                   <label class="relative">
-                    <input v-model="form.eventEndTime" class="tf-input h-11 w-full pr-10" inputmode="numeric" maxlength="5" placeholder="10:30" @input="maskTimeInput('eventEndTime', $event)" @blur="finalizeTimeInput('eventEndTime')" />
-                    <svg viewBox="0 0 24 24" class="absolute right-3 top-1/2 h-5 w-5 -translate-y-1/2 text-task-muted" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M12 6v6l4 2M12 22a10 10 0 1 1 0-20 10 10 0 0 1 0 20Z" /></svg>
+                    <input v-model="form.eventEndTime" type="time" class="tf-input h-11 w-full cursor-text" step="60" aria-label="Event end time" />
                   </label>
                 </div>
               </div>
@@ -2381,16 +2533,17 @@ const iconPath = (name: string) => {
                 </button>
               </div>
             </div>
-            <div class="mt-3">
+            <div class="relative mt-3">
               <p class="text-sm font-semibold">Attendees</p>
+              <button type="button" class="tf-input mt-2 flex h-11 w-full items-center justify-between text-left" @click="eventAttendeePickerOpen = !eventAttendeePickerOpen"><span class="text-task-muted">Search and select attendees</span><span class="text-xl text-task-blue">+</span></button>
+              <div v-if="eventAttendeePickerOpen" class="absolute left-0 right-0 top-[72px] z-[90] rounded-ui border border-task-line bg-white p-3 shadow-xl">
+                <input v-model="eventAttendeeSearch" class="tf-input w-full" placeholder="Search by name or email..." />
+                <div class="mt-2 max-h-44 overflow-y-auto"><button v-for="member in availableEventAttendees" :key="teamMemberId(member)" type="button" class="tf-dropdown-option" @click="selectEventAttendee(member)"><span>{{ teamMemberName(member) }}</span><span class="text-xs text-task-muted">{{ teamMemberEmail(member) }}</span></button><p v-if="!availableEventAttendees.length" class="p-3 text-sm text-task-muted">No available attendees.</p></div>
+              </div>
               <div class="mt-2 flex flex-wrap items-center gap-2">
                 <span v-for="member in eventAttendeeLabels" :key="member" class="inline-flex h-9 items-center gap-2 rounded-full border border-task-line bg-task-blueSoft px-3 text-sm font-semibold text-task-ink">
                   {{ member }} <button type="button" class="text-lg leading-none" @click="removeEventAttendee(member)">×</button>
                 </span>
-                <button type="button" class="inline-flex h-9 items-center gap-2 rounded-full px-2 text-sm font-semibold text-task-blue transition hover:bg-task-blueSoft" @click="addEventAttendee">
-                  <span class="text-2xl leading-none">+</span>
-                  Add attendee
-                </button>
               </div>
             </div>
             <div class="mt-3 rounded-ui border border-[#B9C8D8] bg-task-blueSoft p-3">
@@ -2402,19 +2555,6 @@ const iconPath = (name: string) => {
                 </button>
               </div>
               <p class="mt-3 text-sm text-task-muted">Add Google Meet / Zoom Link</p>
-            </div>
-            <div class="mt-3">
-              <p class="text-sm font-semibold">Event Color</p>
-              <div class="mt-2 flex gap-3">
-                <button
-                  v-for="color in eventColorOptions"
-                  :key="color"
-                  type="button"
-                  :class="['h-8 w-8 rounded-full ring-offset-2 transition', color, form.eventColor === color ? 'ring-2 ring-task-ink' : 'hover:scale-105']"
-                  aria-label="Select event color"
-                  @click="form.eventColor = color"
-                />
-              </div>
             </div>
             <label class="mt-3 block text-sm font-semibold">
               Description
@@ -2486,7 +2626,7 @@ const iconPath = (name: string) => {
                   </div>
                 </div>
               </label>
-              <label class="text-sm font-semibold md:col-span-2">
+              <label class="text-sm font-semibold">
                 Project Manager
                 <div class="tf-dropdown mt-2">
                   <button type="button" class="tf-dropdown-button h-12" @click="openDropdown = openDropdown === 'projectManager' ? null : 'projectManager'">
@@ -2501,18 +2641,21 @@ const iconPath = (name: string) => {
                   </div>
                 </div>
               </label>
+              <label class="text-sm font-semibold">
+                Category
+                <input v-model="form.category" class="tf-input mt-2 h-12 w-full" placeholder="Enter category" />
+              </label>
             </div>
             <div class="mt-4">
               <p class="text-sm font-semibold">Team Members</p>
-              <div class="relative mt-2 flex flex-wrap items-center gap-2">
+              <div class="relative mt-2">
+                <button type="button" class="tf-input flex h-12 w-full items-center justify-between text-left" @click="addProjectMember"><span class="text-task-muted">Search and select team members</span><span class="text-xl text-task-blue">+</span></button>
+                <div class="mt-2 flex flex-wrap items-center gap-2">
                 <span v-for="member in projectMemberLabels" :key="member" class="inline-flex h-9 items-center gap-2 rounded-full border border-task-line bg-task-blueSoft px-3 text-sm font-semibold text-task-ink">
                   {{ member }}
                   <button type="button" class="text-lg leading-none text-task-ink" aria-label="Remove member" @click="removeProjectMember(member)">×</button>
                 </span>
-                <button type="button" class="inline-flex h-9 items-center gap-2 rounded-full px-2 text-sm font-semibold text-task-blue" @click="addProjectMember">
-                  <span class="text-2xl leading-none">+</span>
-                  Add member
-                </button>
+                </div>
                 <div v-if="projectMemberPickerOpen" class="absolute left-0 top-[calc(100%+8px)] z-[90] w-full max-w-md rounded-ui border border-task-line bg-white p-3 shadow-xl">
                   <input v-model="projectMemberSearch" class="tf-input w-full" type="search" placeholder="Search member by name or email..." autofocus />
                   <div class="mt-2 max-h-56 overflow-y-auto">
@@ -2537,18 +2680,26 @@ const iconPath = (name: string) => {
               <textarea v-model="form.description" class="tf-input mt-2 h-28 w-full resize-none py-3" placeholder="Describe project goals, scope, and objectives..." />
             </label>
           </template>
-          <template v-else>
-            <label class="block text-sm font-semibold">Report Name<input v-model="form.title" class="tf-input mt-2 w-full" placeholder="Team Performance Report" /></label>
-            <label class="mt-4 block text-sm font-semibold">Description<textarea v-model="form.description" class="tf-input mt-2 h-24 w-full resize-none" placeholder="Describe report details..." /></label>
+          <template v-else-if="modal === 'report'">
+            <label class="block text-sm font-semibold">Report Name<input v-model="form.title" class="tf-input mt-2 h-12 w-full" placeholder="Team Performance Report" /></label>
+            <label class="mt-4 block text-sm font-semibold">Report Type<div class="tf-dropdown mt-2"><button type="button" class="tf-dropdown-button h-12" @click="openDropdown = openDropdown === 'reportType' ? null : 'reportType'"><span>{{ reportType }}</span><svg viewBox="0 0 20 20" class="h-4 w-4" fill="none" stroke="currentColor" stroke-width="2"><path d="m5 7.5 5 5 5-5" /></svg></button><div v-if="openDropdown === 'reportType'" class="tf-dropdown-menu"><button v-for="option in reportTypeOptions" :key="option" type="button" class="tf-dropdown-option" @click="reportType = option; openDropdown = null">{{ option }}</button></div></div></label>
+            <div class="mt-4 grid gap-4 md:grid-cols-2">
+              <label class="text-sm font-semibold">Start Date<input v-model="form.startDate" type="date" class="tf-input mt-2 h-12 w-full" /></label>
+              <label class="text-sm font-semibold">End Date<input v-model="form.dueDate" type="date" class="tf-input mt-2 h-12 w-full" /></label>
+              <label class="text-sm font-semibold">Priority<div class="tf-dropdown mt-2"><button type="button" class="tf-dropdown-button h-12" @click="openDropdown = openDropdown === 'reportPriority' ? null : 'reportPriority'"><span>{{ dropdownValues.priority }}</span><svg viewBox="0 0 20 20" class="h-4 w-4" fill="none" stroke="currentColor" stroke-width="2"><path d="m5 7.5 5 5 5-5" /></svg></button><div v-if="openDropdown === 'reportPriority'" class="tf-dropdown-menu"><button v-for="option in dropdownOptions.priority" :key="option" type="button" class="tf-dropdown-option" @click="setDropdownValue('priority', option)">{{ option }}</button></div></div></label>
+              <label class="text-sm font-semibold">Status<div class="tf-dropdown mt-2"><button type="button" class="tf-dropdown-button h-12" @click="openDropdown = openDropdown === 'reportStatus' ? null : 'reportStatus'"><span>{{ reportStatus }}</span><svg viewBox="0 0 20 20" class="h-4 w-4" fill="none" stroke="currentColor" stroke-width="2"><path d="m5 7.5 5 5 5-5" /></svg></button><div v-if="openDropdown === 'reportStatus'" class="tf-dropdown-menu"><button v-for="option in ['All Statuses', 'Completed', 'In Progress', 'Not Started']" :key="option" type="button" class="tf-dropdown-option" @click="reportStatus = option; openDropdown = null">{{ option }}</button></div></div></label>
+            </div>
+            <div class="mt-4"><p class="text-sm font-semibold">Export Options</p><div class="mt-3 flex flex-wrap gap-3"><button v-for="option in ['PDF', 'Excel', 'CSV'] as const" :key="option" type="button" :class="['inline-flex h-10 items-center gap-2 rounded-full border px-5 text-sm font-semibold transition', reportExportFormat === option ? 'border-task-blue bg-task-blueSoft text-task-blue' : 'border-task-line bg-slate-100 text-task-ink']" @click="reportExportFormat = option"><svg viewBox="0 0 24 24" class="h-4 w-4" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M6 2h8l4 4v16H6V2Zm8 0v5h5M9 13h6M9 17h6" /></svg>{{ option }}</button></div></div>
           </template>
-          <div class="sticky bottom-0 -mx-4 -mb-4 mt-4 flex justify-end gap-3 border-t border-task-line bg-white px-4 py-3">
-            <button class="tf-icon-button w-auto px-4" @click="modal = null">Cancel</button>
-            <button class="tf-primary" @click="submitModal">{{ modal === 'report' ? 'Generate Report' : modal === 'event' ? 'Create Event' : modal === 'project' ? (editingProjectId ? 'Update Project' : 'Create Project') : modal === 'member' ? 'Add Member' : modal === 'team-filter' ? 'Apply' : 'Create Task' }}</button>
+          <div class="sticky bottom-0 -mx-4 -mb-4 mt-5 flex justify-end gap-3 border-t border-task-line bg-white px-4 py-4">
+            <button :class="[modal === 'report' ? 'h-11 rounded-full px-6 shadow-button' : 'tf-icon-button w-auto px-4']" @click="modal = null">Cancel</button>
+            <button :class="[modal === 'report' ? 'tf-primary h-11 rounded-full px-7' : 'tf-primary']" @click="submitModal">{{ modal === 'report' ? 'Generate Report' : modal === 'event' ? 'Create Event' : modal === 'project' ? (editingProjectId ? 'Update Project' : 'Create Project') : modal === 'member' ? 'Add Member' : modal === 'team-filter' ? 'Apply' : 'Create Task' }}</button>
           </div>
         </div>
       </div>
     </div>
 
+    <button v-if="supportWidgetOpen" type="button" class="fixed inset-0 z-[65] bg-slate-950/30 backdrop-blur-[1px]" aria-label="Close help support" @click="supportWidgetOpen = false" />
     <div class="fixed bottom-5 right-5 z-[70] flex flex-col items-end gap-3">
       <div v-if="supportWidgetOpen" class="tf-panel w-[380px] max-w-[calc(100vw-40px)] p-4 shadow-xl">
         <div class="mb-4 flex items-start justify-between gap-4">

@@ -36,6 +36,11 @@ type MeProfile = {
   job_title?: string
 }
 
+type CreateUserPayload = {
+  first_name: string
+  last_name: string
+}
+
 type ApiTask = {
   id?: string
   project?: string
@@ -115,11 +120,21 @@ type MemberSummary = {
 }
 
 type ApiReport = {
+  id?: string
+  workspace?: string
   name: string
   report_type?: string
+  description?: string
   created_at?: string
   status?: string
   generated_by_detail?: UserBrief
+}
+
+type ReportPayload = {
+  workspace: string
+  name: string
+  report_type: string
+  parameters: string
 }
 
 type ApiAnalytics = {
@@ -471,6 +486,12 @@ export const useTaskFlowApi = () => {
       body: member
     })
 
+  const createUser = async (user: CreateUserPayload) =>
+    await apiFetch<MeProfile>('/users/', {
+      method: 'POST',
+      body: user
+    })
+
   const patchMember = async (id: string, member: Partial<MemberPayload>) =>
     await apiFetch<ApiMember>(`/members/${id}/`, {
       method: 'PATCH',
@@ -544,6 +565,14 @@ export const useTaskFlowApi = () => {
     await apiFetch(`/events/${id}/`, {
       method: 'DELETE'
     })
+
+  const createReport = async (report: ReportPayload) =>
+    await apiFetch<ApiReport>('/reports/', {
+      method: 'POST',
+      body: report
+    })
+
+  const getReport = async (id: string) => await apiFetch<ApiReport>(`/reports/${id}/`)
 
   const workspaceQuery = (workspaceId: string, extra: Record<string, string | number | undefined> = {}) => {
     const params = new URLSearchParams({ workspace: workspaceId })
@@ -708,7 +737,10 @@ export const useTaskFlowApi = () => {
     titleCase(report.report_type),
     formatDate(report.created_at),
     report.generated_by_detail?.full_name || 'System',
-    titleCase(report.status)
+    titleCase(report.status),
+    report.id || '',
+    report.file || '',
+    report.result || ''
   ]
 
   const mapEvent = (event: ApiEvent) => [
@@ -759,12 +791,15 @@ export const useTaskFlowApi = () => {
     listMembers,
     getMember,
     createMember,
+    createUser,
     patchMember,
     deleteMember,
     getMembersSummary,
     listEvents,
     getEvent,
     createEvent,
+    createReport,
+    getReport,
     patchEvent,
     deleteEvent,
     listWorkspaces,

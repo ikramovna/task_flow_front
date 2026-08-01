@@ -102,6 +102,10 @@ body {
     animation: tf-spin-center 0.7s linear infinite;
   }
 
+  .tf-search-clear {
+    @apply absolute right-3 top-1/2 grid h-6 w-6 -translate-y-1/2 place-items-center rounded-full text-xl leading-none text-task-muted transition hover:bg-slate-100 hover:text-task-ink;
+  }
+
   .tf-search-overlay {
     @apply absolute inset-x-4 top-20 z-40 flex h-12 items-center justify-center gap-2 rounded-ui border border-task-line bg-white/85 text-sm font-semibold text-task-blue shadow-card backdrop-blur;
   }
@@ -208,9 +212,27 @@ body {
   }
 }
 
+@media (min-width: 768px) and (max-width: 1023px) {
+  .tf-panel > .mb-5.flex.flex-col.md\:flex-row {
+    flex-direction: column;
+    align-items: stretch;
+  }
+
+  .tf-search-clear {
+    top: 50%;
+    right: 0.75rem;
+    transform: translateY(-50%);
+  }
+}
+
 .tf-dark {
   background: #0f172a;
   color: #e5e7eb;
+  color-scheme: dark;
+}
+
+.tf-dark body {
+  background: #0f172a;
 }
 
 .tf-dark .tf-window {
@@ -225,10 +247,16 @@ body {
 .tf-dark .tf-date-popover,
 .tf-dark .tf-action-menu,
 .tf-dark input,
-.tf-dark textarea {
+.tf-dark textarea,
+.tf-dark select {
   background: #172033;
   border-color: #2b364a;
   color: #e5e7eb;
+}
+
+.tf-dark input::placeholder,
+.tf-dark textarea::placeholder {
+  color: #64748b;
 }
 
 .tf-dark .tf-dropdown-option {
@@ -327,10 +355,20 @@ body {
 }
 
 .tf-dark .bg-white,
+.tf-dark .bg-white\/60,
+.tf-dark .bg-white\/70,
 .tf-dark .bg-slate-100,
 .tf-dark .bg-slate-50,
 .tf-dark .bg-slate-200 {
   background-color: #1f2937;
+}
+
+.tf-dark .bg-white\/60 {
+  background-color: rgb(23 32 51 / 72%);
+}
+
+.tf-dark .bg-white\/70 {
+  background-color: rgb(31 41 55 / 82%);
 }
 
 .tf-dark .bg-slate-300 {
@@ -383,6 +421,35 @@ body {
 
 .tf-dark .bg-\[\#E3EAF2\] {
   background-color: #0f172a;
+}
+
+.tf-dark .bg-\[\#F1F5F9\] {
+  background-color: #111b2d;
+}
+
+.tf-dark .border-\[\#D7E1EC\],
+.tf-dark .border-\[\#B9C8D8\] {
+  border-color: #334155;
+}
+
+.tf-dark [role='tab'][aria-selected='true'] {
+  background-color: #243653;
+  color: #93c5fd;
+  box-shadow: 0 4px 14px rgb(0 0 0 / 32%);
+}
+
+.tf-dark [role='tab'][aria-selected='false'] {
+  color: #94a3b8;
+}
+
+.tf-dark [role='tab'][aria-selected='false']:hover {
+  background-color: #1f2f4a;
+  color: #e2e8f0;
+}
+
+.tf-dark input[type='date']::-webkit-calendar-picker-indicator,
+.tf-dark input[type='time']::-webkit-calendar-picker-indicator {
+  filter: invert(0.82);
 }
 
 .tf-dark .text-task-blue {
