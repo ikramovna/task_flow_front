@@ -6,7 +6,7 @@ definePageMeta({
 })
 
 type PageKey = 'dashboard' | 'tasks' | 'projects' | 'analytics' | 'calendar' | 'team' | 'reports' | 'messages' | 'settings' | 'help'
-type ModalKey = 'task' | 'project' | 'event' | 'report' | 'member' | 'team-filter' | null
+type ModalKey = 'task' | 'project' | 'event' | 'event-detail' | 'report' | 'member' | 'team-filter' | null
 type ProjectCardMember = {
   id?: string | number
   email?: string
@@ -208,6 +208,7 @@ type CalendarEvent = {
   meetingUrl: string
   description: string
   attendees: number
+  attendeeNames: string[]
 }
 
 const form = reactive({
@@ -247,6 +248,7 @@ const eventAttendeeLabels = ref<string[]>([])
 const eventAttendeePickerOpen = ref(false)
 const eventAttendeeSearch = ref('')
 const eventColorById = reactive<Record<string, string>>({})
+const selectedCalendarEvent = ref<CalendarEvent | null>(null)
 const reportType = ref('Productivity')
 const reportStatus = ref('All Statuses')
 const reportExportFormat = ref<'PDF' | 'Excel' | 'CSV'>('PDF')
@@ -455,6 +457,13 @@ const calendarEvents = computed<CalendarEvent[]>(() =>
       if (Number.isNaN(startsAt.getTime())) return null
       const endsAt = event[4] ? new Date(String(event[4])) : null
       const eventType = String(event[2] || 'Meeting')
+      let attendeeDetails: ProjectCardMember[] = []
+      try {
+        const parsed = JSON.parse(String(event[8] || '[]'))
+        if (Array.isArray(parsed)) attendeeDetails = parsed
+      } catch {
+        attendeeDetails = []
+      }
 
       return {
         id: String(event[0] || `event-${index}`),
@@ -469,14 +478,8 @@ const calendarEvents = computed<CalendarEvent[]>(() =>
         eventType,
         meetingUrl: String(event[6] || ''),
         description: String(event[7] || ''),
-        attendees: (() => {
-          try {
-            const details = JSON.parse(String(event[8] || '[]'))
-            return Array.isArray(details) && details.length ? details.length : event.slice(9).filter(Boolean).length
-          } catch {
-            return event.slice(9).filter(Boolean).length
-          }
-        })()
+        attendees: attendeeDetails.length || event.slice(9).filter(Boolean).length,
+        attendeeNames: attendeeDetails.map((member) => member.full_name || `${member.first_name || ''} ${member.last_name || ''}`.trim() || member.email || 'Member')
       }
     })
     .filter((event): event is CalendarEvent => Boolean(event))
@@ -612,6 +615,10 @@ const productivityTrendData = computed(() =>
 const eventForDay = (day: number) => currentMonthEvents.value.find((event) => event.day === day)
 
 const eventFullDate = (event: CalendarEvent) => `${String(event.day).padStart(2, '0')} ${monthNames[event.month]} ${event.year}`
+const openEventDetails = (event: CalendarEvent) => {
+  selectedCalendarEvent.value = event
+  modal.value = 'event-detail'
+}
 
 const pageCopy: Record<PageKey, { title: string; subtitle: string; eyebrow?: string }> = {
   dashboard: { title: 'Dashboard', subtitle: "Here's what's happening with your team today", eyebrow: 'Dashboard' },
@@ -1431,6 +1438,13 @@ const submitModal = async () => {
       if (createdEventId) eventColorById[createdEventId] = form.eventColor
       state.value.events.unshift(mappedEvent)
       notify('Event created')
+      await nextTick()
+      const createdCalendarEvent = calendarEvents.value.find((event) => event.id === createdEventId)
+      if (createdCalendarEvent) {
+        if (!createdCalendarEvent.attendeeNames.length) createdCalendarEvent.attendeeNames = [...eventAttendeeLabels.value]
+        openEventDetails(createdCalendarEvent)
+        return
+      }
     } catch (error) {
       console.error('Event save failed.', error)
       notifyError(taskFlowApiErrorMessage(error, 'Event save failed'))
@@ -2288,7 +2302,7 @@ const iconPath = (name: string) => {
             </div>
           </div>
           <aside class="space-y-4">
-            <div class="tf-panel p-5"><h2 class="text-lg font-bold">{{ selectedCalendarDay ? `${String(selectedCalendarDay).padStart(2, '0')} ${monthNames[calendarMonthIndex]} ${calendarYear}` : `${monthNames[calendarMonthIndex]} ${calendarYear} Events` }}</h2><div class="mt-4 space-y-4"><button v-for="event in selectedDayEvents" :key="event.id" type="button" class="flex w-full gap-4 rounded-ui bg-slate-100 p-4 text-left transition hover:bg-task-blueSoft"><span :class="['grid h-12 w-12 place-items-center rounded-full text-center text-xs font-bold text-white', event.color]">{{ String(event.day).padStart(2, '0') }}<br />{{ event.meridiem }}</span><div><p class="font-bold">{{ event.title }}</p><p class="text-xs text-task-muted">{{ eventFullDate(event) }}</p><p class="text-xs text-task-muted">{{ event.time }}</p><p class="mt-2 text-xs text-task-muted">{{ event.attendees }} attendees</p></div></button><p v-if="!selectedDayEvents.length" class="text-sm text-task-muted">No events for this day.</p></div></div>
+            <div class="tf-panel p-5"><h2 class="text-lg font-bold">{{ selectedCalendarDay ? `${String(selectedCalendarDay).padStart(2, '0')} ${monthNames[calendarMonthIndex]} ${calendarYear}` : `${monthNames[calendarMonthIndex]} ${calendarYear} Events` }}</h2><div class="mt-4 space-y-4"><button v-for="event in selectedDayEvents" :key="event.id" type="button" class="flex w-full gap-4 rounded-ui bg-slate-100 p-4 text-left transition hover:bg-task-blueSoft" @click="openEventDetails(event)"><span :class="['grid h-12 w-12 place-items-center rounded-full text-center text-xs font-bold text-white', event.color]">{{ String(event.day).padStart(2, '0') }}<br />{{ event.meridiem }}</span><div><p class="font-bold">{{ event.title }}</p><p class="text-xs text-task-muted">{{ eventFullDate(event) }}</p><p class="text-xs text-task-muted">{{ event.time }}</p><p class="mt-2 text-xs text-task-muted">{{ event.attendees }} attendees</p></div></button><p v-if="!selectedDayEvents.length" class="text-sm text-task-muted">No events for this day.</p></div></div>
           </aside>
         </section>
 
@@ -2384,10 +2398,16 @@ const iconPath = (name: string) => {
     </section>
 
     <div v-if="modal" class="fixed inset-0 z-50 grid place-items-center bg-slate-900/50 p-3 sm:p-6">
-      <div :class="['flex max-h-[calc(100vh-24px)] w-full flex-col overflow-hidden rounded-[22px] bg-[#E3EAF2] shadow-2xl sm:max-h-[calc(100vh-48px)]', modal === 'project' || modal === 'event' || modal === 'report' ? 'max-w-[720px]' : 'max-w-[560px]']">
-        <div class="flex shrink-0 items-center justify-between px-6 py-4"><h2 class="text-xl font-bold">{{ modal === 'task' ? 'Create Task' : modal === 'project' ? 'Create New Project' : modal === 'event' ? 'Add New Event' : modal === 'report' ? 'Custom Report Builder' : modal === 'member' ? 'Add Department Member' : 'Filter Staff' }}</h2><button class="text-3xl leading-none" @click="modal = null">×</button></div>
+      <div :class="['flex max-h-[calc(100vh-24px)] w-full flex-col overflow-hidden rounded-[22px] bg-[#E3EAF2] shadow-2xl sm:max-h-[calc(100vh-48px)]', modal === 'project' || modal === 'event' || modal === 'event-detail' || modal === 'report' ? 'max-w-[720px]' : 'max-w-[560px]']">
+        <div class="flex shrink-0 items-center justify-between px-6 py-4"><h2 class="text-xl font-bold">{{ modal === 'task' ? 'Create Task' : modal === 'project' ? 'Create New Project' : modal === 'event' ? 'Add New Event' : modal === 'event-detail' ? 'Event Details' : modal === 'report' ? 'Custom Report Builder' : modal === 'member' ? 'Add Department Member' : 'Filter Staff' }}</h2><button class="text-3xl leading-none" @click="modal = null">×</button></div>
         <div class="m-2 min-h-0 overflow-y-auto rounded-ui bg-white p-4">
-          <template v-if="modal === 'team-filter'">
+          <template v-if="modal === 'event-detail' && selectedCalendarEvent">
+            <div class="flex items-start gap-4 border-b border-task-line pb-4"><span :class="['grid h-14 w-14 shrink-0 place-items-center rounded-full text-center text-xs font-bold text-white', selectedCalendarEvent.color]">{{ String(selectedCalendarEvent.day).padStart(2, '0') }}<br />{{ selectedCalendarEvent.meridiem }}</span><div><h3 class="text-xl font-bold text-task-ink">{{ selectedCalendarEvent.title }}</h3><span class="mt-2 inline-flex rounded-full bg-task-blueSoft px-3 py-1 text-xs font-semibold text-task-blue">{{ selectedCalendarEvent.eventType }}</span></div></div>
+            <div class="mt-5 grid gap-4 sm:grid-cols-2"><div class="rounded-ui bg-slate-100 p-4"><p class="text-xs font-semibold uppercase tracking-wide text-task-muted">Date</p><p class="mt-2 font-semibold text-task-ink">{{ eventFullDate(selectedCalendarEvent) }}</p></div><div class="rounded-ui bg-slate-100 p-4"><p class="text-xs font-semibold uppercase tracking-wide text-task-muted">Time</p><p class="mt-2 font-semibold text-task-ink">{{ selectedCalendarEvent.time }}</p></div></div>
+            <div class="mt-4 rounded-ui border border-task-line p-4"><div class="flex items-center justify-between gap-3"><p class="font-bold text-task-ink">Assigned attendees</p><span class="shrink-0 rounded-full bg-task-blue px-3 py-1 text-xs font-bold text-white">{{ selectedCalendarEvent.attendees }} people</span></div><div v-if="selectedCalendarEvent.attendeeNames.length" class="mt-3 flex flex-wrap gap-2"><span v-for="name in selectedCalendarEvent.attendeeNames" :key="name" class="inline-flex items-center gap-2 rounded-full border border-task-line bg-task-blueSoft px-3 py-2 text-sm font-semibold text-task-ink"><span class="grid h-7 w-7 place-items-center rounded-full bg-task-blue text-[10px] font-bold text-white">{{ initials(name) }}</span>{{ name }}</span></div><p v-else class="mt-3 text-sm text-task-muted">No attendees assigned.</p></div>
+            <div v-if="selectedCalendarEvent.description" class="mt-4"><p class="font-bold text-task-ink">Description</p><p class="mt-2 whitespace-pre-wrap text-sm leading-6 text-task-muted">{{ selectedCalendarEvent.description }}</p></div><a v-if="selectedCalendarEvent.meetingUrl" :href="selectedCalendarEvent.meetingUrl" target="_blank" rel="noopener" class="mt-4 inline-flex text-sm font-semibold text-task-blue">Open meeting link ↗</a>
+          </template>
+          <template v-else-if="modal === 'team-filter'">
             <div class="grid gap-4 md:grid-cols-2"><label v-for="field in [['Department','department'],['Role','role'],['Skills','skills'],['Status','status']]" :key="field[1]">{{ field[0] }}<div class="tf-dropdown mt-2"><button type="button" class="tf-dropdown-button" @click="openDropdown = openDropdown === field[1] ? null : String(field[1])"><span>{{ dropdownValues[String(field[1])] }}</span><svg viewBox="0 0 20 20" class="h-4 w-4 shrink-0 text-task-muted transition" fill="none" stroke="currentColor" stroke-width="2"><path d="m5 7.5 5 5 5-5" /></svg></button><div v-if="openDropdown === field[1]" class="tf-dropdown-menu"><button v-for="option in dropdownOptions[String(field[1])]" :key="option" type="button" class="tf-dropdown-option" @click="setDropdownValue(String(field[1]), option)"><span>{{ option }}</span><span v-if="dropdownValues[String(field[1])] === option">✓</span></button></div></div></label></div><div class="mt-5 rounded-ui bg-slate-100 p-4"><p class="font-bold">Workload</p><input v-model.number="workloadFilter" type="range" min="0" max="100" class="mt-3 w-full accent-task-blue" /><div class="flex justify-between text-sm text-task-muted"><span>0%</span><span>Current: {{ workloadFilter }}%</span><span>100%</span></div></div>
           </template>
           <template v-else-if="modal === 'member'">
@@ -2693,7 +2713,7 @@ const iconPath = (name: string) => {
           </template>
           <div class="sticky bottom-0 -mx-4 -mb-4 mt-5 flex justify-end gap-3 border-t border-task-line bg-white px-4 py-4">
             <button :class="[modal === 'report' ? 'h-11 rounded-full px-6 shadow-button' : 'tf-icon-button w-auto px-4']" @click="modal = null">Cancel</button>
-            <button :class="[modal === 'report' ? 'tf-primary h-11 rounded-full px-7' : 'tf-primary']" @click="submitModal">{{ modal === 'report' ? 'Generate Report' : modal === 'event' ? 'Create Event' : modal === 'project' ? (editingProjectId ? 'Update Project' : 'Create Project') : modal === 'member' ? 'Add Member' : modal === 'team-filter' ? 'Apply' : 'Create Task' }}</button>
+            <button v-if="modal !== 'event-detail'" :class="[modal === 'report' ? 'tf-primary h-11 rounded-full px-7' : 'tf-primary']" @click="submitModal">{{ modal === 'report' ? 'Generate Report' : modal === 'event' ? 'Create Event' : modal === 'project' ? (editingProjectId ? 'Update Project' : 'Create Project') : modal === 'member' ? 'Add Member' : modal === 'team-filter' ? 'Apply' : 'Create Task' }}</button>
           </div>
         </div>
       </div>
