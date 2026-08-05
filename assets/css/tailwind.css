@@ -4,6 +4,10 @@
 
 :root {
   color-scheme: light;
+  --tf-page: #f4f7fb;
+  --tf-surface: #ffffff;
+  --tf-surface-soft: #f8fafc;
+  --tf-border: #e2e8f0;
 }
 
 * {
@@ -12,7 +16,7 @@
 
 body {
   margin: 0;
-  background: #f4f7fb;
+  background: var(--tf-page);
   font-family: 'Inter Tight', Inter, ui-sans-serif, system-ui, sans-serif;
   color: #111827;
   -webkit-font-smoothing: antialiased;
@@ -27,12 +31,12 @@ body {
 @layer components {
   .tf-shell {
     @apply h-screen overflow-hidden p-0 text-task-ink;
-    background: #f4f7fb;
+    background: var(--tf-page);
   }
 
   .tf-window {
     @apply flex h-screen w-full overflow-hidden rounded-none;
-    background: #f4f7fb;
+    background: var(--tf-page);
   }
 
   .tf-sidebar {
@@ -44,15 +48,13 @@ body {
   .tf-content {
     @apply h-screen overflow-y-auto;
     -webkit-overflow-scrolling: touch;
-    background:
-      radial-gradient(circle at 92% 3%, rgb(96 165 250 / 0.10), transparent 24rem),
-      radial-gradient(circle at 18% 100%, rgb(37 103 173 / 0.055), transparent 28rem),
-      #f4f7fb;
+    background: var(--tf-page);
   }
 
   .tf-panel {
     @apply rounded-[18px] border bg-white;
-    border-color: rgb(226 232 240 / 0.9);
+    background: var(--tf-surface);
+    border-color: var(--tf-border);
     box-shadow: 0 10px 35px -26px rgb(15 23 42 / 0.42), 0 1px 2px rgb(15 23 42 / 0.03);
     transition: border-color 180ms ease, box-shadow 180ms ease, transform 180ms ease;
   }
@@ -294,8 +296,8 @@ body {
 
 /* Shared visual language for every workspace page */
 .tf-app-header {
-  background: rgb(255 255 255 / 0.82);
-  border-color: rgb(226 232 240 / 0.82);
+  background: var(--tf-surface);
+  border-color: var(--tf-border);
   box-shadow: 0 10px 32px -26px rgb(15 23 42 / 0.5);
   backdrop-filter: blur(16px);
 }
@@ -314,13 +316,12 @@ body {
 }
 
 .tf-sidebar {
-  background:
-    linear-gradient(180deg, rgb(255 255 255 / 0.98), rgb(248 250 252 / 0.98));
+  background: var(--tf-page);
   box-shadow: 12px 0 40px -35px rgb(15 23 42 / 0.5);
 }
 
 .tf-sidebar nav {
-  background: rgb(255 255 255 / 0.72);
+  background: var(--tf-surface);
   backdrop-filter: blur(12px);
 }
 
@@ -499,29 +500,30 @@ body {
 }
 
 .tf-dark {
-  background: #0f172a;
+  --tf-page: #0f172a;
+  --tf-surface: #172033;
+  --tf-surface-soft: #1b2638;
+  --tf-border: #2b364a;
+  background: var(--tf-page);
   color: #e5e7eb;
   color-scheme: dark;
 }
 
 .tf-dark body {
-  background: #070b12;
+  background: var(--tf-page);
 }
 
 .tf-dark.tf-shell,
 .tf-dark .tf-shell {
-  background: #070b12;
+  background: var(--tf-page);
 }
 
 .tf-dark .tf-window {
-  background: #090e18;
+  background: var(--tf-page);
 }
 
 .tf-dark .tf-content {
-  background:
-    radial-gradient(circle at 92% 3%, rgb(37 99 235 / 0.08), transparent 24rem),
-    radial-gradient(circle at 18% 100%, rgb(30 64 175 / 0.045), transparent 28rem),
-    #090e18;
+  background: var(--tf-page);
 }
 
 .tf-dark .tf-app-header::before {
@@ -529,7 +531,7 @@ body {
 }
 
 .tf-dark .bg-task-page {
-  background-color: #090e18;
+  background-color: var(--tf-page);
 }
 
 .tf-dark .tf-panel,
@@ -542,8 +544,8 @@ body {
 .tf-dark input,
 .tf-dark textarea,
 .tf-dark select {
-  background: #172033;
-  border-color: #2b364a;
+  background: var(--tf-surface);
+  border-color: var(--tf-border);
   color: #e5e7eb;
 }
 
@@ -588,15 +590,15 @@ body {
 }
 
 .tf-dark .tf-icon-button {
-  background: #172033;
-  border-color: #2b364a;
+  background: var(--tf-surface);
+  border-color: var(--tf-border);
   color: #cbd5e1;
 }
 
 .tf-dark .tf-sidebar-user,
 .tf-dark .tf-sidebar-logout {
-  background: #172033;
-  border-color: #2b364a;
+  background: var(--tf-surface);
+  border-color: var(--tf-border);
 }
 
 .tf-dark .tf-icon-button:hover {
@@ -655,7 +657,7 @@ body {
 .tf-dark .bg-slate-100,
 .tf-dark .bg-slate-50,
 .tf-dark .bg-slate-200 {
-  background-color: #1f2937;
+  background-color: var(--tf-surface);
 }
 
 .tf-dark .bg-white\/60 {
@@ -663,12 +665,12 @@ body {
 }
 
 .tf-dark .bg-white\/70 {
-  background-color: rgb(31 41 55 / 82%);
+  background-color: var(--tf-surface);
 }
 
 .tf-dark .bg-white\/85,
 .tf-dark .bg-white\/90 {
-  background-color: rgb(23 32 51 / 92%);
+  background-color: var(--tf-surface);
 }
 
 .tf-dark .bg-slate-300 {
