@@ -109,6 +109,8 @@ export const useTaskFlowStore = () => {
           [String(dashboard.summary.completed_tasks.count), 'Completed Tasks', dashboard.summary.completed_tasks.percentage],
           [String(dashboard.summary.in_progress_tasks.count), 'In Progress', dashboard.summary.in_progress_tasks.percentage],
           [String(dashboard.summary.not_started_tasks.count), 'Not Started', dashboard.summary.not_started_tasks.percentage],
+          [String(dashboard.summary.backlog_tasks.count), 'Backlog', dashboard.summary.backlog_tasks.percentage],
+          [String(dashboard.summary.on_hold_tasks.count), 'On Hold', dashboard.summary.on_hold_tasks.percentage],
           [String(dashboard.summary.overdue_tasks.count), 'Overdue Tasks', dashboard.summary.overdue_tasks.percentage]
         ] : [],
         projectStats: [

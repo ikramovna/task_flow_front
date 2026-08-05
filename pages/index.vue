@@ -732,6 +732,8 @@ const dashboardSummaryStyles = [
   'border-emerald-100 bg-emerald-50 text-emerald-600',
   'border-amber-100 bg-amber-50 text-amber-600',
   'border-violet-100 bg-violet-50 text-violet-600',
+  'border-slate-200 bg-slate-100 text-slate-600',
+  'border-orange-100 bg-orange-50 text-orange-600',
   'border-rose-100 bg-rose-50 text-rose-600'
 ]
 const dashboardDateTime = (value: unknown, kind: 'date' | 'time' = 'date') => {
@@ -2267,9 +2269,9 @@ const iconPath = (name: string) => {
         </header>
 
         <section v-if="activePage === 'dashboard'" class="space-y-4">
-          <div class="grid gap-3 sm:grid-cols-2 xl:grid-cols-5">
+          <div class="grid gap-3 sm:grid-cols-2 lg:grid-cols-4 2xl:grid-cols-7">
             <article v-for="(item, index) in stats" :key="String(item[1])" :class="['tf-panel border p-4 shadow-none', dashboardSummaryStyles[index]]">
-              <div class="flex items-start justify-between gap-3"><div><p class="text-xs font-semibold text-task-muted">{{ item[1] }}</p><p class="mt-3 text-3xl font-extrabold text-task-ink">{{ item[0] }}</p></div><span class="grid h-11 w-11 place-items-center rounded-[13px] bg-white/80 shadow-sm"><svg viewBox="0 0 24 24" class="h-5 w-5" fill="none" stroke="currentColor" stroke-width="1.9"><path :d="index === 1 ? 'm6 12 4 4 8-9' : index === 2 ? 'M12 7v5l3 2' : index === 4 ? 'M12 8v5m0 4h.01M5 20h14L12 3 5 20Z' : 'M5 4h14v16H5V4Zm4 4h6m-6 4h6'" /></svg></span></div>
+              <div class="flex items-start justify-between gap-3"><div><p class="text-xs font-semibold text-task-muted">{{ item[1] }}</p><p class="mt-3 text-3xl font-extrabold text-task-ink">{{ item[0] }}</p></div><span class="grid h-11 w-11 place-items-center rounded-[13px] bg-white/80 shadow-sm"><svg viewBox="0 0 24 24" class="h-5 w-5" fill="none" stroke="currentColor" stroke-width="1.9"><path :d="index === 1 ? 'm6 12 4 4 8-9' : index === 2 ? 'M12 7v5l3 2' : index === 4 ? 'M5 5h14v14H5V5Zm4 4h6' : index === 5 ? 'M8 12h8M5 4h14v16H5V4Z' : index === 6 ? 'M12 8v5m0 4h.01M5 20h14L12 3 5 20Z' : 'M5 4h14v16H5V4Zm4 4h6m-6 4h6'" /></svg></span></div>
               <div class="mt-3 flex items-center gap-2 text-xs font-bold"><span>{{ Number(item[2] || 0).toFixed(1) }}%</span><div class="h-1.5 flex-1 overflow-hidden rounded-full bg-white/70"><div class="h-full rounded-full bg-current" :style="{ width: `${Math.min(100, Number(item[2] || 0))}%` }" /></div></div>
             </article>
           </div>

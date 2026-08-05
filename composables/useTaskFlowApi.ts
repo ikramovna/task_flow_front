@@ -177,7 +177,7 @@ type DashboardTask = {
   due_date?: string; days_remaining?: number; created_at?: string
 }
 type DashboardResponse = {
-  summary: Record<'total_tasks' | 'completed_tasks' | 'in_progress_tasks' | 'not_started_tasks' | 'overdue_tasks', DashboardMetric>
+  summary: Record<'total_tasks' | 'completed_tasks' | 'in_progress_tasks' | 'not_started_tasks' | 'backlog_tasks' | 'on_hold_tasks' | 'overdue_tasks', DashboardMetric>
   today_events: DashboardEvent[]
   upcoming_events: DashboardEvent[]
   upcoming_deadlines: DashboardTask[]
