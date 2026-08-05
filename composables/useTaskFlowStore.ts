@@ -99,19 +99,26 @@ export const useTaskFlowStore = () => {
 
       const projectSummary = backend.stats.projectSummary
       const dashboard = backend.dashboard
+      const dashboardMetric = (key: keyof NonNullable<typeof dashboard>['summary']) => {
+        const metric = dashboard?.summary?.[key]
+        return {
+          count: Number(metric?.count ?? 0),
+          percentage: Number(metric?.percentage ?? 0)
+        }
+      }
 
       apiError.value = ''
       state.value = {
         ...createEmptyState(),
         loaded: true,
         stats: dashboard ? [
-          [String(dashboard.summary.total_tasks.count), 'Total Tasks', dashboard.summary.total_tasks.percentage],
-          [String(dashboard.summary.completed_tasks.count), 'Completed Tasks', dashboard.summary.completed_tasks.percentage],
-          [String(dashboard.summary.in_progress_tasks.count), 'In Progress', dashboard.summary.in_progress_tasks.percentage],
-          [String(dashboard.summary.not_started_tasks.count), 'Not Started', dashboard.summary.not_started_tasks.percentage],
-          [String(dashboard.summary.backlog_tasks.count), 'Backlog', dashboard.summary.backlog_tasks.percentage],
-          [String(dashboard.summary.on_hold_tasks.count), 'On Hold', dashboard.summary.on_hold_tasks.percentage],
-          [String(dashboard.summary.overdue_tasks.count), 'Overdue Tasks', dashboard.summary.overdue_tasks.percentage]
+          [String(dashboardMetric('total_tasks').count), 'Total Tasks', dashboardMetric('total_tasks').percentage],
+          [String(dashboardMetric('completed_tasks').count), 'Completed Tasks', dashboardMetric('completed_tasks').percentage],
+          [String(dashboardMetric('in_progress_tasks').count), 'In Progress', dashboardMetric('in_progress_tasks').percentage],
+          [String(dashboardMetric('not_started_tasks').count), 'Not Started', dashboardMetric('not_started_tasks').percentage],
+          [String(dashboardMetric('backlog_tasks').count), 'Backlog', dashboardMetric('backlog_tasks').percentage],
+          [String(dashboardMetric('on_hold_tasks').count), 'On Hold', dashboardMetric('on_hold_tasks').percentage],
+          [String(dashboardMetric('overdue_tasks').count), 'Overdue Tasks', dashboardMetric('overdue_tasks').percentage]
         ] : [],
         projectStats: [
           [String(projectSummary.active), 'Active Projects', 'bg-[#EAF2FC]'],
