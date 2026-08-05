@@ -2,6 +2,28 @@ export default defineNuxtConfig({
   modules: ['@nuxtjs/tailwindcss'],
   css: ['~/assets/css/tailwind.css'],
   devtools: { enabled: true },
+  experimental: {
+    emitRouteChunkError: 'reload-immediate'
+  },
+  routeRules: {
+    '/': {
+      headers: {
+        'cache-control': 'no-cache, no-store, must-revalidate',
+        pragma: 'no-cache',
+        expires: '0'
+      }
+    },
+    '/login': {
+      headers: {
+        'cache-control': 'no-cache, no-store, must-revalidate'
+      }
+    },
+    '/logout': {
+      headers: {
+        'cache-control': 'no-cache, no-store, must-revalidate'
+      }
+    }
+  },
   typescript: {
     strict: true
   },
