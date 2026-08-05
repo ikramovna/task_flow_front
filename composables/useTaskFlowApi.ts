@@ -42,11 +42,6 @@ type MeProfile = {
   memberships?: Array<{ role?: string; department?: string; is_active?: boolean }>
 }
 
-type CreateUserPayload = {
-  first_name: string
-  last_name: string
-}
-
 type ApiTask = {
   id?: string
   department?: string
@@ -116,10 +111,16 @@ type ApiWorkspace = {
 
 type ApiMember = {
   id?: string
-  department?: string
-  user?: string | number
+  first_name?: string
+  last_name?: string
+  full_name?: string
+  email?: string
+  username?: string
+  phone?: string
+  avatar?: string
+  job_title?: string
+  department?: string | { id?: string; name?: string }
   role?: string
-  user_detail?: UserBrief
   is_active?: boolean
   joined_at?: string
   efficiency?: number
@@ -128,8 +129,11 @@ type ApiMember = {
 }
 
 type MemberPayload = {
-  department?: string
-  user: string | number
+  first_name: string
+  last_name: string
+  email: string
+  username: string
+  department: string
   role: string
   is_active: boolean
 }
@@ -557,12 +561,6 @@ export const useTaskFlowApi = () => {
       body: member
     })
 
-  const createUser = async (user: CreateUserPayload) =>
-    await apiFetch<MeProfile>('/users/', {
-      method: 'POST',
-      body: user
-    })
-
   const patchMember = async (id: string, member: Partial<MemberPayload>) =>
     await apiFetch<ApiMember>(`/members/${id}/`, {
       method: 'PATCH',
@@ -736,20 +734,19 @@ export const useTaskFlowApi = () => {
       apiFetch<ApiAnalytics>(`/analytics/${workspaceQuery(workspaceId)}`),
       apiFetch<PaginatedResponse<ApiTask>>('/tasks/?page_size=40'),
       apiFetch<PaginatedResponse<ApiProject>>(`/projects/${workspaceQuery(workspaceId, { page_size: 40 })}`),
-      listMembers({ workspace: workspaceId, page_size: 60 }),
+      listMembers({ page_size: 60 }),
       apiFetch<PaginatedResponse<ApiReport>>(`/reports/${workspaceQuery(workspaceId, { page_size: 40 })}`),
       apiFetch<PaginatedResponse<ApiEvent>>(`/events/${workspaceQuery(workspaceId, { page_size: 100 })}`)
     ])
     const memberItems = listItems<ApiMember>(members)
     const isCurrentMembership = (member: ApiMember) => {
-      const memberUserId = String(member.user ?? member.user_detail?.id ?? '')
-      const memberEmail = String(member.user_detail?.email ?? '').trim().toLowerCase()
+      const memberUserId = String(member.id ?? '')
+      const memberEmail = String(member.email ?? '').trim().toLowerCase()
       return memberUserId === String(profile.id ?? '') || Boolean(profile.email && memberEmail === profile.email.trim().toLowerCase())
     }
     let currentMembership = memberItems.find(isCurrentMembership)
     if (!currentMembership && profile.email) {
       const ownMemberships = listItems<ApiMember>(await listMembers({
-        workspace: workspaceId,
         search: profile.email,
         page_size: 10
       }))
@@ -831,23 +828,23 @@ export const useTaskFlowApi = () => {
   ]
 
   const mapMember = (member: ApiMember) => {
-    const user = member.user_detail || {}
-    const fullName = user.full_name || `${user.first_name || ''} ${user.last_name || ''}`.trim() || user.email || ''
-    const memberId = member.user ?? user.id ?? ''
+    const fullName = member.full_name || `${member.first_name || ''} ${member.last_name || ''}`.trim() || member.email || ''
+    const memberId = member.id ?? ''
+    const departmentId = typeof member.department === 'string' ? member.department : member.department?.id || ''
 
     return [
       fullName,
-      user.job_title || titleCase(member.role),
-      user.email || '-',
-      user.phone || '-',
+      member.job_title || titleCase(member.role),
+      member.email || '-',
+      member.phone || '-',
       member.efficiency ?? 0,
       member.completed_tasks ?? 0,
       member.in_progress_tasks ?? 0,
       memberId,
-      user.avatar || '',
-      member.id || '',
+      member.avatar || '',
+      memberId,
       '',
-      member.department || '',
+      departmentId,
       member.is_active === false ? 'Inactive' : 'Active',
       member.joined_at || ''
     ]
@@ -913,7 +910,6 @@ export const useTaskFlowApi = () => {
     listMembers,
     getMember,
     createMember,
-    createUser,
     patchMember,
     deleteMember,
     getMembersSummary,

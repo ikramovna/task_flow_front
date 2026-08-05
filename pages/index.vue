@@ -253,6 +253,7 @@ const highlightedSearchText = (name: string, search: string) => {
 }
 const memberFirstName = ref('')
 const memberLastName = ref('')
+const memberEmail = ref('')
 const memberRole = ref('member')
 const memberRoleOptions = ['member', 'manager', 'admin']
 const editingProjectId = ref('')
@@ -1011,7 +1012,7 @@ const projectMemberIdFromLabel = (label: string) => {
   const member = team.value.find((item) => teamMemberName(item) === label)
   return member ? teamMemberId(member) : ''
 }
-const membershipIdOf = (member: Array<string | number>) => String(member[9] || '')
+const membershipIdOf = (member: Array<string | number>) => String(member[7] || member[9] || '')
 const payloadMemberId = (id: string) => (/^\d+$/.test(id) ? Number(id) : id)
 const projectEnum = (value: string) => value.toLowerCase().replace(/\s+/g, '_')
 const projectDisplayStatus = (value: string) => value.split('_').map((part) => part.charAt(0).toUpperCase() + part.slice(1)).join(' ')
@@ -1268,6 +1269,7 @@ const openModal = (value: Exclude<ModalKey, null>) => {
   if (value === 'member') {
     memberFirstName.value = ''
     memberLastName.value = ''
+    memberEmail.value = ''
     memberRole.value = 'member'
   }
   if (value === 'event') {
@@ -1623,23 +1625,23 @@ const submitModal = async () => {
       notifyError('Department is required')
       return
     }
-    if (!memberFirstName.value.trim() || !memberLastName.value.trim()) {
-      notifyError('First name and last name are required')
+    const email = memberEmail.value.trim().toLowerCase()
+    if (!memberFirstName.value.trim() || !memberLastName.value.trim() || !email) {
+      notifyError('First name, last name, and email are required')
+      return
+    }
+    if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
+      notifyError('Enter a valid email address')
       return
     }
 
     try {
-      const createdUser = await taskFlowApi.createUser({
-        first_name: memberFirstName.value.trim(),
-        last_name: memberLastName.value.trim()
-      })
-      if (createdUser.id === undefined || createdUser.id === null || String(createdUser.id) === '') {
-        notifyError('Created user id was not returned by backend')
-        return
-      }
       await taskFlowApi.createMember({
+        first_name: memberFirstName.value.trim(),
+        last_name: memberLastName.value.trim(),
+        email,
+        username: email,
         department: effectiveDepartmentId.value,
-        user: createdUser.id,
         role: memberRole.value,
         is_active: true
       })
@@ -2931,6 +2933,7 @@ const iconPath = (name: string) => {
           <template v-else-if="modal === 'member'">
             <div class="rounded-ui bg-task-blueSoft p-4 text-sm text-task-muted">The member will be added to your current department automatically.</div>
             <div class="mt-4 grid gap-4 sm:grid-cols-2"><label class="block text-sm font-semibold">First Name<input v-model="memberFirstName" class="tf-input mt-2 h-12 w-full" placeholder="Enter first name" autocomplete="given-name" /></label><label class="block text-sm font-semibold">Last Name<input v-model="memberLastName" class="tf-input mt-2 h-12 w-full" placeholder="Enter last name" autocomplete="family-name" /></label></div>
+            <label class="mt-4 block text-sm font-semibold">Email Address <span class="text-task-danger">*</span><input v-model="memberEmail" type="email" class="tf-input mt-2 h-12 w-full" placeholder="ali@example.com" autocomplete="email" required /></label>
             <label class="mt-4 block text-sm font-semibold">Role<div class="tf-dropdown mt-2"><button type="button" class="tf-dropdown-button h-12" @click="openDropdown = openDropdown === 'memberRole' ? null : 'memberRole'"><span class="capitalize">{{ memberRole }}</span><svg viewBox="0 0 20 20" class="h-4 w-4 text-task-muted" fill="none" stroke="currentColor" stroke-width="2"><path d="m5 7.5 5 5 5-5" /></svg></button><div v-if="openDropdown === 'memberRole'" class="tf-dropdown-menu"><button v-for="role in memberRoleOptions" :key="role" type="button" class="tf-dropdown-option capitalize" @click="memberRole = role; openDropdown = null"><span>{{ role }}</span><span v-if="memberRole === role">✓</span></button></div></div></label>
           </template>
           <template v-else-if="modal === 'task'">
