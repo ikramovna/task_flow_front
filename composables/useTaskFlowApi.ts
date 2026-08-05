@@ -113,7 +113,6 @@ type ApiWorkspace = {
 
 type ApiMember = {
   id?: string
-  workspace?: string
   department?: string
   user?: string | number
   role?: string
@@ -126,7 +125,6 @@ type ApiMember = {
 }
 
 type MemberPayload = {
-  workspace: string
   department?: string
   user: string | number
   role: string
@@ -573,8 +571,8 @@ export const useTaskFlowApi = () => {
       method: 'DELETE'
     })
 
-  const getMembersSummary = async (workspace: string) =>
-    await apiFetch<MemberSummary>(`/members/summary/${workspaceQuery(workspace)}`)
+  const getMembersSummary = async () =>
+    await apiFetch<MemberSummary>('/members/summary/')
 
   const getProject = async (id: string) => await apiFetch<ApiProject>(`/projects/${id}/`)
 
@@ -841,7 +839,7 @@ export const useTaskFlowApi = () => {
       memberId,
       user.avatar || '',
       member.id || '',
-      member.workspace || '',
+      '',
       member.department || '',
       member.is_active === false ? 'Inactive' : 'Active',
       member.joined_at || ''

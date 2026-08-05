@@ -1099,19 +1099,11 @@ const loadMembersFromBackend = async () => {
   searchLoading.team = true
 
   try {
-    const resolvedWorkspace = await resolveWorkspaceId()
-    if (!resolvedWorkspace) {
-      state.value.team = []
-      notifyError('Workspace is required from backend')
-      return
-    }
-
     const role = dropdownValues.role !== 'All Roles' ? dropdownValues.role : undefined
     const isActive = dropdownValues.status === 'Active' ? true : dropdownValues.status === 'Inactive' ? false : undefined
     const department = /^[0-9a-f-]{32,36}$/i.test(dropdownValues.department) ? dropdownValues.department : undefined
     const [response, summary] = await Promise.all([
       taskFlowApi.listMembers({
-        workspace: resolvedWorkspace,
         department,
         is_active: isActive,
         role,
@@ -1119,7 +1111,7 @@ const loadMembersFromBackend = async () => {
         ordering: 'joined_at',
         page_size: 60
       }),
-      taskFlowApi.getMembersSummary(resolvedWorkspace)
+      taskFlowApi.getMembersSummary()
     ])
 
     memberSummary.value = summary
@@ -1600,8 +1592,8 @@ const submitModal = async () => {
       notifyError('You do not have permission to add members')
       return
     }
-    if (!workspaceId.value || !effectiveDepartmentId.value) {
-      notifyError('Workspace and department are required')
+    if (!effectiveDepartmentId.value) {
+      notifyError('Department is required')
       return
     }
     if (!memberFirstName.value.trim() || !memberLastName.value.trim()) {
@@ -1619,7 +1611,6 @@ const submitModal = async () => {
         return
       }
       await taskFlowApi.createMember({
-        workspace: workspaceId.value,
         department: effectiveDepartmentId.value,
         user: createdUser.id,
         role: memberRole.value,
