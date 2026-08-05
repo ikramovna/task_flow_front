@@ -228,10 +228,12 @@ const taskFormStatus = ref('Not Started')
 const taskAssigneeIds = ref<string[]>([])
 const taskAssigneeLabels = ref<string[]>([])
 const taskAssigneeSearch = ref('')
+const taskAssigneeOptions = ref<Array<Array<string | number>>>([])
+const taskAssigneesLoading = ref(false)
 const filteredTaskAssignees = computed(() => {
   const query = taskAssigneeSearch.value.trim().toLowerCase()
-  return team.value.filter((member) => {
-    if (!teamMemberId(member) || taskAssigneeIds.value.includes(teamMemberId(member))) return false
+  return taskAssigneeOptions.value.filter((member) => {
+    if (!teamMemberId(member)) return false
     return !query || `${teamMemberName(member)} ${teamMemberEmail(member)}`.toLowerCase().includes(query)
   })
 })
@@ -1265,6 +1267,8 @@ const openModal = (value: Exclude<ModalKey, null>) => {
     taskAssigneeIds.value = []
     taskAssigneeLabels.value = []
     taskAssigneeSearch.value = ''
+    taskAssigneeOptions.value = [...departmentTeam.value]
+    void loadTaskAssignees()
   }
   if (value === 'member') {
     memberFirstName.value = ''
@@ -1307,14 +1311,36 @@ const assignTaskTo = (member: string) => {
   taskAssigneeSearch.value = member
 }
 
+const loadTaskAssignees = async () => {
+  taskAssigneesLoading.value = true
+  try {
+    const response = await taskFlowApi.listMembers({
+      department: effectiveDepartmentId.value || undefined,
+      is_active: true,
+      page_size: 100
+    })
+    taskAssigneeOptions.value = taskFlowApi.listItems(response).map(taskFlowApi.mapMember)
+  } catch (error) {
+    console.error('Task assignees load failed.', error)
+    taskAssigneeOptions.value = [...departmentTeam.value]
+    notifyError(taskFlowApiErrorMessage(error, 'Could not load team members'))
+  } finally {
+    taskAssigneesLoading.value = false
+  }
+}
+
 const selectTaskAssignee = (member: Array<string | number>) => {
   const id = teamMemberId(member)
   const name = teamMemberName(member)
-  if (!id || taskAssigneeIds.value.includes(id)) return
+  if (!id) return
+  const selectedIndex = taskAssigneeIds.value.indexOf(id)
+  if (selectedIndex >= 0) {
+    removeTaskAssignee(selectedIndex)
+    return
+  }
   taskAssigneeIds.value.push(id)
   taskAssigneeLabels.value.push(name)
   form.assignee = taskAssigneeLabels.value.join(', ')
-  taskAssigneeSearch.value = ''
 }
 
 const removeTaskAssignee = (index: number) => {
@@ -2960,9 +2986,10 @@ const iconPath = (name: string) => {
                   <svg viewBox="0 0 20 20" :class="['h-4 w-4 transition-transform', openDropdown === 'taskAssignee' ? 'rotate-180' : '']" fill="none" stroke="currentColor" stroke-width="2"><path d="m5 7.5 5 5 5-5" /></svg>
                 </button>
                 <div v-if="openDropdown === 'taskAssignee'" class="tf-dropdown-menu max-h-60 overflow-y-auto">
-                  <button v-for="member in filteredTaskAssignees" :key="String(member[7] || member[0])" type="button" class="tf-dropdown-option gap-3" @click="selectTaskAssignee(member)">
+                  <p v-if="taskAssigneesLoading" class="flex items-center gap-2 px-3 py-3 text-sm text-task-muted"><span class="tf-search-spinner static translate-y-0" />Loading team members...</p>
+                  <button v-for="member in filteredTaskAssignees" :key="String(member[7] || member[0])" type="button" :class="['tf-dropdown-option gap-3', taskAssigneeIds.includes(teamMemberId(member)) ? 'bg-task-blueSoft' : '']" @click="selectTaskAssignee(member)">
                     <span class="flex min-w-0 items-center gap-2.5">
-                      <span class="grid h-8 w-8 shrink-0 place-items-center rounded-full bg-task-blueSoft text-[10px] font-bold text-task-blue">{{ initials(String(member[0])) }}</span>
+                      <span :class="['grid h-8 w-8 shrink-0 place-items-center rounded-full text-[10px] font-bold', taskAssigneeIds.includes(teamMemberId(member)) ? 'bg-task-blue text-white' : 'bg-task-blueSoft text-task-blue']">{{ initials(String(member[0])) }}</span>
                       <span class="min-w-0">
                         <span class="block truncate">
                           {{ highlightedMemberName(String(member[0])).before }}<mark v-if="highlightedMemberName(String(member[0])).match" class="rounded bg-yellow-300 px-0.5 text-inherit">{{ highlightedMemberName(String(member[0])).match }}</mark>{{ highlightedMemberName(String(member[0])).after }}
@@ -2970,9 +2997,9 @@ const iconPath = (name: string) => {
                         <span class="block truncate text-[11px] font-normal text-task-muted">{{ member[2] }}</span>
                       </span>
                     </span>
-                    <span class="grid h-6 w-6 shrink-0 place-items-center rounded-full bg-task-blueSoft text-lg text-task-blue">+</span>
+                    <span :class="['grid h-6 w-6 shrink-0 place-items-center rounded-[7px] border text-sm font-bold', taskAssigneeIds.includes(teamMemberId(member)) ? 'border-task-blue bg-task-blue text-white' : 'border-task-line bg-white text-transparent']">✓</span>
                   </button>
-                  <p v-if="!filteredTaskAssignees.length" class="px-3 py-3 text-sm text-task-muted">No team member found</p>
+                  <p v-if="!taskAssigneesLoading && !filteredTaskAssignees.length" class="px-3 py-3 text-sm text-task-muted">No team member found</p>
                 </div>
               </div>
               <div v-if="taskAssigneeLabels.length" class="mt-3 flex flex-wrap gap-2">
