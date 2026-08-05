@@ -37,6 +37,9 @@ type MeProfile = {
   department?: string | null
   role?: string
   is_active?: boolean
+  membership?: { role?: string; department?: string; is_active?: boolean }
+  department_membership?: { role?: string; department?: string; is_active?: boolean }
+  memberships?: Array<{ role?: string; department?: string; is_active?: boolean }>
 }
 
 type CreateUserPayload = {
@@ -687,6 +690,10 @@ export const useTaskFlowApi = () => {
 
     // The dashboard is department/user scoped and must not depend on legacy workspace discovery.
     const [dashboard, profile] = await Promise.all([getDashboard(), getMe()])
+    const profileMembership = profile.department_membership || profile.membership || profile.memberships?.[0]
+    const profileRole = String(profile.role || profileMembership?.role || '').trim().toLowerCase()
+    const profileDepartment = String(profile.department || profileMembership?.department || '')
+    const profileIsActive = profile.is_active !== false && profileMembership?.is_active !== false
 
     const workspaceResponse = await listWorkspaces()
     const workspaces = workspaceItems(workspaceResponse)
@@ -699,9 +706,9 @@ export const useTaskFlowApi = () => {
         workspaceId: '',
         workspaceName: '',
         currentUserId: String(profile.id ?? ''),
-        currentDepartmentId: String(profile.department ?? ''),
-        currentRole: String(profile.role ?? ''),
-        currentUserActive: profile.is_active !== false,
+        currentDepartmentId: profileDepartment,
+        currentRole: profileRole,
+        currentUserActive: profileIsActive,
         dashboard,
         analytics: {},
         tasks: [],
@@ -767,9 +774,9 @@ export const useTaskFlowApi = () => {
       workspaceId,
       workspaceName: workspaceNameOf(workspace),
       currentUserId: String(profile.id ?? ''),
-      currentDepartmentId: String(currentMembership?.department ?? ''),
-      currentRole: String(currentMembership?.role ?? ''),
-      currentUserActive: currentMembership?.is_active !== false && profile.is_active !== false,
+      currentDepartmentId: String(currentMembership?.department || profileDepartment),
+      currentRole: String(currentMembership?.role || profileRole).trim().toLowerCase(),
+      currentUserActive: currentMembership?.is_active !== false && profileIsActive,
       dashboard,
       analytics,
       tasks: tasks.results,

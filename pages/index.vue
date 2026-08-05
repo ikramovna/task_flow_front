@@ -53,8 +53,10 @@ const runtimeConfig = useRuntimeConfig()
 await taskFlowStore.loadBackendData()
 
 const { state, pages, stats, projectStats, analyticsStats, monthlyProgress, tasksByCategory, tasks, projects, team, workload, reports, events, messages, heatmap, workspaceId, currentDepartmentId, currentRole, currentUserActive, apiError, dashboardTodayEvents, dashboardUpcomingEvents, dashboardDeadlines, dashboardDepartments, dashboardRecentTasks, dashboardGeneratedAt } = taskFlowStore
-const canManageDepartment = computed(() => ['owner', 'admin', 'manager'].includes(currentRole.value.toLowerCase()))
-const canAddTask = computed(() => currentUserActive.value && ['owner', 'admin', 'manager'].includes(currentRole.value.toLowerCase()))
+const normalizedRole = computed(() => currentRole.value.trim().toLowerCase())
+const canManageDepartment = computed(() => ['owner', 'admin', 'manager'].includes(normalizedRole.value))
+const canAddTask = computed(() => currentUserActive.value && ['owner', 'admin', 'manager'].includes(normalizedRole.value))
+const canCreateEvent = computed(() => canAddTask.value)
 const effectiveDepartmentId = computed(() => {
   if (currentDepartmentId.value) return currentDepartmentId.value
   const ownMembership = team.value.find((member) => String(member[2] || '').trim().toLowerCase() === savedProfile.email.trim().toLowerCase())
@@ -1235,6 +1237,10 @@ const openModal = (value: Exclude<ModalKey, null>) => {
     notifyError('Only active owners, admins, and managers can add tasks')
     return
   }
+  if (value === 'event' && !canCreateEvent.value) {
+    notifyError('Only active owners, admins, and managers can add events')
+    return
+  }
   form.title = ''
   form.assignee = ''
   form.priority = value === 'project' ? 'Low' : 'Medium'
@@ -1776,6 +1782,10 @@ const submitModal = async () => {
   }
 
   if (modal.value === 'event') {
+    if (!canCreateEvent.value) {
+      notifyError('Only active owners, admins, and managers can add events')
+      return
+    }
     if (!title) {
       notifyError('Event title is required')
       return
@@ -2724,7 +2734,7 @@ const iconPath = (name: string) => {
         <section v-else-if="activePage === 'calendar'" class="grid items-start gap-4 xl:grid-cols-[minmax(0,1fr)_340px]">
           <div class="space-y-4">
             <div class="tf-panel overflow-hidden p-4 sm:p-5">
-              <div class="mb-6 flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between"><div class="flex items-center gap-3"><button class="tf-icon-button h-11 w-11" type="button" aria-label="Previous month" @click="moveCalendar(-1)"><svg viewBox="0 0 24 24" class="h-5 w-5" fill="none" stroke="currentColor" stroke-width="2"><path d="m15 18-6-6 6-6" /></svg></button><h2 class="min-w-[150px] text-center text-xl font-bold">{{ calendarMonth }}</h2><button class="tf-icon-button h-11 w-11" type="button" aria-label="Next month" @click="moveCalendar(1)"><svg viewBox="0 0 24 24" class="h-5 w-5" fill="none" stroke="currentColor" stroke-width="2"><path d="m9 18 6-6-6-6" /></svg></button></div><button class="tf-primary h-11 rounded-[12px] px-5" @click="openModal('event')"><svg viewBox="0 0 24 24" class="h-4 w-4" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 5v14M5 12h14" /></svg>Add Event</button></div>
+              <div class="mb-6 flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between"><div class="flex items-center gap-3"><button class="tf-icon-button h-11 w-11" type="button" aria-label="Previous month" @click="moveCalendar(-1)"><svg viewBox="0 0 24 24" class="h-5 w-5" fill="none" stroke="currentColor" stroke-width="2"><path d="m15 18-6-6 6-6" /></svg></button><h2 class="min-w-[150px] text-center text-xl font-bold">{{ calendarMonth }}</h2><button class="tf-icon-button h-11 w-11" type="button" aria-label="Next month" @click="moveCalendar(1)"><svg viewBox="0 0 24 24" class="h-5 w-5" fill="none" stroke="currentColor" stroke-width="2"><path d="m9 18 6-6-6-6" /></svg></button></div><button v-if="canCreateEvent" class="tf-primary h-11 rounded-[12px] px-5" @click="openModal('event')"><svg viewBox="0 0 24 24" class="h-4 w-4" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 5v14M5 12h14" /></svg>Add Event</button></div>
               <div class="tf-calendar-scroll">
                 <div class="grid min-w-[734px] grid-cols-7 gap-2 text-center text-sm font-semibold text-task-muted"><span class="py-3">Mon</span><span class="py-3">Tue</span><span class="py-3">Wed</span><span class="py-3">Thu</span><span class="py-3">Fri</span><span class="py-3">Sat</span><span class="py-3 text-task-danger">Sun</span></div>
                 <div class="grid min-w-[734px] grid-cols-[repeat(7,minmax(97px,1fr))] gap-2">
