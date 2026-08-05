@@ -6,14 +6,23 @@ const showPassword = ref(false)
 const isSubmitting = ref(false)
 const errorMessage = ref('')
 const api = useTaskFlowApi()
+const isDarkTheme = ref(false)
+let themeMediaQuery: MediaQueryList | null = null
 
 useHead({
   title: 'Login - TaskFlow Dashboard'
 })
 
 onMounted(() => {
-  document.documentElement.classList.remove('tf-dark')
-  document.documentElement.style.colorScheme = 'light'
+  const savedTheme = localStorage.getItem('taskflow-theme')
+  themeMediaQuery = window.matchMedia('(prefers-color-scheme: dark)')
+  isDarkTheme.value = savedTheme === 'Dark' || (savedTheme === 'System' && themeMediaQuery.matches)
+  document.documentElement.classList.toggle('tf-dark', isDarkTheme.value)
+  document.documentElement.style.colorScheme = isDarkTheme.value ? 'dark' : 'light'
+})
+
+onBeforeUnmount(() => {
+  themeMediaQuery = null
 })
 
 const iconPath = (name: string) => {
@@ -55,7 +64,7 @@ const submitLogin = async () => {
 </script>
 
 <template>
-  <main class="grid min-h-screen place-items-center bg-task-page px-4 py-8 text-task-ink sm:px-6">
+  <main :class="['grid min-h-screen place-items-center bg-task-page px-4 py-8 text-task-ink sm:px-6', isDarkTheme ? 'tf-dark' : '']">
     <section class="w-full max-w-[520px]">
       <form class="rounded-ui border border-task-line bg-white p-6 shadow-card sm:p-8" @submit.prevent="submitLogin">
         <div class="mb-8 text-center">

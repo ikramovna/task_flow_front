@@ -3,7 +3,14 @@ useHead({
   title: 'Logout - TaskFlow Dashboard'
 })
 
+const isDarkTheme = ref(false)
+
 onMounted(() => {
+  const savedTheme = localStorage.getItem('taskflow-theme')
+  const systemDark = window.matchMedia('(prefers-color-scheme: dark)').matches
+  isDarkTheme.value = savedTheme === 'Dark' || (savedTheme === 'System' && systemDark)
+  document.documentElement.classList.toggle('tf-dark', isDarkTheme.value)
+  document.documentElement.style.colorScheme = isDarkTheme.value ? 'dark' : 'light'
   useTaskFlowApi().logout()
   setTimeout(() => {
     navigateTo('/login')
@@ -12,7 +19,7 @@ onMounted(() => {
 </script>
 
 <template>
-  <main class="grid min-h-screen place-items-center bg-task-page px-4 text-task-ink">
+  <main :class="['grid min-h-screen place-items-center bg-task-page px-4 text-task-ink', isDarkTheme ? 'tf-dark' : '']">
     <section class="w-full max-w-sm rounded-ui border border-task-line bg-white p-8 text-center shadow-card">
       <div class="mx-auto mb-5 grid h-12 w-12 place-items-center rounded-full bg-task-blue text-white">
         <svg viewBox="0 0 24 24" class="h-6 w-6" fill="none" stroke="currentColor" stroke-width="2.4"><path d="M10 17l5-5-5-5m5 5H3m6-9h10v18H9" /></svg>
