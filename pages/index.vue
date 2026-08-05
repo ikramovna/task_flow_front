@@ -2722,16 +2722,16 @@ const iconPath = (name: string) => {
             <div class="tf-panel overflow-hidden p-4 sm:p-5">
               <div class="mb-6 flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between"><div class="flex items-center gap-3"><button class="tf-icon-button h-11 w-11" type="button" aria-label="Previous month" @click="moveCalendar(-1)"><svg viewBox="0 0 24 24" class="h-5 w-5" fill="none" stroke="currentColor" stroke-width="2"><path d="m15 18-6-6 6-6" /></svg></button><h2 class="min-w-[150px] text-center text-xl font-bold">{{ calendarMonth }}</h2><button class="tf-icon-button h-11 w-11" type="button" aria-label="Next month" @click="moveCalendar(1)"><svg viewBox="0 0 24 24" class="h-5 w-5" fill="none" stroke="currentColor" stroke-width="2"><path d="m9 18 6-6-6-6" /></svg></button></div><button class="tf-primary h-11 rounded-[12px] px-5" @click="openModal('event')"><svg viewBox="0 0 24 24" class="h-4 w-4" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 5v14M5 12h14" /></svg>Add Event</button></div>
               <div class="tf-calendar-scroll">
-                <div class="grid min-w-[734px] grid-cols-7 text-center text-sm font-semibold text-task-muted"><span class="py-3">Mon</span><span class="py-3">Tue</span><span class="py-3">Wed</span><span class="py-3">Thu</span><span class="py-3">Fri</span><span class="py-3">Sat</span><span class="py-3 text-task-danger">Sun</span></div>
-                <div class="grid min-w-[734px] grid-cols-[repeat(7,minmax(97px,1fr))] overflow-hidden rounded-[14px] border border-task-line bg-task-line gap-px">
+                <div class="grid min-w-[734px] grid-cols-7 gap-2 text-center text-sm font-semibold text-task-muted"><span class="py-3">Mon</span><span class="py-3">Tue</span><span class="py-3">Wed</span><span class="py-3">Thu</span><span class="py-3">Fri</span><span class="py-3">Sat</span><span class="py-3 text-task-danger">Sun</span></div>
+                <div class="grid min-w-[734px] grid-cols-[repeat(7,minmax(97px,1fr))] gap-2">
                   <template v-for="cell in calendarCells" :key="cell.key">
                     <button
                       v-if="cell.day"
                       type="button"
                       :class="[
-                        'rounded-lg flex h-[126px] min-w-[97px] flex-col bg-white p-[10px] text-left transition hover:bg-task-blueSoft',
-                        isTodayCell(cell.day) ? 'relative z-10 bg-task-blueSoft ring-1 ring-inset ring-task-blue' : '',
-                        selectedCalendarDay === cell.day ? 'relative z-10 bg-task-blueSoft ring-1 ring-inset ring-task-blue' : ''
+                        'flex h-[126px] min-w-[97px] flex-col rounded-[12px] border border-task-line bg-white p-[10px] text-left shadow-[0_5px_18px_-16px_rgba(15,23,42,.5)] transition hover:-translate-y-0.5 hover:border-task-blue/40 hover:bg-task-blueSoft hover:shadow-card',
+                        isTodayCell(cell.day) ? 'relative z-10 border-task-blue bg-task-blueSoft ring-1 ring-task-blue/20' : '',
+                        selectedCalendarDay === cell.day ? 'relative z-10 border-task-blue bg-task-blueSoft ring-1 ring-task-blue/20' : ''
                       ]"
                       @click="selectCalendarDay(cell.day)"
                     >
@@ -2744,7 +2744,7 @@ const iconPath = (name: string) => {
                         <span v-if="eventsForDay(cell.day).length > 2" class="block px-2 text-[10px] font-bold text-task-muted">+{{ eventsForDay(cell.day).length - 2 }} more</span>
                       </div>
                     </button>
-                    <div v-else class="h-[126px] min-w-[97px] bg-slate-50/70" />
+                    <div v-else class="h-[126px] min-w-[97px]" />
                   </template>
                 </div>
               </div>
