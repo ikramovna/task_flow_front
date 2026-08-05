@@ -12,7 +12,7 @@
 
 body {
   margin: 0;
-  background: #ffffff;
+  background: #f4f7fb;
   font-family: 'Inter Tight', Inter, ui-sans-serif, system-ui, sans-serif;
   color: #111827;
   -webkit-font-smoothing: antialiased;
@@ -21,28 +21,39 @@ body {
 
 @layer components {
   .tf-shell {
-    @apply h-screen overflow-hidden bg-white p-0 text-task-ink;
+    @apply h-screen overflow-hidden p-0 text-task-ink;
+    background: #f4f7fb;
   }
 
   .tf-window {
-    @apply flex h-screen w-full overflow-hidden rounded-none bg-white;
+    @apply flex h-screen w-full overflow-hidden rounded-none;
+    background: #f4f7fb;
   }
 
   .tf-sidebar {
-    @apply h-screen overflow-hidden;
+    @apply h-screen;
+    overflow: visible;
+    z-index: 40;
   }
 
   .tf-content {
     @apply h-screen overflow-y-auto;
     -webkit-overflow-scrolling: touch;
+    background:
+      radial-gradient(circle at 92% 3%, rgb(96 165 250 / 0.10), transparent 24rem),
+      radial-gradient(circle at 18% 100%, rgb(37 103 173 / 0.055), transparent 28rem),
+      #f4f7fb;
   }
 
   .tf-panel {
-    @apply rounded-ui border border-task-line bg-white shadow-card;
+    @apply rounded-[18px] border bg-white;
+    border-color: rgb(226 232 240 / 0.9);
+    box-shadow: 0 10px 35px -26px rgb(15 23 42 / 0.42), 0 1px 2px rgb(15 23 42 / 0.03);
+    transition: border-color 180ms ease, box-shadow 180ms ease, transform 180ms ease;
   }
 
   .tf-icon-button {
-    @apply inline-flex h-9 w-9 items-center justify-center rounded-ui border border-task-line bg-white text-task-muted transition hover:border-task-blue hover:text-task-blue;
+    @apply inline-flex h-9 w-9 items-center justify-center rounded-[12px] border border-task-line bg-white text-task-muted transition hover:-translate-y-0.5 hover:border-task-blue hover:bg-task-blueSoft hover:text-task-blue;
   }
 
   .tf-primary {
@@ -62,7 +73,7 @@ body {
   }
 
   .tf-input {
-    @apply h-10 rounded-ui border border-task-line bg-white px-3 text-sm outline-none transition placeholder:text-slate-400 focus:border-task-blue focus:ring-4 focus:ring-task-blueSoft;
+    @apply h-10 rounded-[13px] border border-task-line bg-white px-3 text-sm outline-none transition placeholder:text-slate-400 hover:border-slate-300 focus:border-task-blue focus:ring-4 focus:ring-task-blueSoft;
   }
 
   .tf-dropdown {
@@ -70,7 +81,7 @@ body {
   }
 
   .tf-dropdown-button {
-    @apply flex h-10 w-full items-center justify-between rounded-ui border border-task-line bg-white px-3 text-left text-sm font-medium text-task-ink outline-none transition hover:border-task-blue focus:border-task-blue focus:ring-4 focus:ring-task-blueSoft;
+    @apply flex h-10 w-full items-center justify-between rounded-[13px] border border-task-line bg-white px-3 text-left text-sm font-medium text-task-ink outline-none transition hover:border-task-blue hover:bg-slate-50 focus:border-task-blue focus:ring-4 focus:ring-task-blueSoft;
   }
 
   .tf-dropdown-menu {
@@ -198,6 +209,70 @@ body {
     @apply overflow-x-auto pb-1;
     -webkit-overflow-scrolling: touch;
   }
+
+  .tf-kanban-board {
+    @apply flex gap-3 overflow-x-auto bg-white p-0 pb-3;
+    min-height: 560px;
+    scrollbar-width: thin;
+    scrollbar-color: #cbd5e1 transparent;
+  }
+
+  .tf-kanban-column {
+    @apply min-h-[520px] w-[340px] min-w-[300px] flex-1 rounded-[12px] border border-slate-100 bg-[#F7F8FB] p-3;
+    box-shadow: inset 0 1px 0 rgb(255 255 255 / 0.9);
+  }
+
+  .tf-kanban-column-header {
+    @apply mb-3 flex min-h-[42px] items-center justify-between gap-3 px-1;
+  }
+
+  .tf-kanban-status-dot {
+    @apply h-2.5 w-2.5 shrink-0 rounded-full;
+    background: var(--column-accent);
+    box-shadow: 0 0 0 4px color-mix(in srgb, var(--column-accent) 12%, transparent);
+  }
+
+  .tf-kanban-count {
+    @apply inline-flex min-w-5 items-center justify-center rounded-full bg-white/80 px-1.5 py-0.5 text-[10px] font-bold text-slate-500 shadow-sm;
+  }
+
+  .tf-kanban-add {
+    @apply grid h-7 w-7 shrink-0 place-items-center rounded-[8px] text-slate-400 transition hover:bg-white hover:text-task-blue;
+  }
+
+  .tf-kanban-card {
+    @apply relative cursor-grab overflow-hidden rounded-[11px] border border-slate-100 bg-white p-4 shadow-[0_7px_18px_-14px_rgba(15,23,42,0.48)] transition duration-200 hover:-translate-y-0.5 hover:border-slate-200 hover:shadow-[0_12px_25px_-16px_rgba(15,23,42,0.42)] active:cursor-grabbing;
+  }
+
+  .tf-kanban-card::before {
+    content: '';
+    @apply absolute inset-y-0 left-0 w-[2px] rounded-r-full opacity-0 transition-opacity;
+    background: var(--column-accent);
+  }
+
+  .tf-kanban-card:hover::before {
+    @apply opacity-100;
+  }
+
+  .tf-kanban-column:last-child .tf-kanban-card::before {
+    @apply opacity-100;
+  }
+
+  .tf-kanban-priority {
+    @apply inline-flex items-center gap-1.5 rounded-full px-2 py-1 text-[10px] font-bold;
+  }
+
+  .tf-kanban-avatar {
+    @apply grid h-7 w-7 shrink-0 place-items-center rounded-full border-2 border-white bg-gradient-to-br from-[#DDEBFA] to-[#C9DBF1] text-[9px] font-extrabold text-task-blue shadow-sm;
+  }
+
+  .tf-kanban-status-select {
+    @apply absolute bottom-0 left-0 h-1 w-full cursor-pointer opacity-0;
+  }
+
+  .tf-kanban-empty {
+    @apply mt-3 flex h-12 items-center justify-center gap-2 rounded-[10px] border border-dashed border-slate-300 bg-white/40 px-4 text-center text-xs font-semibold text-slate-400 transition hover:border-task-blue hover:bg-task-blueSoft hover:text-task-blue;
+  }
 }
 
 @keyframes tf-spin {
@@ -210,6 +285,199 @@ body {
   to {
     transform: translateY(-50%) rotate(360deg);
   }
+}
+
+/* Shared visual language for every workspace page */
+.tf-app-header {
+  background: rgb(255 255 255 / 0.82);
+  border-color: rgb(226 232 240 / 0.82);
+  box-shadow: 0 10px 32px -26px rgb(15 23 42 / 0.5);
+  backdrop-filter: blur(16px);
+}
+
+.tf-app-header::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  border-radius: inherit;
+  box-shadow: inset 0 1px 0 rgb(255 255 255 / 0.8);
+  pointer-events: none;
+}
+
+.tf-app-title h1 {
+  letter-spacing: -0.025em;
+}
+
+.tf-sidebar {
+  background:
+    linear-gradient(180deg, rgb(255 255 255 / 0.98), rgb(248 250 252 / 0.98));
+  box-shadow: 12px 0 40px -35px rgb(15 23 42 / 0.5);
+}
+
+.tf-sidebar nav {
+  background: rgb(255 255 255 / 0.72);
+  backdrop-filter: blur(12px);
+}
+
+.tf-nav-item.is-active::before {
+  content: '';
+  position: absolute;
+  left: -0.75rem;
+  top: 7px;
+  bottom: 7px;
+  width: 3px;
+  border-radius: 0 999px 999px 0;
+  background: #2567ad;
+  box-shadow: 0 0 12px rgb(37 103 173 / 0.45);
+}
+
+.tf-content > section:not(.tf-window) {
+  animation: tf-page-enter 320ms ease-out both;
+}
+
+.tf-content > section > .tf-panel:hover,
+.tf-content > section > div > .tf-panel:hover,
+.tf-content > section > aside > .tf-panel:hover {
+  border-color: rgb(191 219 254 / 0.95);
+  box-shadow: 0 18px 42px -30px rgb(37 103 173 / 0.38), 0 2px 5px rgb(15 23 42 / 0.03);
+}
+
+.tf-panel h2,
+.tf-panel h3 {
+  letter-spacing: -0.018em;
+}
+
+.tf-content > section .tf-panel > .grid:first-child > div,
+.tf-content > section > .tf-panel.grid > div {
+  transition: transform 180ms ease, box-shadow 180ms ease;
+}
+
+.tf-content > section .tf-panel > .grid:first-child > div:hover,
+.tf-content > section > .tf-panel.grid > div:hover {
+  transform: translateY(-2px);
+}
+
+.tf-panel table thead {
+  background: linear-gradient(180deg, #f8fafc, #f1f5f9);
+}
+
+.tf-panel table thead th {
+  color: #64748b;
+  font-weight: 700;
+  letter-spacing: 0.015em;
+}
+
+.tf-panel table tbody tr {
+  transition: background-color 150ms ease, transform 150ms ease;
+}
+
+.tf-panel table tbody tr:hover {
+  background: rgb(239 246 255 / 0.62);
+}
+
+.tf-project-modal input,
+.tf-project-modal .tf-dropdown-button {
+  height: 48px;
+  border-radius: 14px;
+  font-size: 14px;
+}
+
+.tf-project-modal label {
+  font-size: 14px;
+}
+
+.tf-project-modal label.mt-5,
+.tf-project-modal div.mt-5 {
+  margin-top: 16px;
+}
+
+.tf-project-modal .tf-project-member-picker .min-h-12 {
+  min-height: 40px;
+}
+
+.tf-project-modal .tf-project-member-picker .h-11 {
+  height: 38px;
+}
+
+/* Keep every dialog on the same compact desktop rhythm. */
+.tf-app-modal label {
+  font-size: 14px;
+}
+
+.tf-app-modal .h-12,
+.tf-app-modal .tf-dropdown-button {
+  min-height: 44px;
+  height: 44px;
+}
+
+.tf-app-modal .h-14 {
+  min-height: 48px;
+  height: 48px;
+}
+
+.tf-app-modal .mt-5 {
+  margin-top: 16px;
+}
+
+.tf-app-modal textarea.tf-input {
+  min-height: 84px;
+  height: 84px;
+}
+
+@media (max-width: 640px) {
+  .tf-app-modal {
+    border-radius: 18px;
+  }
+}
+
+.tf-primary,
+.tf-create-pill {
+  position: relative;
+  overflow: hidden;
+}
+
+.tf-primary::after,
+.tf-create-pill::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(110deg, transparent 25%, rgb(255 255 255 / 0.2) 48%, transparent 70%);
+  transform: translateX(-120%);
+  transition: transform 450ms ease;
+}
+
+.tf-primary:hover::after,
+.tf-create-pill:hover::after {
+  transform: translateX(120%);
+}
+
+.tf-pill {
+  border: 1px solid rgb(255 255 255 / 0.65);
+  box-shadow: inset 0 1px 0 rgb(255 255 255 / 0.45);
+}
+
+.tf-event-scroll {
+  scrollbar-width: thin;
+  scrollbar-color: #b9cbe0 transparent;
+  overscroll-behavior: contain;
+}
+
+.tf-event-scroll::-webkit-scrollbar {
+  width: 6px;
+}
+
+.tf-event-scroll::-webkit-scrollbar-thumb {
+  border-radius: 999px;
+  background: #b9cbe0;
+}
+
+.tf-event-scroll::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+@keyframes tf-page-enter {
+  from { opacity: 0; transform: translateY(7px); }
+  to { opacity: 1; transform: translateY(0); }
 }
 
 @media (min-width: 768px) and (max-width: 1023px) {
@@ -232,11 +500,23 @@ body {
 }
 
 .tf-dark body {
-  background: #0f172a;
+  background: #070b12;
+}
+
+.tf-dark.tf-shell,
+.tf-dark .tf-shell {
+  background: #070b12;
 }
 
 .tf-dark .tf-window {
-  background: #111827;
+  background: #090e18;
+}
+
+.tf-dark .tf-content {
+  background:
+    radial-gradient(circle at 92% 3%, rgb(37 99 235 / 0.08), transparent 24rem),
+    radial-gradient(circle at 18% 100%, rgb(30 64 175 / 0.045), transparent 28rem),
+    #090e18;
 }
 
 .tf-dark .tf-panel,
@@ -357,6 +637,8 @@ body {
 .tf-dark .bg-white,
 .tf-dark .bg-white\/60,
 .tf-dark .bg-white\/70,
+.tf-dark .bg-white\/85,
+.tf-dark .bg-white\/90,
 .tf-dark .bg-slate-100,
 .tf-dark .bg-slate-50,
 .tf-dark .bg-slate-200 {
@@ -371,6 +653,11 @@ body {
   background-color: rgb(31 41 55 / 82%);
 }
 
+.tf-dark .bg-white\/85,
+.tf-dark .bg-white\/90 {
+  background-color: rgb(23 32 51 / 92%);
+}
+
 .tf-dark .bg-slate-300 {
   background-color: #475569;
 }
@@ -381,7 +668,8 @@ body {
 }
 
 .tf-dark .bg-task-lavender,
-.tf-dark .bg-\[\#EEE9FF\] {
+.tf-dark .bg-\[\#EEE9FF\],
+.tf-dark .bg-\[\#F0E9FF\] {
   background-color: #2b2a4f;
 }
 
@@ -428,8 +716,87 @@ body {
 }
 
 .tf-dark .border-\[\#D7E1EC\],
-.tf-dark .border-\[\#B9C8D8\] {
+.tf-dark .border-\[\#B9C8D8\],
+.tf-dark .border-\[\#E2ECFA\],
+.tf-dark .border-\[\#EEE4FC\],
+.tf-dark .border-\[\#DDF2EA\],
+.tf-dark .border-\[\#F9E1E8\] {
   border-color: #334155;
+}
+
+/* New dashboard-style surfaces use light arbitrary gradients in the template. */
+.tf-dark .bg-gradient-to-br {
+  background-image: linear-gradient(145deg, #1d293b, #172033);
+}
+
+.tf-dark .bg-\[\#E3EAF2\] {
+  background-color: #111b2d;
+}
+
+.tf-dark .ring-\[\#D8E7FB\],
+.tf-dark .ring-\[\#E9DDFC\],
+.tf-dark .ring-\[\#D2EEE4\],
+.tf-dark .ring-\[\#F7D8E1\],
+.tf-dark .ring-white {
+  --tw-ring-color: #334155;
+}
+
+.tf-dark .tf-panel table thead {
+  background: linear-gradient(180deg, #1d293b, #172033);
+}
+
+.tf-dark .tf-panel table thead th {
+  color: #94a3b8;
+}
+
+.tf-dark .tf-panel table tbody tr:hover {
+  background: rgb(37 99 235 / 0.1);
+}
+
+.tf-dark .tf-kanban-board {
+  background-color: transparent;
+  scrollbar-color: #475569 transparent;
+}
+
+.tf-dark .tf-kanban-column {
+  background-color: #111b2d;
+  border-color: #2b364a;
+  box-shadow: inset 0 1px 0 rgb(255 255 255 / 0.035);
+}
+
+.tf-dark .tf-kanban-card,
+.tf-dark .tf-kanban-empty {
+  background-color: #172033;
+  border-color: #2b364a;
+}
+
+.tf-dark .tf-kanban-card:hover {
+  border-color: #3b82f6;
+  box-shadow: 0 16px 32px -24px rgb(0 0 0 / 0.8);
+}
+
+.tf-dark .tf-status-item,
+.tf-dark .tf-event-scroll > button {
+  background-color: #1b2638;
+  border-color: #2b364a;
+}
+
+.tf-dark .tf-event-scroll > button:hover {
+  background-color: #1f2f4a;
+  border-color: #3b82f6;
+}
+
+.tf-dark .tf-calendar-scroll .bg-slate-50\/70 {
+  background-color: rgb(15 23 42 / 72%);
+}
+
+.tf-dark .tf-calendar-scroll .bg-task-line {
+  background-color: #334155;
+}
+
+.tf-dark .tf-search-loader {
+  border-color: #334155;
+  border-top-color: #60a5fa;
 }
 
 .tf-dark [role='tab'][aria-selected='true'] {
@@ -506,6 +873,7 @@ body {
     transform: translateX(-100%);
     transition: transform 180ms ease;
     box-shadow: 24px 0 60px rgb(15 23 42 / 0.18);
+    overflow: hidden;
   }
 
   .tf-sidebar.is-open {

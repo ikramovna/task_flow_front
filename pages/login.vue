@@ -11,6 +11,11 @@ useHead({
   title: 'Login - TaskFlow Dashboard'
 })
 
+onMounted(() => {
+  document.documentElement.classList.remove('tf-dark')
+  document.documentElement.style.colorScheme = 'light'
+})
+
 const iconPath = (name: string) => {
   const paths: Record<string, string> = {
     check: 'm7 12 3 3 7-7',

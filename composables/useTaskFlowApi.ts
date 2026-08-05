@@ -50,7 +50,22 @@ type ApiTask = {
   priority?: string
   due_date?: string | null
   progress?: number
+  description?: string
+  category?: string
+  assignees?: Array<string | number>
   assignee_details?: UserBrief[]
+}
+
+type TaskPayload = {
+  project: string
+  title: string
+  description: string
+  status: string
+  priority: string
+  category: string
+  assignees: Array<string | number>
+  due_date: string
+  progress: number
 }
 
 type ApiProject = {
@@ -176,6 +191,8 @@ const authStorageKey = 'taskflow-auth'
 export const taskFlowApiErrorMessage = (error: unknown, fallback: string) => {
   const data = (error as { data?: unknown })?.data
   const message = (error as { message?: unknown })?.message
+  const status = (error as { status?: number; statusCode?: number })?.status
+    || (error as { statusCode?: number })?.statusCode
   const extractMessage = (value: unknown): string => {
     if (typeof value === 'string') return value
     if (Array.isArray(value)) return value.map(extractMessage).filter(Boolean).join(', ')
@@ -189,7 +206,13 @@ export const taskFlowApiErrorMessage = (error: unknown, fallback: string) => {
     return ''
   }
 
-  if (typeof data === 'string') return data
+  if (typeof data === 'string') {
+    const trimmed = data.trim()
+    if (/^<!doctype html/i.test(trimmed) || /^<html/i.test(trimmed)) {
+      return status ? `Server request failed (${status})` : fallback
+    }
+    return data
+  }
   if (data && typeof data === 'object') {
     const record = data as Record<string, unknown>
     const directMessage = extractMessage(record)
@@ -230,7 +253,7 @@ const formatDate = (value?: string | null) => {
   if (!value) return '-'
   const date = new Date(value)
   if (Number.isNaN(date.getTime())) return value
-  return new Intl.DateTimeFormat('en-GB').format(date).replace(/\//g, '-')
+  return `${String(date.getDate()).padStart(2, '0')}.${String(date.getMonth() + 1).padStart(2, '0')}.${date.getFullYear()}`
 }
 
 const asNumber = (value: unknown, fallback = 0) => {
@@ -362,7 +385,12 @@ export const useTaskFlowApi = () => {
     accessCookie.value = null
     refreshCookie.value = null
 
-    if (import.meta.client) localStorage.removeItem(authStorageKey)
+    if (import.meta.client) {
+      localStorage.clear()
+      sessionStorage.clear()
+      document.documentElement.classList.remove('tf-dark')
+      document.documentElement.style.colorScheme = 'light'
+    }
   }
 
   const changePassword = async (currentPassword: string, newPassword: string, confirmPassword: string) =>
@@ -420,7 +448,22 @@ export const useTaskFlowApi = () => {
     return []
   }
 
-  const listWorkspaces = async () => await apiFetch<ListResponse<ApiWorkspace>>('/workspaces/')
+  const listWorkspaces = async (): Promise<ApiWorkspace[]> => {
+    const sources = await Promise.allSettled([
+      apiFetch<PaginatedResponse<ApiProject>>('/projects/?page_size=1'),
+      apiFetch<ListResponse<ApiMember>>('/members/?page_size=1'),
+      apiFetch<PaginatedResponse<ApiEvent>>('/events/?page_size=1'),
+      apiFetch<PaginatedResponse<ApiReport>>('/reports/?page_size=1')
+    ])
+
+    for (const source of sources) {
+      if (source.status !== 'fulfilled') continue
+      const item = listItems<{ workspace?: string }>(source.value)[0]
+      if (item?.workspace) return [{ id: item.workspace }]
+    }
+
+    return []
+  }
 
   const workspaceIdOf = (workspace: ApiWorkspace) => {
     if (workspace.id) return workspace.id
@@ -534,6 +577,12 @@ export const useTaskFlowApi = () => {
   const patchTask = async (id: string, task: Partial<ApiTask>) =>
     await apiFetch<ApiTask>(`/tasks/${id}/`, {
       method: 'PATCH',
+      body: task
+    })
+
+  const createTask = async (task: TaskPayload) =>
+    await apiFetch<ApiTask>('/tasks/', {
+      method: 'POST',
       body: task
     })
 
@@ -690,7 +739,8 @@ export const useTaskFlowApi = () => {
     task.progress ?? 0,
     task.id || '',
     task.project_name || '',
-    task.project || ''
+    task.project || '',
+    JSON.stringify(task.assignee_details || [])
   ]
 
   const mapProject = (project: ApiProject) => [
@@ -812,6 +862,7 @@ export const useTaskFlowApi = () => {
     updateProject,
     patchProject,
     deleteProject,
+    createTask,
     patchTask,
     loadDashboardData,
     mapTask,
