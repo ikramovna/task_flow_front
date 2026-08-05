@@ -29,8 +29,6 @@ export interface TaskFlowState {
   dashboardDepartments: Record<string, any>[]
   dashboardRecentTasks: Record<string, any>[]
   dashboardGeneratedAt: string
-  workspaceId: string
-  workspaceName: string
   currentUserId: string
   currentDepartmentId: string
   currentRole: string
@@ -68,8 +66,6 @@ const createEmptyState = (): TaskFlowState => ({
   dashboardDepartments: [],
   dashboardRecentTasks: [],
   dashboardGeneratedAt: '',
-  workspaceId: '',
-  workspaceName: '',
   currentUserId: '',
   currentDepartmentId: '',
   currentRole: '',
@@ -153,8 +149,6 @@ export const useTaskFlowStore = () => {
         dashboardDepartments: dashboard?.tasks_by_department || [],
         dashboardRecentTasks: dashboard?.recent_tasks || [],
         dashboardGeneratedAt: dashboard?.generated_at || '',
-        workspaceId: backend.workspaceId,
-        workspaceName: backend.workspaceName,
         currentUserId: backend.currentUserId,
         currentDepartmentId: backend.currentDepartmentId,
         currentRole: backend.currentRole,
@@ -210,8 +204,6 @@ export const useTaskFlowStore = () => {
     dashboardDepartments: computed(() => state.value.dashboardDepartments),
     dashboardRecentTasks: computed(() => state.value.dashboardRecentTasks),
     dashboardGeneratedAt: computed(() => state.value.dashboardGeneratedAt),
-    workspaceId: computed(() => state.value.workspaceId),
-    workspaceName: computed(() => state.value.workspaceName),
     currentUserId: computed(() => state.value.currentUserId),
     currentDepartmentId: computed(() => state.value.currentDepartmentId),
     currentRole: computed(() => state.value.currentRole),

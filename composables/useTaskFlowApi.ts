@@ -11,7 +11,6 @@ type PaginatedResponse<T> = {
 type ListResponse<T> = PaginatedResponse<T> | T[] | {
   data?: T[] | PaginatedResponse<T>
   items?: T[]
-  workspaces?: T[]
   results?: T[]
 }
 
@@ -73,7 +72,6 @@ type TaskPayload = {
 
 type ApiProject = {
   id?: string
-  workspace?: string
   department?: string
   name: string
   description?: string
@@ -89,7 +87,6 @@ type ApiProject = {
 }
 
 type ProjectPayload = {
-  workspace: string
   department: string
   name: string
   description: string
@@ -98,15 +95,6 @@ type ProjectPayload = {
   start_date: string
   due_date: string
   members: Array<string | number>
-}
-
-type ApiWorkspace = {
-  id?: string
-  uuid?: string
-  workspace?: string | { id?: string; uuid?: string; name?: string; slug?: string }
-  workspace_id?: string
-  name?: string
-  slug?: string
 }
 
 type ApiMember = {
@@ -147,7 +135,6 @@ type MemberSummary = {
 
 type ApiReport = {
   id?: string
-  workspace?: string
   name: string
   report_type?: string
   description?: string
@@ -157,7 +144,6 @@ type ApiReport = {
 }
 
 type ReportPayload = {
-  workspace: string
   name: string
   report_type: string
   parameters: string
@@ -194,7 +180,6 @@ type DashboardResponse = {
 
 type ApiEvent = {
   id?: string
-  workspace?: string
   title: string
   event_type?: string
   description?: string
@@ -207,7 +192,7 @@ type ApiEvent = {
 }
 
 type EventPayload = {
-  workspace: string
+  department: string
   title: string
   event_type: string
   description: string
@@ -470,65 +455,10 @@ export const useTaskFlowApi = () => {
     if (Array.isArray(record.results)) return record.results as T[]
     if (Array.isArray(record.data)) return record.data as T[]
     if (Array.isArray(record.items)) return record.items as T[]
-    if (Array.isArray(record.workspaces)) return record.workspaces as T[]
-
     if (record.data && typeof record.data === 'object') {
       const dataRecord = record.data as Record<string, unknown>
       if (Array.isArray(dataRecord.results)) return dataRecord.results as T[]
       if (Array.isArray(dataRecord.items)) return dataRecord.items as T[]
-    }
-
-    return []
-  }
-
-  const listWorkspaces = async (): Promise<ApiWorkspace[]> => {
-    const sources = await Promise.allSettled([
-      apiFetch<PaginatedResponse<ApiProject>>('/projects/?page_size=1'),
-      apiFetch<ListResponse<ApiMember>>('/members/?page_size=1'),
-      apiFetch<PaginatedResponse<ApiEvent>>('/events/?page_size=1'),
-      apiFetch<PaginatedResponse<ApiReport>>('/reports/?page_size=1')
-    ])
-
-    for (const source of sources) {
-      if (source.status !== 'fulfilled') continue
-      const item = listItems<{ workspace?: string }>(source.value)[0]
-      if (item?.workspace) return [{ id: item.workspace }]
-    }
-
-    return []
-  }
-
-  const workspaceIdOf = (workspace: ApiWorkspace) => {
-    if (workspace.id) return workspace.id
-    if (workspace.uuid) return workspace.uuid
-    if (workspace.workspace_id) return workspace.workspace_id
-    if (typeof workspace.workspace === 'string') return workspace.workspace
-    return workspace.workspace?.id || workspace.workspace?.uuid || ''
-  }
-
-  const workspaceNameOf = (workspace: ApiWorkspace) => {
-    if (workspace.name || workspace.slug) return workspace.name || workspace.slug || ''
-    if (typeof workspace.workspace === 'object') return workspace.workspace.name || workspace.workspace.slug || ''
-    return ''
-  }
-
-  const workspaceItems = (response: ListResponse<ApiWorkspace> | unknown) => {
-    const listed = listItems<ApiWorkspace>(response)
-    if (listed.length) return listed
-    if (!response || typeof response !== 'object') return []
-
-    const record = response as Record<string, unknown>
-    const direct = record as ApiWorkspace
-    if (workspaceIdOf(direct)) return [direct]
-
-    if (record.data && typeof record.data === 'object' && !Array.isArray(record.data)) {
-      const dataWorkspace = record.data as ApiWorkspace
-      if (workspaceIdOf(dataWorkspace)) return [dataWorkspace]
-    }
-
-    if (record.workspace && typeof record.workspace === 'object' && !Array.isArray(record.workspace)) {
-      const nestedWorkspace = record.workspace as ApiWorkspace
-      if (workspaceIdOf(nestedWorkspace)) return [nestedWorkspace]
     }
 
     return []
@@ -676,84 +606,30 @@ export const useTaskFlowApi = () => {
 
   const getReport = async (id: string) => await apiFetch<ApiReport>(`/reports/${id}/`)
 
-  const workspaceQuery = (workspaceId: string, extra: Record<string, string | number | undefined> = {}) => {
-    const params = new URLSearchParams({ workspace: workspaceId })
-    Object.entries(extra).forEach(([key, value]) => {
-      if (value !== undefined && value !== '') params.set(key, String(value))
-    })
-    return `?${params.toString()}`
-  }
-
   const loadDashboardData = async () => {
     if (!getStoredTokens()) return null
 
-    // The dashboard is department/user scoped and must not depend on legacy workspace discovery.
     const [dashboard, profile] = await Promise.all([getDashboard(), getMe()])
     const profileMembership = profile.department_membership || profile.membership || profile.memberships?.[0]
     const profileRole = String(profile.role || profileMembership?.role || '').trim().toLowerCase()
     const profileDepartment = String(profile.department || profileMembership?.department || '')
     const profileIsActive = profile.is_active !== false && profileMembership?.is_active !== false
 
-    const workspaceResponse = await listWorkspaces()
-    const workspaces = workspaceItems(workspaceResponse)
-    const workspace = workspaces[0]
-
-    const resolvedWorkspaceId = workspace ? workspaceIdOf(workspace) : ''
-
-    if (!resolvedWorkspaceId) {
-      return {
-        workspaceId: '',
-        workspaceName: '',
-        currentUserId: String(profile.id ?? ''),
-        currentDepartmentId: profileDepartment,
-        currentRole: profileRole,
-        currentUserActive: profileIsActive,
-        dashboard,
-        analytics: {},
-        tasks: [],
-        projects: [],
-        members: [],
-        reports: [],
-        events: [],
-        stats: {
-          activeProjects: 0,
-          utilization: 0,
-          teamVelocity: 0,
-          overdueTasks: 0,
-          projectSummary: {
-            active: 0,
-            inProgress: 0,
-            completed: 0,
-            atRisk: 0
-          }
-        }
-      }
-    }
-
-    const workspaceId = resolvedWorkspaceId
-    const [analytics, tasks, projects, members, reports, events] = await Promise.all([
-      apiFetch<ApiAnalytics>(`/analytics/${workspaceQuery(workspaceId)}`),
-      apiFetch<PaginatedResponse<ApiTask>>('/tasks/?page_size=40'),
-      apiFetch<PaginatedResponse<ApiProject>>(`/projects/${workspaceQuery(workspaceId, { page_size: 40 })}`),
-      listMembers({ page_size: 60 }),
-      apiFetch<PaginatedResponse<ApiReport>>(`/reports/${workspaceQuery(workspaceId, { page_size: 40 })}`),
-      apiFetch<PaginatedResponse<ApiEvent>>(`/events/${workspaceQuery(workspaceId, { page_size: 100 })}`)
+    const [tasksResult, membersResult, eventsResult, analyticsResult, projectsResult, reportsResult] = await Promise.allSettled([
+      apiFetch<PaginatedResponse<ApiTask>>('/tasks/?page_size=100'),
+      listMembers({ page_size: 200 }),
+      apiFetch<PaginatedResponse<ApiEvent>>('/events/?page_size=100'),
+      apiFetch<ApiAnalytics>('/analytics/'),
+      apiFetch<PaginatedResponse<ApiProject>>('/projects/?page_size=40'),
+      apiFetch<PaginatedResponse<ApiReport>>('/reports/?page_size=40')
     ])
-    const memberItems = listItems<ApiMember>(members)
-    const isCurrentMembership = (member: ApiMember) => {
-      const memberUserId = String(member.id ?? '')
-      const memberEmail = String(member.email ?? '').trim().toLowerCase()
-      return memberUserId === String(profile.id ?? '') || Boolean(profile.email && memberEmail === profile.email.trim().toLowerCase())
-    }
-    let currentMembership = memberItems.find(isCurrentMembership)
-    if (!currentMembership && profile.email) {
-      const ownMemberships = listItems<ApiMember>(await listMembers({
-        search: profile.email,
-        page_size: 10
-      }))
-      currentMembership = ownMemberships.find(isCurrentMembership)
-    }
-    const projectSummary = projects.results.reduce(
+    const tasks = tasksResult.status === 'fulfilled' ? listItems<ApiTask>(tasksResult.value) : []
+    const members = membersResult.status === 'fulfilled' ? listItems<ApiMember>(membersResult.value) : []
+    const events = eventsResult.status === 'fulfilled' ? listItems<ApiEvent>(eventsResult.value) : []
+    const analytics = analyticsResult.status === 'fulfilled' ? analyticsResult.value : {}
+    const projects = projectsResult.status === 'fulfilled' ? listItems<ApiProject>(projectsResult.value) : []
+    const reports = reportsResult.status === 'fulfilled' ? listItems<ApiReport>(reportsResult.value) : []
+    const projectSummary = projects.reduce(
       (summary, project) => {
         if (project.status === 'in_progress') summary.inProgress += 1
         if (project.status === 'completed') summary.completed += 1
@@ -761,7 +637,7 @@ export const useTaskFlowApi = () => {
         return summary
       },
       {
-        active: projects.count,
+        active: projects.length,
         inProgress: 0,
         completed: 0,
         atRisk: 0
@@ -769,23 +645,19 @@ export const useTaskFlowApi = () => {
     )
 
     return {
-      workspaceId,
-      workspaceName: workspaceNameOf(workspace),
       currentUserId: String(profile.id ?? ''),
-      // `/me/` is the authoritative source for permissions. A stale or partial
-      // member row must never downgrade an owner/admin/manager in the UI.
-      currentDepartmentId: profileDepartment || String(currentMembership?.department || ''),
+      currentDepartmentId: profileDepartment,
       currentRole: profileRole,
       currentUserActive: profileIsActive,
       dashboard,
       analytics,
-      tasks: tasks.results,
-      projects: projects.results,
-      members: memberItems,
-      reports: reports.results,
-      events: events.results,
+      tasks,
+      projects,
+      members,
+      reports,
+      events,
       stats: {
-        activeProjects: projects.count,
+        activeProjects: projects.length,
         utilization: Math.round(analytics.task_completion_rate || 0),
         teamVelocity: analytics.team_velocity || 0,
         overdueTasks: analytics.overdue_tasks || 0,
@@ -822,7 +694,7 @@ export const useTaskFlowApi = () => {
     `${project.completed_task_count ?? 0}/${project.task_count ?? 0} tasks completed`,
     formatDate(project.due_date),
     project.id || '',
-    project.workspace || '',
+    '',
     project.description || '',
     project.start_date || '',
     project.department || '',
@@ -923,11 +795,7 @@ export const useTaskFlowApi = () => {
     getReport,
     patchEvent,
     deleteEvent,
-    listWorkspaces,
     listItems,
-    workspaceItems,
-    workspaceIdOf,
-    workspaceNameOf,
     getProject,
     createProject,
     updateProject,

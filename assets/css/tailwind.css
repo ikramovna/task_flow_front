@@ -326,7 +326,7 @@ body {
   }
 }
 
-/* Shared visual language for every workspace page */
+/* Shared visual language for every application page */
 .tf-app-header {
   background: var(--tf-surface);
   border-color: var(--tf-border);

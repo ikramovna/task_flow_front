@@ -195,7 +195,6 @@ Custom report POST requestida report parametrlari JSON string sifatida yuborilad
 
 ```json
 {
-  "workspace": "workspace-uuid",
   "name": "Team Performance Report",
   "report_type": "team_performance",
   "parameters": "{\"start_date\":\"2026-08-01\",\"end_date\":\"2026-08-31\",\"priority\":null,\"status\":null,\"export_format\":\"pdf\"}"

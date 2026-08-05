@@ -52,7 +52,7 @@ const runtimeConfig = useRuntimeConfig()
 
 await taskFlowStore.loadBackendData()
 
-const { state, pages, stats, projectStats, analyticsStats, monthlyProgress, tasksByCategory, tasks, projects, team, workload, reports, events, messages, heatmap, workspaceId, currentDepartmentId, currentRole, currentUserActive, apiError, dashboardTodayEvents, dashboardUpcomingEvents, dashboardDeadlines, dashboardDepartments, dashboardRecentTasks, dashboardGeneratedAt } = taskFlowStore
+const { state, pages, stats, projectStats, analyticsStats, monthlyProgress, tasksByCategory, tasks, projects, team, workload, reports, events, messages, heatmap, currentDepartmentId, currentRole, currentUserActive, apiError, dashboardTodayEvents, dashboardUpcomingEvents, dashboardDeadlines, dashboardDepartments, dashboardRecentTasks, dashboardGeneratedAt } = taskFlowStore
 const normalizedRole = computed(() => currentRole.value.trim().toLowerCase())
 const canManageDepartment = computed(() => ['owner', 'admin', 'manager'].includes(normalizedRole.value))
 const canAddTask = computed(() => currentUserActive.value && ['owner', 'admin', 'manager'].includes(normalizedRole.value))
@@ -259,7 +259,6 @@ const memberEmail = ref('')
 const memberRole = ref('member')
 const memberRoleOptions = ['member', 'manager', 'admin']
 const editingProjectId = ref('')
-const editingProjectWorkspace = ref('')
 const editingProjectDepartment = ref('')
 const editingProjectMembers = ref<string[]>([])
 const editingProjectStartDate = ref<string | null>(null)
@@ -971,7 +970,6 @@ const setFormPriority = (value: string) => {
 }
 
 const projectIdOf = (project: Array<string | number>) => String(project[6] || '')
-const projectWorkspaceOf = (project: Array<string | number>) => String(project[7] || '')
 const projectDescriptionOf = (project: Array<string | number>) => String(project[8] || '')
 const projectStartDateOf = (project: Array<string | number>) => String(project[9] || '')
 const projectDepartmentOf = (project: Array<string | number>) => String(project[10] || '')
@@ -1100,29 +1098,6 @@ const handleDateInput = (event: Event, field: 'startDate' | 'dueDate') => {
 }
 const handleTaskDueDateInput = (event: Event) => handleDateInput(event, 'dueDate')
 
-const defaultProjectWorkspace = () => {
-  const backendProject = projects.value.find((project) => projectWorkspaceOf(project))
-  return backendProject ? projectWorkspaceOf(backendProject) : workspaceId.value
-}
-
-const resolveWorkspaceId = async () => {
-  const existingWorkspace = defaultProjectWorkspace()
-  if (existingWorkspace) return existingWorkspace
-
-  const workspaceResponse = await taskFlowApi.listWorkspaces()
-  const workspaces = taskFlowApi.workspaceItems(workspaceResponse)
-  const workspace = workspaces.find((item) => taskFlowApi.workspaceIdOf(item))
-  const resolvedWorkspace = workspace ? taskFlowApi.workspaceIdOf(workspace) : ''
-
-  if (resolvedWorkspace) {
-    state.value.workspaceId = resolvedWorkspace
-    state.value.workspaceName = taskFlowApi.workspaceNameOf(workspace)
-    return resolvedWorkspace
-  }
-
-  return ''
-}
-
 const loadMembersFromBackend = async () => {
   searchLoading.team = true
 
@@ -1196,7 +1171,7 @@ const normalizeTimeValue = (value: string) => {
   return `${String(hour).padStart(2, '0')}:${String(minute).padStart(2, '0')}`
 }
 
-const projectPayloadFromForm = (workspace: string, status = 'in_progress') => {
+const projectPayloadFromForm = (status = 'in_progress') => {
   const startDate = parseProjectDate(form.startDate) || editingProjectStartDate.value || todayIsoDate()
   const dueDate = parseProjectDate(form.dueDate) || startDate
   const selectedMemberIds = editingProjectMembers.value.length
@@ -1206,7 +1181,6 @@ const projectPayloadFromForm = (workspace: string, status = 'in_progress') => {
   if (managerId && !selectedMemberIds.includes(managerId)) selectedMemberIds.push(managerId)
 
   return {
-    workspace: editingProjectWorkspace.value || workspace,
     department: editingProjectDepartment.value || effectiveDepartmentId.value,
     name: form.title.trim(),
     description: form.description.trim(),
@@ -1218,8 +1192,8 @@ const projectPayloadFromForm = (workspace: string, status = 'in_progress') => {
   }
 }
 
-const eventPayloadFromForm = (workspace: string) => ({
-  workspace,
+const eventPayloadFromForm = () => ({
+  department: effectiveDepartmentId.value,
   title: form.title.trim(),
   event_type: form.eventType.trim() || 'Meeting',
   description: form.description.trim(),
@@ -1300,7 +1274,6 @@ const openModal = (value: Exclude<ModalKey, null>) => {
   }
   if (value === 'project') {
     editingProjectId.value = ''
-    editingProjectWorkspace.value = ''
     editingProjectDepartment.value = ''
     editingProjectMembers.value = []
     editingProjectStartDate.value = null
@@ -1377,14 +1350,7 @@ const addProjectMember = async () => {
 
   projectMembersLoading.value = true
   try {
-    const resolvedWorkspace = await resolveWorkspaceId()
-    if (!resolvedWorkspace) {
-      notifyError('Workspace is required from backend')
-      return
-    }
-
     const response = await taskFlowApi.listMembers({
-      workspace: resolvedWorkspace,
       department: effectiveDepartmentId.value || undefined,
       is_active: true,
       page_size: 100
@@ -1473,7 +1439,6 @@ const viewProject = async (project: Array<string | number>) => {
 const editProject = (project: Array<string | number>) => {
   actionMenu.value = null
   editingProjectId.value = projectIdOf(project)
-  editingProjectWorkspace.value = projectWorkspaceOf(project)
   editingProjectDepartment.value = projectDepartmentOf(project)
   editingProjectMembers.value = projectMembersOf(project)
   editingProjectStartDate.value = projectStartDateOf(project) || null
@@ -1775,21 +1740,9 @@ const submitModal = async () => {
   }
 
   if (modal.value === 'project') {
-    let resolvedWorkspace = ''
-    try {
-      resolvedWorkspace = await resolveWorkspaceId()
-    } catch (error) {
-      console.error('Workspace resolve failed.', error)
-      notifyError(taskFlowApiErrorMessage(error, 'Workspace load failed'))
-      return
-    }
-    const projectPayload = projectPayloadFromForm(resolvedWorkspace, 'in_progress')
+    const projectPayload = projectPayloadFromForm('in_progress')
     if (!projectPayload.name) {
       notifyError('Project name is required')
-      return
-    }
-    if (!projectPayload.workspace) {
-      notifyError('Workspace is required from backend')
       return
     }
     if (!projectPayload.department) {
@@ -1822,15 +1775,8 @@ const submitModal = async () => {
       notifyError('Report name is required')
       return
     }
-    let resolvedWorkspace = ''
     try {
-      resolvedWorkspace = await resolveWorkspaceId()
-      if (!resolvedWorkspace) {
-        notifyError('Workspace is required from backend')
-        return
-      }
       const created = await taskFlowApi.createReport({
-        workspace: resolvedWorkspace,
         name: title,
         report_type: reportType.value.toLowerCase().replace(/\s+/g, '_'),
         parameters: JSON.stringify({
@@ -1868,17 +1814,9 @@ const submitModal = async () => {
       return
     }
 
-    let resolvedWorkspace = ''
-    try {
-      resolvedWorkspace = await resolveWorkspaceId()
-    } catch (error) {
-      console.error('Workspace resolve failed.', error)
-      notifyError(taskFlowApiErrorMessage(error, 'Workspace load failed'))
-      return
-    }
-    const payload = eventPayloadFromForm(resolvedWorkspace)
-    if (!payload.workspace) {
-      notifyError('Workspace is required from backend')
+    const payload = eventPayloadFromForm()
+    if (!payload.department) {
+      notifyError('Your account must belong to a department before creating events')
       return
     }
 
