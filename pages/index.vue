@@ -766,7 +766,7 @@ const loadTaskScope = async (scope: 'all' | 'mine' | 'archived') => {
       my_tasks: scope === 'mine' ? 'true' : undefined,
       archived: scope === 'archived' ? 'true' : undefined
     })
-    state.value.tasks = response.results.map(taskFlowApi.mapTask)
+    state.value.tasks = taskFlowApi.listItems(response).map(taskFlowApi.mapTask)
     taskPage.value = 1
   } catch (error) {
     notifyError(taskFlowApiErrorMessage(error, 'Could not load tasks'))
@@ -828,6 +828,7 @@ const setPage = (key: PageKey) => {
     }
   }
   if (key === 'settings' && settingsTab.value === 'profile') settingsTab.value = 'profile'
+  if (key === 'tasks') void loadTaskScope(taskScope.value)
   if (key === 'team') loadMembersFromBackend()
   actionMenu.value = null
   mobileSidebarOpen.value = false
@@ -939,6 +940,7 @@ onMounted(() => {
   }
   syncRootThemeClass()
   restoreActivePage()
+  if (activePage.value === 'tasks') void loadTaskScope(taskScope.value)
 })
 
 onBeforeUnmount(() => {
@@ -2531,7 +2533,7 @@ const iconPath = (name: string) => {
                     </span>
                   </div>
 
-                  <select class="tf-kanban-status-select" :value="column.key" :disabled="updatingTaskId === String(task[6]) || !task[6]" aria-label="Change task status" @change="updateTaskStatus(task, ($event.target as HTMLSelectElement).value)">
+                  <select class="tf-kanban-status-select" :value="column.key" :disabled="updatingTaskId === String(task[6]) || !task[6]" aria-label="Change task status" @click.stop @change="updateTaskStatus(task, ($event.target as HTMLSelectElement).value)">
                     <option value="backlog">Backlog</option>
                     <option value="not_started">Not Started</option>
                     <option value="in_progress">In Progress</option>
@@ -2545,6 +2547,10 @@ const iconPath = (name: string) => {
               </div>
             </section>
             </div>
+            <button v-if="backlogTasks.length" type="button" class="mt-3 flex w-full items-center justify-between rounded-[12px] border border-task-line bg-task-blueSoft px-4 py-3 text-left text-sm transition hover:border-task-blue" @click="taskBoardSection = 'backlog'">
+              <span><b class="text-task-ink">{{ backlogTasks.length }} {{ backlogTasks.length === 1 ? 'task is' : 'tasks are' }} in Backlog</b><span class="ml-2 text-task-muted">Planned for later and not shown in workflow columns.</span></span>
+              <span class="shrink-0 font-bold text-task-blue">Open Backlog →</span>
+            </button>
           </div>
           <p v-if="!filteredTasks.length" class="py-8 text-center text-sm text-task-muted">No tasks matched your filters.</p>
           <div v-if="filteredTasks.length > pageSize" class="mt-5 flex items-center justify-between text-xs text-task-muted"><span>Showing {{ paginatedTasks.length }} of {{ filteredTasks.length }} Tasks</span><div class="flex gap-2"><button class="tf-icon-button" type="button" @click="setListPage('task', taskPage - 1)">‹</button><button v-for="page in taskPageCount" :key="page" :class="[taskPage === page ? 'tf-primary' : 'tf-icon-button', 'h-9 w-9 p-0']" type="button" @click="setListPage('task', page)">{{ page }}</button><button class="tf-icon-button" type="button" @click="setListPage('task', taskPage + 1)">›</button></div></div>
