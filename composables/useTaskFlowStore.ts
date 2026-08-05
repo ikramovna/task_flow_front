@@ -23,11 +23,18 @@ export interface TaskFlowState {
   events: TaskFlowTuple[]
   messages: string[]
   heatmap: number[]
+  dashboardTodayEvents: Record<string, any>[]
+  dashboardUpcomingEvents: Record<string, any>[]
+  dashboardDeadlines: Record<string, any>[]
+  dashboardDepartments: Record<string, any>[]
+  dashboardRecentTasks: Record<string, any>[]
+  dashboardGeneratedAt: string
   workspaceId: string
   workspaceName: string
   currentUserId: string
   currentDepartmentId: string
   currentRole: string
+  currentUserActive: boolean
   loaded: boolean
 }
 
@@ -55,11 +62,18 @@ const createEmptyState = (): TaskFlowState => ({
   events: [],
   messages: [],
   heatmap: [],
+  dashboardTodayEvents: [],
+  dashboardUpcomingEvents: [],
+  dashboardDeadlines: [],
+  dashboardDepartments: [],
+  dashboardRecentTasks: [],
+  dashboardGeneratedAt: '',
   workspaceId: '',
   workspaceName: '',
   currentUserId: '',
   currentDepartmentId: '',
-  currentRole: ''
+  currentRole: '',
+  currentUserActive: false
 })
 
 export const useTaskFlowStore = () => {
@@ -84,17 +98,19 @@ export const useTaskFlowStore = () => {
       }
 
       const projectSummary = backend.stats.projectSummary
+      const dashboard = backend.dashboard
 
       apiError.value = ''
       state.value = {
         ...createEmptyState(),
         loaded: true,
-        stats: [
-          [String(backend.stats.activeProjects), 'Active Projects', 'bg-[#EAF2FC]'],
-          [`${backend.stats.utilization}%`, 'Utilization Rate', 'bg-task-lavender'],
-          [String(backend.stats.teamVelocity), 'Team Velocity', 'bg-task-mint'],
-          [String(backend.stats.overdueTasks), 'Overdue Tasks', 'bg-task-rose']
-        ],
+        stats: dashboard ? [
+          [String(dashboard.summary.total_tasks.count), 'Total Tasks', dashboard.summary.total_tasks.percentage],
+          [String(dashboard.summary.completed_tasks.count), 'Completed Tasks', dashboard.summary.completed_tasks.percentage],
+          [String(dashboard.summary.in_progress_tasks.count), 'In Progress', dashboard.summary.in_progress_tasks.percentage],
+          [String(dashboard.summary.not_started_tasks.count), 'Not Started', dashboard.summary.not_started_tasks.percentage],
+          [String(dashboard.summary.overdue_tasks.count), 'Overdue Tasks', dashboard.summary.overdue_tasks.percentage]
+        ] : [],
         projectStats: [
           [String(projectSummary.active), 'Active Projects', 'bg-[#EAF2FC]'],
           [String(projectSummary.inProgress), 'In Progress', 'bg-task-lavender'],
@@ -122,11 +138,18 @@ export const useTaskFlowStore = () => {
         }),
         reports: backend.reports.map(api.mapReport),
         events: backend.events.map(api.mapEvent),
+        dashboardTodayEvents: dashboard?.today_events || [],
+        dashboardUpcomingEvents: dashboard?.upcoming_events || [],
+        dashboardDeadlines: dashboard?.upcoming_deadlines || [],
+        dashboardDepartments: dashboard?.tasks_by_department || [],
+        dashboardRecentTasks: dashboard?.recent_tasks || [],
+        dashboardGeneratedAt: dashboard?.generated_at || '',
         workspaceId: backend.workspaceId,
         workspaceName: backend.workspaceName,
         currentUserId: backend.currentUserId,
         currentDepartmentId: backend.currentDepartmentId,
-        currentRole: backend.currentRole
+        currentRole: backend.currentRole,
+        currentUserActive: backend.currentUserActive
       }
     } catch (error) {
       console.warn('TaskFlow API load failed.', error)
@@ -155,11 +178,18 @@ export const useTaskFlowStore = () => {
     events: computed(() => state.value.events),
     messages: computed(() => state.value.messages),
     heatmap: computed(() => state.value.heatmap),
+    dashboardTodayEvents: computed(() => state.value.dashboardTodayEvents),
+    dashboardUpcomingEvents: computed(() => state.value.dashboardUpcomingEvents),
+    dashboardDeadlines: computed(() => state.value.dashboardDeadlines),
+    dashboardDepartments: computed(() => state.value.dashboardDepartments),
+    dashboardRecentTasks: computed(() => state.value.dashboardRecentTasks),
+    dashboardGeneratedAt: computed(() => state.value.dashboardGeneratedAt),
     workspaceId: computed(() => state.value.workspaceId),
     workspaceName: computed(() => state.value.workspaceName),
     currentUserId: computed(() => state.value.currentUserId),
     currentDepartmentId: computed(() => state.value.currentDepartmentId),
     currentRole: computed(() => state.value.currentRole),
+    currentUserActive: computed(() => state.value.currentUserActive),
     apiError: computed(() => apiError.value)
   }
 }

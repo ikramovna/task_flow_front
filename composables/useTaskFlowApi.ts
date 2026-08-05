@@ -34,6 +34,9 @@ type MeProfile = {
   avatar?: string
   phone?: string
   job_title?: string
+  department?: string | null
+  role?: string
+  is_active?: boolean
 }
 
 type CreateUserPayload = {
@@ -43,8 +46,7 @@ type CreateUserPayload = {
 
 type ApiTask = {
   id?: string
-  project?: string
-  project_name?: string
+  department?: string
   title: string
   status?: string
   priority?: string
@@ -54,10 +56,13 @@ type ApiTask = {
   category?: string
   assignees?: Array<string | number>
   assignee_details?: UserBrief[]
+  is_archived?: boolean
+  archived_at?: string | null
+  archived_by?: string | number | UserBrief | null
 }
 
 type TaskPayload = {
-  project: string
+  department: string
   title: string
   description: string
   status: string
@@ -158,6 +163,27 @@ type ApiAnalytics = {
   overdue_tasks?: number
   monthly_progress?: Array<string | Record<string, unknown>>
   tasks_by_category?: Array<string | Record<string, unknown>>
+}
+
+type DashboardMetric = { count: number; percentage: number }
+type DashboardDepartment = { id: string; name: string }
+type DashboardEvent = {
+  id: string; title: string; event_type: string; department: DashboardDepartment
+  starts_at: string; ends_at: string; location?: string; meeting_url?: string | null
+  attendee_count: number; attendees: Array<{ id: string | number; full_name: string }>
+}
+type DashboardTask = {
+  id: string; title: string; department: DashboardDepartment; priority: string; status: string
+  due_date?: string; days_remaining?: number; created_at?: string
+}
+type DashboardResponse = {
+  summary: Record<'total_tasks' | 'completed_tasks' | 'in_progress_tasks' | 'not_started_tasks' | 'overdue_tasks', DashboardMetric>
+  today_events: DashboardEvent[]
+  upcoming_events: DashboardEvent[]
+  upcoming_deadlines: DashboardTask[]
+  tasks_by_department: Array<{ department_id: string; department_name: string; task_count: number; percentage: number }>
+  recent_tasks: DashboardTask[]
+  generated_at: string
 }
 
 type ApiEvent = {
@@ -410,6 +436,7 @@ export const useTaskFlowApi = () => {
     })
 
   const getMe = async () => await apiFetch<MeProfile>('/me/')
+  const getDashboard = async () => await apiFetch<DashboardResponse>('/dashboard/')
 
   const updateMe = async (
     profile: Required<Pick<MeProfile, 'first_name' | 'last_name' | 'phone' | 'job_title'>>,
@@ -580,11 +607,37 @@ export const useTaskFlowApi = () => {
       body: task
     })
 
+  const getTask = async (id: string) => await apiFetch<ApiTask>(`/tasks/${id}/`)
+
+  const listTasks = async (query: Record<string, string | number | undefined> = {}) => {
+    const params = new URLSearchParams()
+    Object.entries(query).forEach(([key, value]) => {
+      if (value !== undefined && value !== '') params.set(key, String(value))
+    })
+    const suffix = params.toString() ? `?${params}` : ''
+    return await apiFetch<PaginatedResponse<ApiTask>>(`/tasks/${suffix}`)
+  }
+
   const createTask = async (task: TaskPayload) =>
     await apiFetch<ApiTask>('/tasks/', {
       method: 'POST',
       body: task
     })
+
+  const updateTask = async (id: string, task: TaskPayload) =>
+    await apiFetch<ApiTask>(`/tasks/${id}/`, {
+      method: 'PUT',
+      body: task
+    })
+
+  const deleteTask = async (id: string) =>
+    await apiFetch(`/tasks/${id}/`, { method: 'DELETE' })
+
+  const archiveTask = async (id: string) =>
+    await apiFetch<ApiTask>(`/tasks/${id}/archive/`, { method: 'POST' })
+
+  const unarchiveTask = async (id: string) =>
+    await apiFetch<ApiTask>(`/tasks/${id}/unarchive/`, { method: 'POST' })
 
   const listEvents = async (query: Record<string, string | number | undefined> = {}) => {
     const params = new URLSearchParams()
@@ -634,6 +687,9 @@ export const useTaskFlowApi = () => {
   const loadDashboardData = async () => {
     if (!getStoredTokens()) return null
 
+    // The dashboard is department/user scoped and must not depend on legacy workspace discovery.
+    const [dashboard, profile] = await Promise.all([getDashboard(), getMe()])
+
     const workspaceResponse = await listWorkspaces()
     const workspaces = workspaceItems(workspaceResponse)
     const workspace = workspaces[0]
@@ -644,9 +700,11 @@ export const useTaskFlowApi = () => {
       return {
         workspaceId: '',
         workspaceName: '',
-        currentUserId: '',
-        currentDepartmentId: '',
-        currentRole: '',
+        currentUserId: String(profile.id ?? ''),
+        currentDepartmentId: String(profile.department ?? ''),
+        currentRole: String(profile.role ?? ''),
+        currentUserActive: profile.is_active !== false,
+        dashboard,
         analytics: {},
         tasks: [],
         projects: [],
@@ -669,10 +727,9 @@ export const useTaskFlowApi = () => {
     }
 
     const workspaceId = resolvedWorkspaceId
-    const [profile, analytics, tasks, projects, members, reports, events] = await Promise.all([
-      getMe(),
+    const [analytics, tasks, projects, members, reports, events] = await Promise.all([
       apiFetch<ApiAnalytics>(`/analytics/${workspaceQuery(workspaceId)}`),
-      apiFetch<PaginatedResponse<ApiTask>>(`/tasks/${workspaceQuery(workspaceId, { page_size: 40 })}`),
+      apiFetch<PaginatedResponse<ApiTask>>('/tasks/?page_size=40'),
       apiFetch<PaginatedResponse<ApiProject>>(`/projects/${workspaceQuery(workspaceId, { page_size: 40 })}`),
       listMembers({ workspace: workspaceId, page_size: 60 }),
       apiFetch<PaginatedResponse<ApiReport>>(`/reports/${workspaceQuery(workspaceId, { page_size: 40 })}`),
@@ -714,6 +771,8 @@ export const useTaskFlowApi = () => {
       currentUserId: String(profile.id ?? ''),
       currentDepartmentId: String(currentMembership?.department ?? ''),
       currentRole: String(currentMembership?.role ?? ''),
+      currentUserActive: currentMembership?.is_active !== false && profile.is_active !== false,
+      dashboard,
       analytics,
       tasks: tasks.results,
       projects: projects.results,
@@ -738,9 +797,16 @@ export const useTaskFlowApi = () => {
     formatDate(task.due_date),
     task.progress ?? 0,
     task.id || '',
-    task.project_name || '',
-    task.project || '',
-    JSON.stringify(task.assignee_details || [])
+    '',
+    task.department || '',
+    JSON.stringify(task.assignee_details || []),
+    task.description || '',
+    task.category || '',
+    task.due_date || '',
+    JSON.stringify(task.assignees || []),
+    task.is_archived ? 'true' : 'false',
+    task.archived_at || '',
+    typeof task.archived_by === 'object' ? JSON.stringify(task.archived_by || {}) : String(task.archived_by || '')
   ]
 
   const mapProject = (project: ApiProject) => [
@@ -836,6 +902,7 @@ export const useTaskFlowApi = () => {
     changePassword,
     deleteAccount,
     getMe,
+    getDashboard,
     updateMe,
     listProjects,
     listMembers,
@@ -863,6 +930,12 @@ export const useTaskFlowApi = () => {
     patchProject,
     deleteProject,
     createTask,
+    getTask,
+    listTasks,
+    updateTask,
+    deleteTask,
+    archiveTask,
+    unarchiveTask,
     patchTask,
     loadDashboardData,
     mapTask,

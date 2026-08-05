@@ -50,8 +50,9 @@ const runtimeConfig = useRuntimeConfig()
 
 await taskFlowStore.loadBackendData()
 
-const { state, pages, stats, projectStats, analyticsStats, monthlyProgress, tasksByCategory, tasks, projects, team, workload, reports, events, messages, heatmap, workspaceId, currentDepartmentId, currentRole, apiError } = taskFlowStore
+const { state, pages, stats, projectStats, analyticsStats, monthlyProgress, tasksByCategory, tasks, projects, team, workload, reports, events, messages, heatmap, workspaceId, currentDepartmentId, currentRole, currentUserActive, apiError, dashboardTodayEvents, dashboardUpcomingEvents, dashboardDeadlines, dashboardDepartments, dashboardRecentTasks, dashboardGeneratedAt } = taskFlowStore
 const canManageDepartment = computed(() => ['owner', 'admin', 'manager'].includes(currentRole.value.toLowerCase()))
+const canAddTask = computed(() => currentUserActive.value && ['owner', 'admin', 'manager'].includes(currentRole.value.toLowerCase()))
 const effectiveDepartmentId = computed(() => {
   if (currentDepartmentId.value) return currentDepartmentId.value
   const ownMembership = team.value.find((member) => String(member[2] || '').trim().toLowerCase() === savedProfile.email.trim().toLowerCase())
@@ -60,6 +61,8 @@ const effectiveDepartmentId = computed(() => {
 const departmentTeam = computed(() => team.value.filter((member) => !effectiveDepartmentId.value || String(member[11] || '') === effectiveDepartmentId.value))
 const taskSearchInput = ref('')
 const taskSearch = ref('')
+const taskScope = ref<'all' | 'mine' | 'archived'>(currentRole.value.toLowerCase() === 'member' ? 'mine' : 'all')
+const taskScopeLoading = ref(false)
 const projectSearchInput = ref('')
 const projectSearch = ref('')
 const teamSearchInput = ref('')
@@ -93,6 +96,9 @@ const taskPage = ref(1)
 const taskViewMode = ref<'list' | 'kanban'>('kanban')
 const draggedTaskId = ref('')
 const updatingTaskId = ref('')
+const editingTaskId = ref('')
+const taskModalMode = ref<'create' | 'edit' | 'view'>('create')
+const taskSaving = ref(false)
 const projectPage = ref(1)
 const reportPage = ref(1)
 const teamPage = ref(1)
@@ -212,20 +218,11 @@ const form = reactive({
   description: ''
 })
 const eventTypeOptions = ['Meeting', 'Review', 'Workshop']
-const taskStatusOptions = ['Not Started', 'In Progress', 'Completed']
+const taskStatusOptions = ['Backlog', 'Not Started', 'In Progress', 'On Hold', 'Completed']
 const taskFormStatus = ref('Not Started')
-const taskProjectId = ref('')
-const taskProjectSearch = ref('')
 const taskAssigneeIds = ref<string[]>([])
 const taskAssigneeLabels = ref<string[]>([])
 const taskAssigneeSearch = ref('')
-const filteredTaskProjects = computed(() => {
-  const query = taskProjectSearch.value.trim().toLowerCase()
-  return projects.value.filter((project) => {
-    if (!project[6]) return false
-    return !query || String(project[0] || '').toLowerCase().includes(query)
-  })
-})
 const filteredTaskAssignees = computed(() => {
   const query = taskAssigneeSearch.value.trim().toLowerCase()
   return team.value.filter((member) => {
@@ -341,8 +338,10 @@ const filteredTasks = computed(() =>
   tasks.value.filter((task) => includesQuery(task, taskSearch.value) && (dropdownValues.priority === 'All Priorities' || String(task[2]) === dropdownValues.priority))
 )
 const kanbanColumns = computed(() => [
+  { key: 'backlog', label: 'Backlog', description: 'Planned for later', color: '#64748B', softColor: '#F1F5F9', tasks: filteredTasks.value.filter((task) => String(task[3]).toLowerCase() === 'backlog') },
   { key: 'not_started', label: 'To do', description: 'Ready to be started', color: '#8B96A7', softColor: '#F3F5F7', tasks: filteredTasks.value.filter((task) => String(task[3]).toLowerCase() === 'not started') },
   { key: 'in_progress', label: 'In progress', description: 'Currently being worked on', color: '#3B82F6', softColor: '#EEF5FF', tasks: filteredTasks.value.filter((task) => String(task[3]).toLowerCase() === 'in progress') },
+  { key: 'on_hold', label: 'On Hold', description: 'Temporarily paused', color: '#F59E0B', softColor: '#FFFBEB', tasks: filteredTasks.value.filter((task) => String(task[3]).toLowerCase() === 'on hold') },
   { key: 'completed', label: 'Completed', description: 'Finished and delivered', color: '#18A875', softColor: '#ECF9F4', tasks: filteredTasks.value.filter((task) => String(task[3]).toLowerCase() === 'completed') }
 ])
 const filteredProjects = computed(() => projects.value.filter((project) => includesQuery(project, projectSearch.value) && (projectPriorityFilter.value === 'All Priorities' || String(project[2]) === projectPriorityFilter.value)))
@@ -728,6 +727,80 @@ const dashboardStatStyles = [
   { card: 'from-[#F5FCFA] to-[#EAF8F3] border-[#DDF2EA]', icon: 'text-[#16A778] ring-[#D2EEE4]', line: 'text-[#48C49D]' },
   { card: 'from-[#FFF8FA] to-[#FDEEF2] border-[#F9E1E8]', icon: 'text-[#F04466] ring-[#F7D8E1]', line: 'text-[#F47C97]' }
 ]
+const dashboardSummaryStyles = [
+  'border-blue-100 bg-blue-50 text-blue-600',
+  'border-emerald-100 bg-emerald-50 text-emerald-600',
+  'border-amber-100 bg-amber-50 text-amber-600',
+  'border-violet-100 bg-violet-50 text-violet-600',
+  'border-rose-100 bg-rose-50 text-rose-600'
+]
+const dashboardDateTime = (value: unknown, kind: 'date' | 'time' = 'date') => {
+  const date = new Date(String(value || ''))
+  if (Number.isNaN(date.getTime())) return '—'
+  return kind === 'time'
+    ? new Intl.DateTimeFormat('en-GB', { hour: '2-digit', minute: '2-digit' }).format(date)
+    : new Intl.DateTimeFormat('en-GB', { day: '2-digit', month: 'short', year: 'numeric' }).format(date)
+}
+
+const loadTaskScope = async (scope: 'all' | 'mine' | 'archived') => {
+  if (scope === 'all' && currentRole.value.toLowerCase() === 'member') scope = 'mine'
+  if (scope === 'archived' && !canManageDepartment.value) scope = 'mine'
+  if (taskScopeLoading.value) return
+  taskScope.value = scope
+  taskScopeLoading.value = true
+  actionMenu.value = null
+  try {
+    const response = await taskFlowApi.listTasks({
+      page_size: 100,
+      my_tasks: scope === 'mine' ? 'true' : undefined,
+      archived: scope === 'archived' ? 'true' : undefined
+    })
+    state.value.tasks = response.results.map(taskFlowApi.mapTask)
+    taskPage.value = 1
+  } catch (error) {
+    notifyError(taskFlowApiErrorMessage(error, 'Could not load tasks'))
+  } finally {
+    taskScopeLoading.value = false
+  }
+}
+
+const archiveTask = async (task: Array<string | number>) => {
+  if (!canManageDepartment.value || String(task[3]).toLowerCase() !== 'completed') return
+  const id = String(task[6] || '')
+  if (!id) return notifyError('Task is not synchronized with the backend')
+  try {
+    await taskFlowApi.archiveTask(id)
+    state.value.tasks = state.value.tasks.filter((item) => String(item[6] || '') !== id)
+    notify('Task archived successfully', 'success')
+  } catch (error) {
+    notifyError(taskFlowApiErrorMessage(error, 'Could not archive task'))
+  }
+}
+
+const unarchiveTask = async (task: Array<string | number>) => {
+  if (!canManageDepartment.value) return
+  const id = String(task[6] || '')
+  if (!id) return notifyError('Task is not synchronized with the backend')
+  try {
+    await taskFlowApi.unarchiveTask(id)
+    state.value.tasks = state.value.tasks.filter((item) => String(item[6] || '') !== id)
+    notify('Task restored successfully', 'success')
+  } catch (error) {
+    notifyError(taskFlowApiErrorMessage(error, 'Could not restore task'))
+  }
+}
+
+const archiveOpenedTask = async () => {
+  const task = state.value.tasks.find((item) => String(item[6] || '') === editingTaskId.value)
+  if (!task) return
+  await archiveTask(task)
+  modal.value = null
+}
+
+watch(currentRole, (role) => {
+  if (role.toLowerCase() === 'member' && taskScope.value !== 'mine') void loadTaskScope('mine')
+}, { immediate: true })
+const dashboardStatus = (value: unknown) => String(value || '').split('_').map((word) => word.charAt(0).toUpperCase() + word.slice(1)).join(' ')
 
 const setPage = (key: PageKey) => {
   if (isComingSoonPage(key)) {
@@ -916,7 +989,7 @@ const projectMemberIdFromLabel = (label: string) => {
 const membershipIdOf = (member: Array<string | number>) => String(member[9] || '')
 const payloadMemberId = (id: string) => (/^\d+$/.test(id) ? Number(id) : id)
 const projectEnum = (value: string) => value.toLowerCase().replace(/\s+/g, '_')
-const projectDisplayStatus = (value: string) => value === 'not_started' ? 'Not Started' : value === 'in_progress' ? 'In Progress' : value === 'at_risk' ? 'At Risk' : value.charAt(0).toUpperCase() + value.slice(1)
+const projectDisplayStatus = (value: string) => value.split('_').map((part) => part.charAt(0).toUpperCase() + part.slice(1)).join(' ')
 const todayIsoDate = () => new Date().toISOString().slice(0, 10)
 const formatProjectDateInput = (date: Date) =>
   `${String(date.getDate()).padStart(2, '0')}.${String(date.getMonth() + 1).padStart(2, '0')}.${date.getFullYear()}`
@@ -1143,6 +1216,10 @@ const setListPage = (list: 'task' | 'project' | 'team' | 'report', page: number)
 }
 
 const openModal = (value: Exclude<ModalKey, null>) => {
+  if (value === 'task' && !canAddTask.value) {
+    notifyError('Only active owners, admins, and managers can add tasks')
+    return
+  }
   form.title = ''
   form.assignee = ''
   form.priority = value === 'project' ? 'Low' : 'Medium'
@@ -1161,8 +1238,8 @@ const openModal = (value: Exclude<ModalKey, null>) => {
   form.meetingLink = ''
   form.description = ''
   if (value === 'task') {
-    taskProjectId.value = String(projects.value[0]?.[6] || '')
-    taskProjectSearch.value = String(projects.value[0]?.[0] || '')
+    editingTaskId.value = ''
+    taskModalMode.value = 'create'
     taskAssigneeIds.value = []
     taskAssigneeLabels.value = []
     taskAssigneeSearch.value = ''
@@ -1198,6 +1275,7 @@ const openModal = (value: Exclude<ModalKey, null>) => {
 
 const assignTaskTo = (member: string) => {
   actionMenu.value = null
+  if (!canAddTask.value) return notifyError('Only active owners, admins, and managers can add tasks')
   openModal('task')
   form.assignee = member
   const memberId = projectMemberIdFromLabel(member)
@@ -1351,6 +1429,82 @@ const updateTaskStatus = async (task: Array<string | number>, status: string) =>
   }
 }
 
+const replaceTaskRow = (id: string, task: Array<string | number>) => {
+  const index = state.value.tasks.findIndex((item) => String(item[6] || '') === id)
+  if (index === -1) state.value.tasks.unshift(task)
+  else state.value.tasks.splice(index, 1, task)
+}
+
+const openTask = async (task: Array<string | number>, mode: 'view' | 'edit') => {
+  actionMenu.value = null
+  const id = String(task[6] || '')
+  if (!id) return notifyError('Task backend bilan hali sinxronlanmagan')
+  taskSaving.value = true
+  try {
+    const details = await taskFlowApi.getTask(id)
+    const mapped = taskFlowApi.mapTask(details)
+    replaceTaskRow(id, mapped)
+    editingTaskId.value = id
+    taskModalMode.value = mode
+    form.title = String(mapped[0] || '')
+    form.priority = String(mapped[2] || 'Medium')
+    taskFormStatus.value = String(mapped[3] || 'Not Started')
+    form.description = String(mapped[10] || '')
+    form.category = String(mapped[11] || '')
+    const rawDueDate = String(mapped[12] || '')
+    form.dueDate = rawDueDate ? formatProjectDateInput(new Date(`${rawDueDate}T00:00:00`)) : ''
+    const assigneeDetails = taskAssigneeDetailsOf(mapped)
+    const rawAssignees = JSON.parse(String(mapped[13] || '[]')) as Array<string | number>
+    taskAssigneeIds.value = rawAssignees.map(String)
+    if (!taskAssigneeIds.value.length) taskAssigneeIds.value = assigneeDetails.map((member) => String(member.id || '')).filter(Boolean)
+    taskAssigneeLabels.value = assigneeDetails.map(projectMemberName)
+    taskAssigneeSearch.value = ''
+    modal.value = 'task'
+  } catch (error) {
+    notifyError(taskFlowApiErrorMessage(error, 'Task ma’lumotlarini yuklab bo‘lmadi'))
+  } finally {
+    taskSaving.value = false
+  }
+}
+
+const deleteTask = async (task: Array<string | number>) => {
+  actionMenu.value = null
+  const id = String(task[6] || '')
+  if (!id) return notifyError('Task backend bilan hali sinxronlanmagan')
+  if (import.meta.client && !window.confirm(`“${String(task[0])}” taskini o‘chirmoqchimisiz?`)) return
+  try {
+    await taskFlowApi.deleteTask(id)
+    state.value.tasks = state.value.tasks.filter((item) => String(item[6] || '') !== id)
+    notify('Task muvaffaqiyatli o‘chirildi', 'success')
+  } catch (error) {
+    notifyError(taskFlowApiErrorMessage(error, 'Taskni o‘chirib bo‘lmadi'))
+  }
+}
+
+const duplicateTask = async (task: Array<string | number>) => {
+  actionMenu.value = null
+  const department = String(task[8] || '')
+  if (!department) return notifyError('Task bo‘limi topilmadi')
+  try {
+    const assignees = JSON.parse(String(task[13] || '[]')) as Array<string | number>
+    const created = await taskFlowApi.createTask({
+      department,
+      title: `${String(task[0])} Copy`,
+      description: String(task[10] || ''),
+      status: projectEnum(String(task[3] || 'Not Started')),
+      priority: projectEnum(String(task[2] || 'Medium')),
+      category: String(task[11] || ''),
+      assignees,
+      due_date: String(task[12] || todayIsoDate()),
+      progress: Number(task[5] || 0)
+    })
+    state.value.tasks.unshift(taskFlowApi.mapTask(created))
+    notify('Task nusxasi yaratildi', 'success')
+  } catch (error) {
+    notifyError(taskFlowApiErrorMessage(error, 'Task nusxasini yaratib bo‘lmadi'))
+  }
+}
+
 const dropTaskInColumn = (status: string) => {
   const task = tasks.value.find((item) => String(item[6] || '') === draggedTaskId.value)
   if (task) void updateTaskStatus(task, status)
@@ -1479,12 +1633,12 @@ const submitModal = async () => {
   }
 
   if (modal.value === 'task') {
-    if (!title) {
-      notifyError('Task title is required')
+    if (taskModalMode.value === 'view') {
+      modal.value = null
       return
     }
-    if (!taskProjectId.value) {
-      notifyError('Select a project')
+    if (!title) {
+      notifyError('Task title is required')
       return
     }
     if (!taskAssigneeIds.value.length) {
@@ -1492,9 +1646,18 @@ const submitModal = async () => {
       return
     }
 
+    const department = String(effectiveDepartmentId.value || '')
+    if (!department) {
+      notifyError('Your user must belong to a department before creating tasks')
+      return
+    }
+    if (!canAddTask.value && !editingTaskId.value) {
+      notifyError('Only active owners, admins, and managers can add tasks')
+      return
+    }
     const status = projectEnum(taskFormStatus.value)
     const payload = {
-      project: taskProjectId.value,
+      department,
       title,
       description: form.description.trim(),
       status,
@@ -1505,14 +1668,21 @@ const submitModal = async () => {
       progress: status === 'completed' ? 100 : 0
     }
 
+    taskSaving.value = true
     try {
-      const created = await taskFlowApi.createTask(payload)
-      state.value.tasks.unshift(taskFlowApi.mapTask(created))
-      notify('Task created successfully', 'success')
+      const saved = editingTaskId.value
+        ? await taskFlowApi.updateTask(editingTaskId.value, payload)
+        : await taskFlowApi.createTask(payload)
+      if (editingTaskId.value) replaceTaskRow(editingTaskId.value, taskFlowApi.mapTask(saved))
+      else state.value.tasks.unshift(taskFlowApi.mapTask(saved))
+      notify(editingTaskId.value ? 'Task muvaffaqiyatli yangilandi' : 'Task muvaffaqiyatli yaratildi', 'success')
+      await loadTaskScope(taskScope.value)
     } catch (error) {
       console.error('Task create failed.', error)
       notifyError(taskFlowApiErrorMessage(error, 'Task create failed'))
       return
+    } finally {
+      taskSaving.value = false
     }
   }
 
@@ -1902,12 +2072,20 @@ const toggleActionMenu = (key: string) => {
   actionMenu.value = actionMenu.value === key ? null : key
 }
 
-const runAction = (action: string, type: string, label: string) => {
+const runAction = async (action: string, type: string, label: string) => {
   actionMenu.value = null
 
   if (type === 'task' && !canManageDepartment.value) {
     notifyError('Members can update only task status and progress')
     return
+  }
+
+  if (type === 'task') {
+    const task = state.value.tasks.find((item) => String(item[0]) === label)
+    if (!task) return notifyError('Task topilmadi')
+    if (action === 'edit') return await openTask(task, 'edit')
+    if (action === 'duplicate') return await duplicateTask(task)
+    if (action === 'delete') return await deleteTask(task)
   }
 
   if (action === 'delete') {
@@ -1946,6 +2124,8 @@ const badgeClass = (value: string) => {
   if (value === 'Medium' || value === 'Processing') return 'bg-task-warningSoft text-task-warning'
   if (value === 'Low' || value === 'Completed' || value === 'Ready') return 'bg-task-successSoft text-task-success'
   if (value === 'Not Started') return 'bg-slate-100 text-task-muted'
+  if (value === 'Backlog') return 'bg-slate-200 text-slate-600'
+  if (value === 'On Hold') return 'bg-amber-100 text-amber-700'
   return 'bg-task-blueSoft text-task-blue'
 }
 
@@ -2087,6 +2267,24 @@ const iconPath = (name: string) => {
         </header>
 
         <section v-if="activePage === 'dashboard'" class="space-y-4">
+          <div class="grid gap-3 sm:grid-cols-2 xl:grid-cols-5">
+            <article v-for="(item, index) in stats" :key="String(item[1])" :class="['tf-panel border p-4 shadow-none', dashboardSummaryStyles[index]]">
+              <div class="flex items-start justify-between gap-3"><div><p class="text-xs font-semibold text-task-muted">{{ item[1] }}</p><p class="mt-3 text-3xl font-extrabold text-task-ink">{{ item[0] }}</p></div><span class="grid h-11 w-11 place-items-center rounded-[13px] bg-white/80 shadow-sm"><svg viewBox="0 0 24 24" class="h-5 w-5" fill="none" stroke="currentColor" stroke-width="1.9"><path :d="index === 1 ? 'm6 12 4 4 8-9' : index === 2 ? 'M12 7v5l3 2' : index === 4 ? 'M12 8v5m0 4h.01M5 20h14L12 3 5 20Z' : 'M5 4h14v16H5V4Zm4 4h6m-6 4h6'" /></svg></span></div>
+              <div class="mt-3 flex items-center gap-2 text-xs font-bold"><span>{{ Number(item[2] || 0).toFixed(1) }}%</span><div class="h-1.5 flex-1 overflow-hidden rounded-full bg-white/70"><div class="h-full rounded-full bg-current" :style="{ width: `${Math.min(100, Number(item[2] || 0))}%` }" /></div></div>
+            </article>
+          </div>
+          <div class="grid gap-4 xl:grid-cols-3">
+            <section v-for="panel in [{ title: 'Today’s Events', items: dashboardTodayEvents, upcoming: false }, { title: 'Upcoming Events', items: dashboardUpcomingEvents, upcoming: true }]" :key="panel.title" class="tf-panel overflow-hidden p-0"><header class="flex items-center justify-between border-b border-task-line px-5 py-4"><h2 class="font-bold">{{ panel.title }}</h2><span class="tf-pill bg-task-blueSoft text-task-blue">{{ panel.items.length }}</span></header><div class="divide-y divide-task-line"><article v-for="event in panel.items" :key="String(event.id)" class="flex gap-3 px-5 py-4"><time class="grid h-11 min-w-16 place-items-center rounded-[11px] bg-task-blueSoft px-2 text-xs font-bold text-task-blue">{{ panel.upcoming ? dashboardDateTime(event.starts_at).split(' ').slice(0, 2).join(' ') : dashboardDateTime(event.starts_at, 'time') }}</time><div class="min-w-0 flex-1"><p class="truncate text-sm font-bold">{{ event.title }}</p><p class="mt-1 truncate text-xs text-task-muted">{{ event.department?.name || 'No department' }} · {{ event.location || 'Online' }}</p></div></article><p v-if="!panel.items.length" class="px-5 py-10 text-center text-sm text-task-muted">No events available.</p></div></section>
+            <section class="tf-panel overflow-hidden p-0"><header class="flex items-center justify-between border-b border-task-line px-5 py-4"><h2 class="font-bold">Upcoming Deadlines</h2><button type="button" class="text-xs font-bold text-task-blue" @click="setPage('tasks')">View all</button></header><div class="divide-y divide-task-line"><article v-for="task in dashboardDeadlines" :key="String(task.id)" class="flex items-center gap-3 px-5 py-4"><span :class="['h-2.5 w-2.5 shrink-0 rounded-full', task.priority === 'high' ? 'bg-task-danger' : task.priority === 'medium' ? 'bg-task-warning' : 'bg-task-success']" /><div class="min-w-0 flex-1"><p class="truncate text-sm font-bold">{{ task.title }}</p><p class="mt-1 truncate text-xs text-task-muted">{{ task.department?.name || 'No department' }}</p></div><div class="text-right"><p class="text-xs font-bold">{{ dashboardDateTime(task.due_date) }}</p><p class="mt-1 text-[10px] font-semibold text-task-warning">{{ task.days_remaining }} days left</p></div></article><p v-if="!dashboardDeadlines.length" class="px-5 py-10 text-center text-sm text-task-muted">No upcoming deadlines.</p></div></section>
+          </div>
+          <div class="grid gap-4 xl:grid-cols-[0.8fr_1.2fr]">
+            <section class="tf-panel p-5"><h2 class="font-bold">Tasks by Department</h2><p class="mt-1 text-xs text-task-muted">Role-filtered task distribution</p><div class="mt-5 space-y-4"><div v-for="department in dashboardDepartments" :key="String(department.department_id)"><div class="mb-2 flex items-center justify-between text-sm"><span class="font-semibold">{{ department.department_name }}</span><span><b>{{ department.task_count }}</b> · {{ Number(department.percentage).toFixed(1) }}%</span></div><div class="h-2 overflow-hidden rounded-full bg-slate-100"><div class="h-full rounded-full bg-gradient-to-r from-task-blue to-[#7654ED]" :style="{ width: `${Math.min(100, Number(department.percentage))}%` }" /></div></div><p v-if="!dashboardDepartments.length" class="py-10 text-center text-sm text-task-muted">No department statistics available.</p></div></section>
+            <section class="tf-panel overflow-hidden p-0"><header class="flex items-center justify-between border-b border-task-line px-5 py-4"><div><h2 class="font-bold">Recent Tasks</h2><p class="mt-1 text-xs text-task-muted">Latest activity</p></div><button type="button" class="text-xs font-bold text-task-blue" @click="setPage('tasks')">View all</button></header><div class="overflow-x-auto"><table class="w-full min-w-[620px] text-left text-sm"><thead class="bg-slate-50 text-xs text-task-muted"><tr><th class="px-5 py-3">Task</th><th class="px-4 py-3">Department</th><th class="px-4 py-3">Created</th><th class="px-5 py-3">Status</th></tr></thead><tbody class="divide-y divide-task-line"><tr v-for="task in dashboardRecentTasks" :key="String(task.id)"><td class="px-5 py-3.5 font-semibold">{{ task.title }}</td><td class="px-4 py-3.5 text-task-muted">{{ task.department?.name || '—' }}</td><td class="px-4 py-3.5 text-task-muted">{{ dashboardDateTime(task.created_at) }}</td><td class="px-5 py-3.5"><span :class="['tf-pill', badgeClass(dashboardStatus(task.status))]">{{ dashboardStatus(task.status) }}</span></td></tr></tbody></table><p v-if="!dashboardRecentTasks.length" class="py-10 text-center text-sm text-task-muted">No recent tasks.</p></div></section>
+          </div>
+          <p v-if="dashboardGeneratedAt" class="text-right text-[11px] text-task-muted">Last updated {{ dashboardDateTime(dashboardGeneratedAt) }} at {{ dashboardDateTime(dashboardGeneratedAt, 'time') }}</p>
+        </section>
+
+        <section v-if="false" class="space-y-4">
           <div class="grid gap-4 xl:h-[429px] xl:grid-cols-[minmax(0,1fr)_399px] xl:items-stretch">
           <div class="grid gap-4 xl:grid-rows-[180px_233px]">
             <div class="tf-panel grid min-h-[132px] gap-3 p-4 sm:min-h-[180px] sm:grid-cols-4 sm:gap-4 sm:p-5 xl:h-full xl:min-h-0">
@@ -2172,6 +2370,11 @@ const iconPath = (name: string) => {
           <div class="mb-5 flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
             <div><h2 class="text-lg font-bold">Task Board</h2><p class="mt-1 text-xs text-task-muted">Organize tasks and move them through each stage</p></div>
             <div class="flex flex-col gap-3 sm:flex-row sm:flex-wrap sm:items-center sm:justify-end">
+              <div class="inline-flex h-11 shrink-0 items-center rounded-[12px] border border-task-line bg-slate-50 p-1" role="tablist" aria-label="Task scope">
+                <button v-if="currentRole.toLowerCase() !== 'member'" type="button" role="tab" :aria-selected="taskScope === 'all'" :disabled="taskScopeLoading" :class="['h-9 rounded-[9px] px-3 text-xs font-bold transition disabled:opacity-60', taskScope === 'all' ? 'bg-white text-task-blue shadow-sm' : 'text-task-muted hover:text-task-ink']" @click="loadTaskScope('all')">All Tasks</button>
+                <button type="button" role="tab" :aria-selected="taskScope === 'mine'" :disabled="taskScopeLoading" :class="['h-9 rounded-[9px] px-3 text-xs font-bold transition disabled:opacity-60', taskScope === 'mine' ? 'bg-white text-task-blue shadow-sm' : 'text-task-muted hover:text-task-ink']" @click="loadTaskScope('mine')">My Tasks</button>
+                <button v-if="canManageDepartment" type="button" role="tab" :aria-selected="taskScope === 'archived'" :disabled="taskScopeLoading" :class="['h-9 rounded-[9px] px-3 text-xs font-bold transition disabled:opacity-60', taskScope === 'archived' ? 'bg-white text-task-blue shadow-sm' : 'text-task-muted hover:text-task-ink']" @click="loadTaskScope('archived')">Archive</button>
+              </div>
               <div class="inline-flex h-11 shrink-0 items-center gap-2" role="tablist" aria-label="Task view">
                 <button type="button" role="tab" :aria-selected="taskViewMode === 'list'" :class="['inline-flex h-11 items-center gap-2 rounded-[12px] border px-4 text-sm font-semibold transition-all duration-200', taskViewMode === 'list' ? 'border-task-blue bg-task-blueSoft text-task-blue shadow-sm' : 'border-task-line bg-white text-task-muted hover:border-task-blue hover:text-task-blue']" @click="taskViewMode = 'list'">
                   <svg viewBox="0 0 20 20" class="h-4 w-4" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"><path d="M6.5 5h10M6.5 10h10M6.5 15h10" /><circle cx="3" cy="5" r=".7" fill="currentColor" stroke="none" /><circle cx="3" cy="10" r=".7" fill="currentColor" stroke="none" /><circle cx="3" cy="15" r=".7" fill="currentColor" stroke="none" /></svg>
@@ -2200,18 +2403,26 @@ const iconPath = (name: string) => {
                   </button>
                 </div>
               </div>
-              <button class="group inline-flex h-11 w-full shrink-0 items-center justify-center gap-2 rounded-[12px] bg-gradient-to-r from-[#347FE0] to-[#2567AD] px-5 text-sm font-bold text-white shadow-[0_10px_22px_-10px_rgba(37,103,173,0.75)] transition duration-200 hover:-translate-y-0.5 active:translate-y-0 sm:w-auto" type="button" @click="openModal('task')">
+              <button v-if="canAddTask && taskScope !== 'archived'" class="group inline-flex h-11 w-full shrink-0 items-center justify-center gap-2 rounded-[12px] bg-gradient-to-r from-[#347FE0] to-[#2567AD] px-5 text-sm font-bold text-white shadow-[0_10px_22px_-10px_rgba(37,103,173,0.75)] transition duration-200 hover:-translate-y-0.5 active:translate-y-0 sm:w-auto" type="button" @click="openModal('task')">
                 <svg viewBox="0 0 24 24" class="h-4 w-4 transition group-hover:rotate-90" fill="none" stroke="currentColor" stroke-width="2.2"><path :d="iconPath('plus')" /></svg>
-                <span>Create Task</span>
+                <span>Add Task</span>
               </button>
             </div>
           </div>
-          <div v-if="searchLoading.task" class="tf-search-overlay"><span class="tf-search-loader" /> Searching tasks...</div>
-          <div v-if="taskViewMode === 'list'">
+          <div v-if="searchLoading.task || taskScopeLoading" class="tf-search-overlay"><span class="tf-search-loader" /> {{ taskScopeLoading ? 'Loading tasks...' : 'Searching tasks...' }}</div>
+          <div v-if="taskScope === 'archived'" class="grid gap-3 sm:grid-cols-2 xl:grid-cols-3">
+            <article v-for="task in paginatedTasks" :key="String(task[6])" class="rounded-[16px] border border-slate-200 bg-slate-50/70 p-4 transition hover:border-task-blue hover:bg-white hover:shadow-card">
+              <div class="flex items-start justify-between gap-3"><div class="min-w-0"><span class="inline-flex rounded-full bg-slate-200 px-2 py-1 text-[10px] font-bold uppercase tracking-wide text-slate-600">Archived</span><h3 class="mt-2 line-clamp-2 font-bold text-task-ink">{{ task[0] }}</h3></div><button v-if="canManageDepartment" type="button" class="inline-flex h-9 shrink-0 items-center gap-2 rounded-[10px] border border-task-line bg-white px-3 text-xs font-bold text-task-blue transition hover:border-task-blue hover:bg-task-blueSoft" @click="unarchiveTask(task)"><svg viewBox="0 0 24 24" class="h-4 w-4" fill="none" stroke="currentColor" stroke-width="1.9"><path d="M4 7h16v13H4V7Zm-1-4h18v4H3V3Zm6 9h6" /></svg>Restore</button></div>
+              <div class="mt-4 flex flex-wrap gap-2"><span :class="['tf-pill', badgeClass(String(task[2]))]">{{ task[2] }}</span><span :class="['tf-pill', badgeClass(String(task[3]))]">{{ task[3] }}</span></div>
+              <div class="mt-4 flex items-center justify-between border-t border-task-line pt-3 text-xs text-task-muted"><span>{{ task[1] }}</span><span>Archived {{ task[15] ? dashboardDateTime(task[15]) : '—' }}</span></div>
+            </article>
+            <div v-if="!paginatedTasks.length" class="col-span-full rounded-[16px] border border-dashed border-task-line py-16 text-center"><p class="font-semibold text-task-ink">Archive is empty</p><p class="mt-1 text-sm text-task-muted">Completed tasks can be archived here.</p></div>
+          </div>
+          <div v-else-if="taskViewMode === 'list'">
           <table class="w-full text-left text-sm">
             <thead class="bg-slate-100 text-task-muted"><tr><th class="rounded-l-ui p-3">Task</th><th class="p-3">Assignee</th><th class="p-3">Priority</th><th class="p-3">Status</th><th class="p-3">Due Date</th><th class="p-3">Progress</th><th class="rounded-r-ui p-3 text-right">Actions</th></tr></thead>
             <tbody class="divide-y divide-task-line">
-              <tr v-for="task in paginatedTasks" :key="`${task[0]}-${task[4]}`">
+              <tr v-for="task in paginatedTasks" :key="String(task[6] || `${task[0]}-${task[4]}`)" class="cursor-pointer" @dblclick="openTask(task, 'view')">
                 <td class="p-3 text-task-muted">{{ task[0] }}</td><td class="p-3"><div class="flex items-center gap-2"><div class="flex -space-x-2"><span v-for="i in 2" :key="i" class="grid h-6 w-6 place-items-center rounded-full border border-white bg-slate-300 text-[9px] font-bold text-white">{{ String(task[1]).slice(i - 1, i) }}</span></div>{{ task[1] }}</div></td><td class="p-3"><span :class="['tf-pill', badgeClass(String(task[2]))]">{{ task[2] }}</span></td><td class="p-3"><span :class="['tf-pill', badgeClass(String(task[3]))]">{{ task[3] }}</span></td><td class="p-3 text-task-muted">{{ task[4] }}</td><td class="p-3"><div class="flex items-center gap-2"><div class="h-2 w-20 rounded-full bg-slate-200"><div class="h-full rounded-full bg-task-blue" :style="{ width: `${task[5]}%` }" /></div><span>{{ task[5] }}%</span></div></td><td class="relative p-3 text-right"><div class="relative inline-flex"><button type="button" class="tf-icon-button" @click="toggleActionMenu(`task-${task[0]}`)"><svg viewBox="0 0 24 24" class="h-4 w-4" fill="none" stroke="currentColor" stroke-width="2"><path :d="iconPath('dots')" /></svg></button><div v-if="actionMenu === `task-${task[0]}`" class="tf-action-menu"><button type="button" class="tf-action-item" @click="actionMenu = null">View</button><button type="button" class="tf-action-item" @click="runAction('edit', 'task', String(task[0]))">Edit</button><button type="button" class="tf-action-item" @click="runAction('duplicate', 'task', String(task[0]))">Duplicate</button><button type="button" class="tf-action-item tf-action-danger" @click="runAction('delete', 'task', String(task[0]))">Delete</button></div></div></td>
               </tr>
             </tbody>
@@ -2241,6 +2452,7 @@ const iconPath = (name: string) => {
                   :class="['tf-kanban-card group', updatingTaskId === String(task[6]) ? 'pointer-events-none opacity-60' : '']"
                   @dragstart="draggedTaskId = String(task[6] || '')"
                   @dragend="draggedTaskId = ''"
+                  @dblclick="openTask(task, 'view')"
                 >
                   <div class="flex items-start justify-between gap-3"><h4 class="line-clamp-2 text-[14px] font-bold leading-[1.4] tracking-[-0.01em] text-slate-900">{{ task[0] }}</h4><span v-if="column.key === 'completed'" class="grid h-6 w-6 shrink-0 place-items-center rounded-full border border-task-success/40 bg-task-successSoft text-task-success"><svg viewBox="0 0 24 24" class="h-3.5 w-3.5" fill="none" stroke="currentColor" stroke-width="2.2"><path d="m6 12 4 4 8-9" /></svg></span></div>
                   <p v-if="task[7]" class="mt-2 inline-flex max-w-full items-center gap-1.5 truncate text-xs font-medium text-slate-500"><svg viewBox="0 0 24 24" class="h-3.5 w-3.5 shrink-0 text-task-blue" fill="none" stroke="currentColor" stroke-width="1.8"><path :d="iconPath('folder')" /></svg>{{ task[7] }}</p>
@@ -2270,12 +2482,15 @@ const iconPath = (name: string) => {
                   </div>
 
                   <select class="tf-kanban-status-select" :value="column.key" :disabled="updatingTaskId === String(task[6]) || !task[6]" aria-label="Change task status" @change="updateTaskStatus(task, ($event.target as HTMLSelectElement).value)">
+                    <option value="backlog">Backlog</option>
                     <option value="not_started">Not Started</option>
                     <option value="in_progress">In Progress</option>
+                    <option value="on_hold">On Hold</option>
                     <option value="completed">Completed</option>
                   </select>
+                  <button v-if="column.key === 'completed' && canManageDepartment" type="button" class="mt-3 inline-flex h-8 w-full items-center justify-center gap-2 rounded-[9px] border border-slate-200 bg-slate-50 text-xs font-bold text-slate-600 transition hover:border-task-blue hover:bg-task-blueSoft hover:text-task-blue" @click.stop="archiveTask(task)"><svg viewBox="0 0 24 24" class="h-4 w-4" fill="none" stroke="currentColor" stroke-width="1.9"><path d="M4 7h16v13H4V7Zm-1-4h18v4H3V3Zm6 9h6" /></svg>Archive</button>
                 </article>
-                <button type="button" class="tf-kanban-empty w-full" @click="openModal('task')"><span class="text-lg font-light">+</span><span>Drop tasks here</span></button>
+                <button v-if="canAddTask" type="button" class="tf-kanban-empty w-full" @click="openModal('task')"><span class="text-lg font-light">+</span><span>Add task</span></button>
               </div>
             </section>
           </div>
@@ -2654,7 +2869,7 @@ const iconPath = (name: string) => {
 
     <div v-if="modal" class="fixed inset-0 z-50 grid place-items-center bg-slate-900/45 p-3 backdrop-blur-[2px] sm:p-6" @click.self="modal = null">
       <div :class="['tf-app-modal flex max-h-[calc(100vh-24px)] w-full flex-col overflow-hidden rounded-[22px] border border-white/70 bg-[#E3EAF2] shadow-[0_30px_90px_-20px_rgba(15,23,42,0.45)] sm:max-h-[calc(100vh-48px)]', modal === 'project' ? 'tf-project-modal max-w-[600px]' : modal === 'task' ? 'max-w-[620px]' : modal === 'event' || modal === 'event-detail' || modal === 'report' ? 'max-w-[620px]' : 'max-w-[520px]']">
-        <div class="flex shrink-0 items-center justify-between px-5 py-3.5 sm:px-6 sm:py-4"><h2 class="text-[21px] font-semibold tracking-[-0.025em] sm:text-[22px]">{{ modal === 'task' ? 'Create Task' : modal === 'project' ? 'Create New Project' : modal === 'event' ? 'Add New Event' : modal === 'event-detail' ? 'Event Details' : modal === 'report' ? 'Custom Report Builder' : modal === 'member' ? 'Add Department Member' : 'Filter Staff' }}</h2><button type="button" class="grid h-9 w-9 place-items-center rounded-full text-[28px] font-light leading-none transition hover:bg-white/60 hover:text-task-blue" aria-label="Close modal" @click="modal = null">×</button></div>
+        <div class="flex shrink-0 items-center justify-between px-5 py-3.5 sm:px-6 sm:py-4"><h2 class="text-[21px] font-semibold tracking-[-0.025em] sm:text-[22px]">{{ modal === 'task' ? (taskModalMode === 'view' ? 'Task Details' : taskModalMode === 'edit' ? 'Edit Task' : 'Create Task') : modal === 'project' ? 'Create New Project' : modal === 'event' ? 'Add New Event' : modal === 'event-detail' ? 'Event Details' : modal === 'report' ? 'Custom Report Builder' : modal === 'member' ? 'Add Department Member' : 'Filter Staff' }}</h2><button type="button" class="grid h-9 w-9 place-items-center rounded-full text-[28px] font-light leading-none transition hover:bg-white/60 hover:text-task-blue" aria-label="Close modal" @click="modal = null">×</button></div>
         <div :class="['min-h-0 overflow-y-auto bg-white', modal === 'project' || modal === 'task' ? 'mx-3 mb-3 rounded-[18px] p-5' : 'mx-2 mb-2 rounded-[16px] p-4']">
           <template v-if="modal === 'event-detail' && selectedCalendarEvent">
             <div class="flex items-start gap-3 border-b border-task-line pb-3"><span :class="['grid h-12 w-12 shrink-0 place-items-center rounded-full text-center text-[11px] font-bold text-white', selectedCalendarEvent.color]">{{ String(selectedCalendarEvent.day).padStart(2, '0') }}<br />{{ selectedCalendarEvent.meridiem }}</span><div><h3 class="text-lg font-bold text-task-ink">{{ selectedCalendarEvent.title }}</h3><span class="mt-1.5 inline-flex rounded-full bg-task-blueSoft px-3 py-1 text-xs font-semibold text-task-blue">{{ selectedCalendarEvent.eventType }}</span></div></div>
@@ -2671,28 +2886,10 @@ const iconPath = (name: string) => {
             <label class="mt-4 block text-sm font-semibold">Role<div class="tf-dropdown mt-2"><button type="button" class="tf-dropdown-button h-12" @click="openDropdown = openDropdown === 'memberRole' ? null : 'memberRole'"><span class="capitalize">{{ memberRole }}</span><svg viewBox="0 0 20 20" class="h-4 w-4 text-task-muted" fill="none" stroke="currentColor" stroke-width="2"><path d="m5 7.5 5 5 5-5" /></svg></button><div v-if="openDropdown === 'memberRole'" class="tf-dropdown-menu"><button v-for="role in memberRoleOptions" :key="role" type="button" class="tf-dropdown-option capitalize" @click="memberRole = role; openDropdown = null"><span>{{ role }}</span><span v-if="memberRole === role">✓</span></button></div></div></label>
           </template>
           <template v-else-if="modal === 'task'">
-            <label class="block text-sm font-semibold">
-              Project Name
-              <div class="tf-dropdown mt-2">
-                <input
-                  v-model="taskProjectSearch"
-                  class="tf-input h-12 w-full pr-11"
-                  placeholder="Type project name..."
-                  autocomplete="off"
-                  @focus="openDropdown = 'taskProject'"
-                  @input="taskProjectId = ''; openDropdown = 'taskProject'"
-                />
-                <button type="button" class="absolute right-3 top-1/2 -translate-y-1/2 text-task-muted transition hover:text-task-blue" aria-label="Show projects" @click="openDropdown = openDropdown === 'taskProject' ? null : 'taskProject'">
-                  <svg viewBox="0 0 20 20" :class="['h-4 w-4 transition-transform', openDropdown === 'taskProject' ? 'rotate-180' : '']" fill="none" stroke="currentColor" stroke-width="2"><path d="m5 7.5 5 5 5-5" /></svg>
-                </button>
-                <div v-if="openDropdown === 'taskProject'" class="tf-dropdown-menu max-h-56 overflow-y-auto">
-                  <button v-for="project in filteredTaskProjects" :key="String(project[6])" type="button" class="tf-dropdown-option" @click="taskProjectId = String(project[6]); taskProjectSearch = String(project[0] || ''); openDropdown = null">
-                    <span>{{ project[0] }}</span><span v-if="taskProjectId === String(project[6])">✓</span>
-                  </button>
-                  <p v-if="!filteredTaskProjects.length" class="px-3 py-3 text-sm text-task-muted">No project found</p>
-                </div>
-              </div>
-            </label>
+            <div class="mb-4 flex items-center gap-3 rounded-[14px] border border-task-line bg-task-blueSoft px-4 py-3 text-sm">
+              <span class="grid h-9 w-9 shrink-0 place-items-center rounded-full bg-white text-task-blue"><svg viewBox="0 0 24 24" class="h-4 w-4" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M4 21V7l8-4 8 4v14M9 21v-5h6v5M8 9h1m6 0h1m-8 3h1m6 0h1" /></svg></span>
+              <div><p class="font-semibold text-task-ink">Current department</p><p class="mt-0.5 text-xs text-task-muted">Task automatically belongs to your department.</p></div>
+            </div>
             <label class="block text-sm font-semibold">
               Task Title
               <input v-model="form.title" class="tf-input mt-2 h-12 w-full" placeholder="Enter task title" />
@@ -3016,8 +3213,9 @@ const iconPath = (name: string) => {
             </div>
           </template>
           <div :class="['sticky bottom-0 flex justify-end gap-2.5 bg-white', modal === 'project' || modal === 'task' ? '-mx-5 -mb-5 mt-5 px-5 py-3' : '-mx-4 -mb-4 mt-4 border-t border-task-line px-4 py-3']">
+            <button v-if="modal === 'task' && editingTaskId && taskFormStatus === 'Completed' && canManageDepartment" class="mr-auto h-10 rounded-full border border-slate-300 bg-slate-50 px-5 text-sm font-semibold text-slate-600 transition hover:border-task-blue hover:bg-task-blueSoft hover:text-task-blue" @click="archiveOpenedTask">Archive</button>
             <button class="h-10 rounded-full border border-task-line bg-white px-5 text-sm font-semibold shadow-button transition hover:border-task-blue hover:text-task-blue" @click="modal = null">Cancel</button>
-            <button v-if="modal !== 'event-detail'" class="h-10 rounded-full bg-gradient-to-b from-[#72A4D7] to-[#2567AD] px-6 text-sm font-semibold text-white shadow-button transition hover:-translate-y-0.5" @click="submitModal">{{ modal === 'report' ? 'Generate Report' : modal === 'event' ? 'Create Event' : modal === 'project' ? (editingProjectId ? 'Update Project' : 'Create Project') : modal === 'member' ? 'Add Member' : modal === 'team-filter' ? 'Apply' : 'Create Task' }}</button>
+            <button v-if="modal !== 'event-detail' && !(modal === 'task' && taskModalMode === 'view')" :disabled="taskSaving" class="h-10 rounded-full bg-gradient-to-b from-[#72A4D7] to-[#2567AD] px-6 text-sm font-semibold text-white shadow-button transition hover:-translate-y-0.5 disabled:cursor-not-allowed disabled:opacity-60" @click="submitModal">{{ taskSaving ? 'Saving...' : modal === 'report' ? 'Generate Report' : modal === 'event' ? 'Create Event' : modal === 'project' ? (editingProjectId ? 'Update Project' : 'Create Project') : modal === 'member' ? 'Add Member' : modal === 'team-filter' ? 'Apply' : taskModalMode === 'edit' ? 'Save Changes' : 'Create Task' }}</button>
           </div>
         </div>
       </div>
