@@ -223,7 +223,7 @@ body {
   }
 
   .tf-kanban-column {
-    @apply min-h-[520px] w-[340px] min-w-[300px] flex-1 rounded-[12px] border border-slate-100 bg-[#F7F8FB] p-3;
+    @apply min-h-[480px] w-[300px] min-w-[260px] flex-1 rounded-[12px] border border-slate-100 bg-[#F7F8FB] p-3;
     box-shadow: inset 0 1px 0 rgb(255 255 255 / 0.9);
   }
 
