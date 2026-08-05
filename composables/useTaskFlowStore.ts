@@ -156,9 +156,26 @@ export const useTaskFlowStore = () => {
     } catch (error) {
       console.warn('TaskFlow API load failed.', error)
       apiError.value = taskFlowApiErrorMessage(error, 'Could not load dashboard data')
-      state.value = {
-        ...createEmptyState(),
-        loaded: true
+      // Keep permissions available even when an unrelated dashboard/list
+      // endpoint fails. Creation rights are defined by `/me/`, not by the
+      // success of projects, analytics, members, or reports requests.
+      try {
+        const profile = await api.getMe()
+        const membership = profile.department_membership || profile.membership || profile.memberships?.[0]
+        state.value = {
+          ...createEmptyState(),
+          loaded: true,
+          currentUserId: String(profile.id ?? ''),
+          currentDepartmentId: String(profile.department || membership?.department || ''),
+          currentRole: String(profile.role || membership?.role || '').trim().toLowerCase(),
+          currentUserActive: profile.is_active !== false && membership?.is_active !== false
+        }
+      } catch (profileError) {
+        console.warn('TaskFlow profile load failed.', profileError)
+        state.value = {
+          ...createEmptyState(),
+          loaded: true
+        }
       }
     }
   }

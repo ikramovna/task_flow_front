@@ -771,9 +771,11 @@ export const useTaskFlowApi = () => {
       workspaceId,
       workspaceName: workspaceNameOf(workspace),
       currentUserId: String(profile.id ?? ''),
-      currentDepartmentId: String(currentMembership?.department || profileDepartment),
-      currentRole: String(currentMembership?.role || profileRole).trim().toLowerCase(),
-      currentUserActive: currentMembership?.is_active !== false && profileIsActive,
+      // `/me/` is the authoritative source for permissions. A stale or partial
+      // member row must never downgrade an owner/admin/manager in the UI.
+      currentDepartmentId: profileDepartment || String(currentMembership?.department || ''),
+      currentRole: profileRole,
+      currentUserActive: profileIsActive,
       dashboard,
       analytics,
       tasks: tasks.results,
