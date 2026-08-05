@@ -1130,21 +1130,33 @@ const loadMembersFromBackend = async () => {
     const role = dropdownValues.role !== 'All Roles' ? dropdownValues.role : undefined
     const isActive = dropdownValues.status === 'Active' ? true : dropdownValues.status === 'Inactive' ? false : undefined
     const department = /^[0-9a-f-]{32,36}$/i.test(dropdownValues.department) ? dropdownValues.department : undefined
-    const [response, summary] = await Promise.all([
-      taskFlowApi.listMembers({
-        department,
-        is_active: isActive,
-        role,
-        search: teamSearch.value.trim() || undefined,
-        ordering: 'joined_at',
-        page_size: 60
-      }),
-      taskFlowApi.getMembersSummary()
-    ])
+    const response = await taskFlowApi.listMembers({
+      department,
+      is_active: isActive,
+      role,
+      search: teamSearch.value.trim() || undefined,
+      page_size: 200
+    })
+    const mappedMembers = taskFlowApi.listItems(response).map(taskFlowApi.mapMember)
+    state.value.team = mappedMembers
 
-    memberSummary.value = summary
-    membersRawResponse.value = { list: response, summary }
-    state.value.team = taskFlowApi.listItems(response).map(taskFlowApi.mapMember)
+    const localSummary = {
+      total_members: mappedMembers.length,
+      average_efficiency: mappedMembers.length
+        ? Math.round(mappedMembers.reduce((sum, member) => sum + Number(member[4] || 0), 0) / mappedMembers.length)
+        : 0,
+      active_tasks: mappedMembers.reduce((sum, member) => sum + Number(member[6] || 0), 0)
+    }
+    memberSummary.value = localSummary
+    membersRawResponse.value = { list: response, summary: localSummary }
+
+    try {
+      const summary = await taskFlowApi.getMembersSummary()
+      memberSummary.value = summary
+      membersRawResponse.value = { list: response, summary }
+    } catch (summaryError) {
+      console.warn('Members summary load failed; using list totals.', summaryError)
+    }
   } catch (error) {
     console.error('Members load failed.', error)
     notifyError(taskFlowApiErrorMessage(error, 'Members load failed'))
@@ -1375,7 +1387,6 @@ const addProjectMember = async () => {
       workspace: resolvedWorkspace,
       department: effectiveDepartmentId.value || undefined,
       is_active: true,
-      ordering: 'joined_at',
       page_size: 100
     })
     projectMemberOptions.value = taskFlowApi.listItems(response).map(taskFlowApi.mapMember)

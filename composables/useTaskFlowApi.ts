@@ -122,6 +122,7 @@ type ApiMember = {
   department?: string | { id?: string; name?: string }
   role?: string
   is_active?: boolean
+  date_joined?: string
   joined_at?: string
   efficiency?: number
   completed_tasks?: number
@@ -848,7 +849,7 @@ export const useTaskFlowApi = () => {
       '',
       departmentId,
       member.is_active === false ? 'Inactive' : 'Active',
-      member.joined_at || ''
+      member.date_joined || member.joined_at || ''
     ]
   }
 
