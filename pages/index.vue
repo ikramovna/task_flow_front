@@ -2452,7 +2452,7 @@ const iconPath = (name: string) => {
             </article>
             <div v-if="!paginatedTasks.length" class="col-span-full rounded-[16px] border border-dashed border-task-line py-16 text-center"><p class="font-semibold text-task-ink">Archive is empty</p><p class="mt-1 text-sm text-task-muted">Completed tasks can be archived here.</p></div>
           </div>
-          <div v-else-if="taskBoardSection === 'backlog'" class="rounded-[16px] border border-task-line bg-slate-50/70 p-4 sm:p-5">
+          <div v-else-if="taskBoardSection === 'backlog'" class="tf-backlog-panel rounded-[16px] border p-4 sm:p-5">
             <div class="mb-4 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between"><div><h3 class="font-bold text-task-ink">Backlog</h3><p class="mt-1 text-xs text-task-muted">Ideas and tasks planned for later. Move a task to To Do when it is ready.</p></div><button v-if="canAddTask" type="button" class="tf-primary h-10 rounded-[11px]" @click="openModal('task')"><span class="text-lg leading-none">+</span>New Task</button></div>
             <div v-if="backlogTasks.length" class="grid gap-3 sm:grid-cols-2 xl:grid-cols-3">
               <article v-for="task in backlogTasks" :key="String(task[6] || `${task[0]}-${task[4]}`)" class="tf-kanban-card">

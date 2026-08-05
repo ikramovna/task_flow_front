@@ -59,6 +59,12 @@ body {
     transition: border-color 180ms ease, box-shadow 180ms ease, transform 180ms ease;
   }
 
+  .tf-backlog-panel {
+    background: var(--tf-surface-soft);
+    border-color: var(--tf-border);
+    color: #111827;
+  }
+
   .tf-icon-button {
     @apply inline-flex h-9 w-9 items-center justify-center rounded-[12px] border border-task-line bg-white text-task-muted transition hover:-translate-y-0.5 hover:border-task-blue hover:bg-task-blueSoft hover:text-task-blue;
   }
@@ -545,6 +551,12 @@ body {
 .tf-dark textarea,
 .tf-dark select {
   background: var(--tf-surface);
+  border-color: var(--tf-border);
+  color: #e5e7eb;
+}
+
+.tf-dark .tf-backlog-panel {
+  background: var(--tf-surface-soft);
   border-color: var(--tf-border);
   color: #e5e7eb;
 }
