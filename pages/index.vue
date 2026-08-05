@@ -1392,14 +1392,32 @@ const availableEventAttendees = computed(() => {
 const loadEventAttendees = async () => {
   eventAttendeesLoading.value = true
   try {
+    const department = effectiveDepartmentId.value
+    if (!department) {
+      eventAttendeeOptions.value = []
+      notifyError('Your account must belong to a department before selecting attendees')
+      return
+    }
+
     const response = await taskFlowApi.listMembers({
+      department,
       is_active: true,
-      page_size: 100
+      page_size: 200
     })
-    eventAttendeeOptions.value = taskFlowApi.listItems(response).map(taskFlowApi.mapMember)
+    eventAttendeeOptions.value = taskFlowApi.listItems(response)
+      .map(taskFlowApi.mapMember)
+      .filter((member) => String(member[11] || '') === department)
+
+    const allowedIds = new Set(eventAttendeeOptions.value.map(teamMemberId).filter(Boolean))
+    for (let index = eventAttendeeIds.value.length - 1; index >= 0; index -= 1) {
+      if (!allowedIds.has(eventAttendeeIds.value[index])) {
+        eventAttendeeIds.value.splice(index, 1)
+        eventAttendeeLabels.value.splice(index, 1)
+      }
+    }
   } catch (error) {
     console.error('Event attendees load failed.', error)
-    eventAttendeeOptions.value = [...team.value]
+    eventAttendeeOptions.value = [...departmentTeam.value]
     notifyError(taskFlowApiErrorMessage(error, 'Could not load users'))
   } finally {
     eventAttendeesLoading.value = false
@@ -1819,6 +1837,18 @@ const submitModal = async () => {
     const payload = eventPayloadFromForm()
     if (!payload.department) {
       notifyError('Your account must belong to a department before creating events')
+      return
+    }
+
+    const allowedAttendeeIds = new Set(
+      eventAttendeeOptions.value
+        .filter((member) => String(member[11] || '') === payload.department)
+        .map(teamMemberId)
+        .filter(Boolean)
+    )
+    if (payload.attendees.some((attendeeId) => !allowedAttendeeIds.has(attendeeId))) {
+      notifyError('Every attendee must belong to your current department')
+      eventAttendeePickerOpen.value = true
       return
     }
 
