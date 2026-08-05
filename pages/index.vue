@@ -1319,14 +1319,13 @@ const loadTaskAssignees = async () => {
   taskAssigneesLoading.value = true
   try {
     const response = await taskFlowApi.listMembers({
-      department: effectiveDepartmentId.value || undefined,
       is_active: true,
-      page_size: 100
+      page_size: 200
     })
     taskAssigneeOptions.value = taskFlowApi.listItems(response).map(taskFlowApi.mapMember)
   } catch (error) {
     console.error('Task assignees load failed.', error)
-    taskAssigneeOptions.value = [...departmentTeam.value]
+    taskAssigneeOptions.value = [...team.value]
     notifyError(taskFlowApiErrorMessage(error, 'Could not load team members'))
   } finally {
     taskAssigneesLoading.value = false
@@ -1755,7 +1754,6 @@ const submitModal = async () => {
       if (editingTaskId.value) replaceTaskRow(editingTaskId.value, taskFlowApi.mapTask(saved))
       else state.value.tasks.unshift(taskFlowApi.mapTask(saved))
       notify(editingTaskId.value ? 'Task muvaffaqiyatli yangilandi' : 'Task muvaffaqiyatli yaratildi', 'success')
-      await loadTaskScope(taskScope.value)
     } catch (error) {
       console.error('Task create failed.', error)
       notifyError(taskFlowApiErrorMessage(error, 'Task create failed'))
