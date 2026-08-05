@@ -277,6 +277,8 @@ const eventAttendeeIds = ref<string[]>([])
 const eventAttendeeLabels = ref<string[]>([])
 const eventAttendeePickerOpen = ref(false)
 const eventAttendeeSearch = ref('')
+const eventAttendeeOptions = ref<Array<Array<string | number>>>([])
+const eventAttendeesLoading = ref(false)
 const eventColorById = reactive<Record<string, string>>({})
 const selectedCalendarEvent = ref<CalendarEvent | null>(null)
 const reportType = ref('Productivity')
@@ -1281,6 +1283,8 @@ const openModal = (value: Exclude<ModalKey, null>) => {
     eventAttendeeLabels.value = []
     eventAttendeePickerOpen.value = false
     eventAttendeeSearch.value = ''
+    eventAttendeeOptions.value = [...team.value]
+    void loadEventAttendees()
   }
   if (value === 'project') {
     editingProjectId.value = ''
@@ -1401,18 +1405,40 @@ const removeEventAttendee = (member: string) => {
 
 const availableEventAttendees = computed(() => {
   const query = eventAttendeeSearch.value.trim().toLowerCase()
-  return departmentTeam.value.filter((member) => {
+  return eventAttendeeOptions.value.filter((member) => {
     const id = teamMemberId(member)
-    return id && !eventAttendeeIds.value.includes(id) && (!query || `${teamMemberName(member)} ${teamMemberEmail(member)}`.toLowerCase().includes(query))
+    return id && (!query || `${teamMemberName(member)} ${teamMemberEmail(member)}`.toLowerCase().includes(query))
   })
 })
 
+const loadEventAttendees = async () => {
+  eventAttendeesLoading.value = true
+  try {
+    const response = await taskFlowApi.listMembers({
+      is_active: true,
+      page_size: 100
+    })
+    eventAttendeeOptions.value = taskFlowApi.listItems(response).map(taskFlowApi.mapMember)
+  } catch (error) {
+    console.error('Event attendees load failed.', error)
+    eventAttendeeOptions.value = [...team.value]
+    notifyError(taskFlowApiErrorMessage(error, 'Could not load users'))
+  } finally {
+    eventAttendeesLoading.value = false
+  }
+}
+
 const selectEventAttendee = (member: Array<string | number>) => {
   const id = teamMemberId(member)
-  if (!id || eventAttendeeIds.value.includes(id)) return
+  if (!id) return
+  const selectedIndex = eventAttendeeIds.value.indexOf(id)
+  if (selectedIndex >= 0) {
+    eventAttendeeIds.value.splice(selectedIndex, 1)
+    eventAttendeeLabels.value.splice(selectedIndex, 1)
+    return
+  }
   eventAttendeeIds.value.push(id)
   eventAttendeeLabels.value.push(teamMemberName(member))
-  eventAttendeeSearch.value = ''
 }
 
 const viewProject = async (project: Array<string | number>) => {
@@ -3144,7 +3170,14 @@ const iconPath = (name: string) => {
               <button type="button" class="tf-input mt-2 flex h-11 w-full items-center justify-between text-left" @click="eventAttendeePickerOpen = !eventAttendeePickerOpen"><span class="text-task-muted">Search and select attendees</span><span class="text-xl text-task-blue">+</span></button>
               <div v-if="eventAttendeePickerOpen" class="absolute left-0 right-0 top-[72px] z-[90] rounded-ui border border-task-line bg-white p-3 shadow-xl">
                 <input v-model="eventAttendeeSearch" class="tf-input w-full" placeholder="Search by name or email..." />
-                <div class="mt-2 max-h-44 overflow-y-auto"><button v-for="member in availableEventAttendees" :key="teamMemberId(member)" type="button" class="tf-dropdown-option" @click="selectEventAttendee(member)"><span>{{ teamMemberName(member) }}</span><span class="text-xs text-task-muted">{{ teamMemberEmail(member) }}</span></button><p v-if="!availableEventAttendees.length" class="p-3 text-sm text-task-muted">No available attendees.</p></div>
+                <div class="mt-2 max-h-52 overflow-y-auto">
+                  <p v-if="eventAttendeesLoading" class="p-3 text-sm text-task-muted">Loading users...</p>
+                  <button v-for="member in availableEventAttendees" :key="teamMemberId(member)" type="button" :class="['tf-dropdown-option gap-3', eventAttendeeIds.includes(teamMemberId(member)) ? 'bg-task-blueSoft' : '']" @click="selectEventAttendee(member)">
+                    <span class="flex min-w-0 items-center gap-2.5"><span :class="['grid h-8 w-8 shrink-0 place-items-center rounded-full text-[10px] font-bold', eventAttendeeIds.includes(teamMemberId(member)) ? 'bg-task-blue text-white' : 'bg-task-blueSoft text-task-blue']">{{ initials(teamMemberName(member)) }}</span><span class="min-w-0 text-left"><span class="block truncate font-semibold">{{ teamMemberName(member) }}</span><span class="block truncate text-[11px] font-normal text-task-muted">{{ teamMemberEmail(member) }}</span></span></span>
+                    <span :class="['grid h-6 w-6 shrink-0 place-items-center rounded-[7px] border text-sm font-bold', eventAttendeeIds.includes(teamMemberId(member)) ? 'border-task-blue bg-task-blue text-white' : 'border-task-line bg-white text-transparent']">✓</span>
+                  </button>
+                  <p v-if="!eventAttendeesLoading && !availableEventAttendees.length" class="p-3 text-sm text-task-muted">No users found.</p>
+                </div>
               </div>
               <div class="mt-2 flex flex-wrap items-center gap-2">
                 <span v-for="member in eventAttendeeLabels" :key="member" class="inline-flex h-9 items-center gap-2 rounded-full border border-task-line bg-task-blueSoft px-3 text-sm font-semibold text-task-ink">
