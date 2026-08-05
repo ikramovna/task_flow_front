@@ -410,8 +410,8 @@ export const useTaskFlowApi = () => {
     refreshCookie.value = null
 
     if (import.meta.client) {
-      localStorage.clear()
-      sessionStorage.clear()
+      localStorage.removeItem(authStorageKey)
+      sessionStorage.removeItem(authStorageKey)
       document.documentElement.classList.remove('tf-dark')
       document.documentElement.style.colorScheme = 'light'
     }

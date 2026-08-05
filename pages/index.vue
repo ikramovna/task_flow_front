@@ -15,6 +15,8 @@ type ProjectCardMember = {
 }
 
 const activePage = ref<PageKey>('dashboard')
+const pageStorageKey = 'taskflow-active-page'
+const validPageKeys: PageKey[] = ['dashboard', 'tasks', 'projects', 'analytics', 'calendar', 'team', 'reports', 'messages', 'settings', 'help']
 const settingsTab = ref<'profile' | 'security'>('profile')
 const modal = ref<ModalKey>(null)
 const openDropdown = ref<string | null>(null)
@@ -812,10 +814,25 @@ const setPage = (key: PageKey) => {
     return
   }
   activePage.value = key
+  if (import.meta.client) {
+    localStorage.setItem(pageStorageKey, key)
+    const nextHash = `#${key}`
+    if (window.location.hash !== nextHash) {
+      window.history.replaceState(window.history.state, '', `${window.location.pathname}${window.location.search}${nextHash}`)
+    }
+  }
   if (key === 'settings' && settingsTab.value === 'profile') settingsTab.value = 'profile'
   if (key === 'team') loadMembersFromBackend()
   actionMenu.value = null
   mobileSidebarOpen.value = false
+}
+
+const restoreActivePage = () => {
+  if (!import.meta.client) return
+  const hashPage = window.location.hash.replace(/^#/, '')
+  const storedPage = localStorage.getItem(pageStorageKey) || ''
+  const restoredPage = (validPageKeys.includes(hashPage as PageKey) ? hashPage : storedPage) as PageKey
+  if (validPageKeys.includes(restoredPage) && !isComingSoonPage(restoredPage)) setPage(restoredPage)
 }
 
 const focusTaskSearch = () => {
@@ -903,6 +920,7 @@ watch(isDarkTheme, syncRootThemeClass)
 
 onMounted(() => {
   document.addEventListener('pointerdown', closeFloatingMenus, true)
+  window.addEventListener('hashchange', restoreActivePage)
   themeMediaQuery = window.matchMedia('(prefers-color-scheme: dark)')
   systemPrefersDark.value = themeMediaQuery.matches
   themeMediaQuery.addEventListener('change', updateSystemTheme)
@@ -914,10 +932,12 @@ onMounted(() => {
     appliedAppearance.theme = savedTheme
   }
   syncRootThemeClass()
+  restoreActivePage()
 })
 
 onBeforeUnmount(() => {
   document.removeEventListener('pointerdown', closeFloatingMenus, true)
+  window.removeEventListener('hashchange', restoreActivePage)
   document.body.style.overflow = previousBodyOverflow
   clearFeedbackScreenshot()
   if (profileAvatarPreview.value && profileAvatarPreview.value.startsWith('blob:')) URL.revokeObjectURL(profileAvatarPreview.value)
