@@ -524,6 +524,10 @@ body {
     #090e18;
 }
 
+.tf-dark .tf-app-header::before {
+  box-shadow: inset 0 1px 0 #2b364a;
+}
+
 .tf-dark .bg-task-page {
   background-color: #090e18;
 }
@@ -900,6 +904,23 @@ body {
 
 .tf-dark .border-white {
   border-color: #111827;
+}
+
+.tf-dark .border-white\/60,
+.tf-dark .border-white\/70,
+.tf-dark .border-white\/80,
+.tf-dark .ring-white\/60,
+.tf-dark .ring-white\/70,
+.tf-dark .ring-white\/80 {
+  border-color: #334155;
+  --tw-ring-color: #334155;
+}
+
+.tf-dark .tf-content > section > .tf-panel:hover,
+.tf-dark .tf-content > section > div > .tf-panel:hover,
+.tf-dark .tf-content > section > aside > .tf-panel:hover {
+  border-color: #334155;
+  box-shadow: 0 16px 36px -28px rgb(0 0 0 / 0.78);
 }
 
 .tf-dark .shadow-card {

@@ -2264,7 +2264,7 @@ const iconPath = (name: string) => {
             <div class="min-w-0"><h1 class="truncate text-lg font-bold">{{ activePage === 'dashboard' ? dashboardTitle : pageCopy[activePage].title }}</h1><p class="truncate text-xs text-task-muted">{{ pageCopy[activePage].subtitle }}</p></div>
           </div>
           <div class="relative z-10 flex items-center gap-3">
-            <label class="relative hidden sm:block">
+            <label v-if="false" class="relative hidden sm:block">
               <svg viewBox="0 0 24 24" class="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-task-muted" fill="none" stroke="currentColor" stroke-width="1.7"><path :d="iconPath('search')" /></svg>
               <input v-model="taskSearchInput" class="tf-input w-[230px] pl-9 pr-10" placeholder="Search tasks..." @focus="focusTaskSearch" @input="focusTaskSearch" />
               <button v-if="taskSearchInput && !searchLoading.task" type="button" class="tf-search-clear" aria-label="Clear search" @click="clearSearch('task')">×</button>
