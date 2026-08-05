@@ -1508,6 +1508,8 @@ const openTask = async (task: Array<string | number>, mode: 'view' | 'edit') => 
     if (!taskAssigneeIds.value.length) taskAssigneeIds.value = assigneeDetails.map((member) => String(member.id || '')).filter(Boolean)
     taskAssigneeLabels.value = assigneeDetails.map(projectMemberName)
     taskAssigneeSearch.value = ''
+    taskAssigneeOptions.value = [...departmentTeam.value]
+    void loadTaskAssignees()
     modal.value = 'task'
   } catch (error) {
     notifyError(taskFlowApiErrorMessage(error, 'Task ma’lumotlarini yuklab bo‘lmadi'))
@@ -1515,6 +1517,9 @@ const openTask = async (task: Array<string | number>, mode: 'view' | 'edit') => 
     taskSaving.value = false
   }
 }
+
+const openTaskFromCard = (task: Array<string | number>) =>
+  openTask(task, canManageDepartment.value ? 'edit' : 'view')
 
 const deleteTask = async (task: Array<string | number>) => {
   actionMenu.value = null
@@ -2481,9 +2486,9 @@ const iconPath = (name: string) => {
           <div v-else-if="taskBoardSection === 'backlog'" class="tf-backlog-panel rounded-[16px] border p-4 sm:p-5">
             <div class="mb-4 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between"><div><h3 class="font-bold text-task-ink">Backlog</h3><p class="mt-1 text-xs text-task-muted">Ideas and tasks planned for later. Move a task to To Do when it is ready.</p></div><button v-if="canAddTask" type="button" class="tf-primary h-10 rounded-[11px]" @click="openModal('task')"><span class="text-lg leading-none">+</span>New Task</button></div>
             <div v-if="backlogTasks.length" class="grid gap-3 sm:grid-cols-2 xl:grid-cols-3">
-              <article v-for="task in backlogTasks" :key="String(task[6] || `${task[0]}-${task[4]}`)" class="tf-kanban-card">
+              <article v-for="task in backlogTasks" :key="String(task[6] || `${task[0]}-${task[4]}`)" class="tf-kanban-card cursor-pointer" @click="openTaskFromCard(task)">
                 <div class="flex items-start justify-between gap-3"><div class="min-w-0"><span class="inline-flex rounded-full bg-slate-200 px-2 py-1 text-[10px] font-bold uppercase tracking-wide text-slate-600">For later</span><h4 class="mt-2 line-clamp-2 text-sm font-bold text-task-ink">{{ task[0] }}</h4></div><span :class="['tf-pill shrink-0', badgeClass(String(task[2]))]">{{ task[2] }}</span></div>
-                <div class="mt-4 flex items-center justify-between border-t border-task-line pt-3 text-xs text-task-muted"><span>{{ task[4] }}</span><button type="button" class="font-bold text-task-blue transition hover:text-task-blueDark" :disabled="updatingTaskId === String(task[6]) || !task[6]" @click="updateTaskStatus(task, 'not_started')">Move to To Do →</button></div>
+                <div class="mt-4 flex items-center justify-between border-t border-task-line pt-3 text-xs text-task-muted"><span>{{ task[4] }}</span><button type="button" class="font-bold text-task-blue transition hover:text-task-blueDark" :disabled="updatingTaskId === String(task[6]) || !task[6]" @click.stop="updateTaskStatus(task, 'not_started')">Move to To Do →</button></div>
               </article>
             </div>
             <div v-else class="rounded-[14px] border border-dashed border-task-line px-5 py-14 text-center"><p class="font-semibold text-task-ink">Backlog is empty</p><p class="mt-1 text-sm text-task-muted">Tasks planned for later will appear here.</p></div>
@@ -2492,7 +2497,7 @@ const iconPath = (name: string) => {
           <table class="w-full text-left text-sm">
             <thead class="bg-slate-100 text-task-muted"><tr><th class="rounded-l-ui p-3">Task</th><th class="p-3">Assignee</th><th class="p-3">Priority</th><th class="p-3">Status</th><th class="p-3">Due Date</th><th class="p-3">Progress</th><th class="rounded-r-ui p-3 text-right">Actions</th></tr></thead>
             <tbody class="divide-y divide-task-line">
-              <tr v-for="task in paginatedTasks" :key="String(task[6] || `${task[0]}-${task[4]}`)" class="cursor-pointer" @dblclick="openTask(task, 'view')">
+              <tr v-for="task in paginatedTasks" :key="String(task[6] || `${task[0]}-${task[4]}`)" class="cursor-pointer" @click="openTaskFromCard(task)">
                 <td class="p-3 text-task-muted">{{ task[0] }}</td><td class="p-3"><div class="flex items-center gap-2"><div class="flex -space-x-2"><span v-for="i in 2" :key="i" class="grid h-6 w-6 place-items-center rounded-full border border-white bg-slate-300 text-[9px] font-bold text-white">{{ String(task[1]).slice(i - 1, i) }}</span></div>{{ task[1] }}</div></td><td class="p-3"><span :class="['tf-pill', badgeClass(String(task[2]))]">{{ task[2] }}</span></td><td class="p-3"><span :class="['tf-pill', badgeClass(String(task[3]))]">{{ task[3] }}</span></td><td class="p-3 text-task-muted">{{ task[4] }}</td><td class="p-3"><div class="flex items-center gap-2"><div class="h-2 w-20 rounded-full bg-slate-200"><div class="h-full rounded-full bg-task-blue" :style="{ width: `${task[5]}%` }" /></div><span>{{ task[5] }}%</span></div></td><td class="relative p-3 text-right"><div class="relative inline-flex"><button type="button" class="tf-icon-button" @click="toggleActionMenu(`task-${task[0]}`)"><svg viewBox="0 0 24 24" class="h-4 w-4" fill="none" stroke="currentColor" stroke-width="2"><path :d="iconPath('dots')" /></svg></button><div v-if="actionMenu === `task-${task[0]}`" class="tf-action-menu"><button type="button" class="tf-action-item" @click="actionMenu = null">View</button><button type="button" class="tf-action-item" @click="runAction('edit', 'task', String(task[0]))">Edit</button><button type="button" class="tf-action-item" @click="runAction('duplicate', 'task', String(task[0]))">Duplicate</button><button type="button" class="tf-action-item tf-action-danger" @click="runAction('delete', 'task', String(task[0]))">Delete</button></div></div></td>
               </tr>
             </tbody>
@@ -2524,7 +2529,7 @@ const iconPath = (name: string) => {
                   :class="['tf-kanban-card group', updatingTaskId === String(task[6]) ? 'pointer-events-none opacity-60' : '']"
                   @dragstart="draggedTaskId = String(task[6] || '')"
                   @dragend="draggedTaskId = ''"
-                  @dblclick="openTask(task, 'view')"
+                  @click="openTaskFromCard(task)"
                 >
                   <div class="flex items-start justify-between gap-3"><h4 class="line-clamp-2 text-[14px] font-bold leading-[1.4] tracking-[-0.01em] text-slate-900">{{ task[0] }}</h4><span v-if="column.key === 'completed'" class="grid h-6 w-6 shrink-0 place-items-center rounded-full border border-task-success/40 bg-task-successSoft text-task-success"><svg viewBox="0 0 24 24" class="h-3.5 w-3.5" fill="none" stroke="currentColor" stroke-width="2.2"><path d="m6 12 4 4 8-9" /></svg></span></div>
                   <p v-if="task[7]" class="mt-2 inline-flex max-w-full items-center gap-1.5 truncate text-xs font-medium text-slate-500"><svg viewBox="0 0 24 24" class="h-3.5 w-3.5 shrink-0 text-task-blue" fill="none" stroke="currentColor" stroke-width="1.8"><path :d="iconPath('folder')" /></svg>{{ task[7] }}</p>
