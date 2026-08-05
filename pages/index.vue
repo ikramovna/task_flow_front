@@ -213,7 +213,7 @@ const form = reactive({
   dueDate: '',
   projectManager: '',
   category: '',
-  eventType: 'Meeting',
+  eventType: '',
   eventTime: '',
   eventEndTime: '',
   eventColor: 'bg-task-blue',
@@ -1246,7 +1246,7 @@ const openModal = (value: Exclude<ModalKey, null>) => {
   form.projectManager = ''
   projectManagerSearch.value = ''
   form.category = ''
-  form.eventType = 'Meeting'
+  form.eventType = ''
   form.eventTime = value === 'event' ? '09:00' : ''
   form.eventEndTime = value === 'event' ? '10:30' : ''
   form.eventColor = 'bg-task-blue'
@@ -1778,6 +1778,10 @@ const submitModal = async () => {
   if (modal.value === 'event') {
     if (!title) {
       notifyError('Event title is required')
+      return
+    }
+    if (!form.eventType.trim()) {
+      notifyError('Event type is required')
       return
     }
     if (!eventAttendeeIds.value.length) {
@@ -3069,13 +3073,16 @@ const iconPath = (name: string) => {
               </div>
             </div>
             <div class="mt-3">
-              <p class="text-sm font-semibold">Event Type</p>
-              <div class="mt-2 flex flex-wrap gap-2">
+              <label for="event-type" class="text-sm font-semibold">Event Type <span class="text-task-danger">*</span></label>
+              <input id="event-type" v-model="form.eventType" list="event-type-suggestions" class="tf-input mt-2 h-11 w-full" placeholder="Select or type a custom event type" required autocomplete="off" />
+              <datalist id="event-type-suggestions"><option v-for="option in eventTypeOptions" :key="option" :value="option" /></datalist>
+              <p class="mt-1.5 text-xs italic text-task-muted">Choose a suggested type or enter your own.</p>
+              <div class="mt-2 flex flex-wrap gap-2" aria-label="Suggested event types">
                 <button
                   v-for="option in eventTypeOptions"
                   :key="option"
                   type="button"
-                  :class="['inline-flex h-9 items-center gap-2 rounded-full border px-4 text-sm font-semibold transition', form.eventType === option ? 'border-task-blue bg-task-blueSoft text-task-ink' : 'border-task-line bg-slate-100 text-task-ink hover:border-task-blue']"
+                  :class="['inline-flex h-8 items-center gap-2 rounded-full border px-3 text-xs font-semibold transition', form.eventType === option ? 'border-task-blue bg-task-blueSoft text-task-blue' : 'border-task-line bg-slate-100 text-task-muted hover:border-task-blue hover:text-task-blue']"
                   @click="form.eventType = option"
                 >
                   <svg viewBox="0 0 24 24" class="h-4 w-4" fill="none" stroke="currentColor" stroke-width="1.8">
