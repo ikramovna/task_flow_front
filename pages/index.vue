@@ -193,6 +193,7 @@ const isThemeOption = (value: string | null): value is 'Light' | 'Dark' | 'Syste
 const persistTheme = (theme: string) => {
   if (!import.meta.client || !isThemeOption(theme)) return
   localStorage.setItem(themeStorageKey, theme)
+  document.cookie = `${themeStorageKey}=${encodeURIComponent(theme)}; Path=/; Max-Age=${60 * 60 * 24 * 365}; SameSite=Lax`
   themeCookie.value = theme
 }
 type CalendarEvent = {
@@ -473,6 +474,11 @@ const tashkentHour = computed(() => Number(new Intl.DateTimeFormat('en-US', {
 }).format(tashkentNow.value)))
 const dashboardGreetingPeriod = computed(() => tashkentHour.value < 12 ? 'morning' : tashkentHour.value < 18 ? 'afternoon' : 'evening')
 const dashboardGreetingIcon = computed(() => dashboardGreetingPeriod.value === 'morning' ? '☀️' : dashboardGreetingPeriod.value === 'afternoon' ? '🌤️' : '🌙')
+const dashboardQuote = computed(() => ({
+  morning: { text: 'Every morning is a fresh start. Make today amazing.', author: 'Unknown' },
+  afternoon: { text: 'Progress is the sum of small efforts, repeated day in and day out.', author: 'Robert Collier' },
+  evening: { text: "Don't watch the clock; do what it does. Keep going.", author: 'Sam Levenson' }
+}[dashboardGreetingPeriod.value]))
 const dashboardGreeting = computed(() => {
   return `Good ${dashboardGreetingPeriod.value}, ${savedProfile.firstName || profileName.value || 'there'}!`
 })
@@ -2394,10 +2400,7 @@ const iconPath = (name: string) => {
 
       <div :class="['tf-content min-w-0 flex-1 p-4', activePage === 'calendar' ? 'tf-content-calendar' : '']">
         <header :class="['tf-app-header relative z-30 mb-4 flex items-center justify-between gap-4 overflow-visible', activePage === 'dashboard' ? 'tf-dashboard-heading tf-dashboard-hero' : 'tf-panel h-[76px] px-5 shadow-none']">
-          <div v-if="activePage === 'dashboard'" class="tf-dashboard-hero-art" aria-hidden="true">
-            <span class="tf-dashboard-sun" /><span class="tf-dashboard-window-line tf-dashboard-window-line--one" /><span class="tf-dashboard-window-line tf-dashboard-window-line--two" />
-            <span class="tf-dashboard-city" /><span class="tf-dashboard-desk" /><span class="tf-dashboard-laptop"><i /></span><span class="tf-dashboard-plant"><i /><b /></span>
-          </div>
+          <div v-if="activePage === 'dashboard'" class="tf-dashboard-hero-art" aria-hidden="true" />
           <div v-if="activePage !== 'dashboard'" class="pointer-events-none absolute inset-y-0 right-0 w-72 bg-gradient-to-l from-task-blueSoft/70 to-transparent" />
           <svg v-if="activePage !== 'dashboard'" viewBox="0 0 180 80" class="pointer-events-none absolute -right-3 top-0 h-full w-52 text-task-blue opacity-[0.08]" fill="none"><path d="M12 79c28-42 48-5 74-40s57 20 94-34v74H12Z" fill="currentColor" /><circle cx="135" cy="18" r="30" stroke="currentColor" stroke-width="2" /></svg>
           <button type="button" class="tf-icon-button md:hidden" aria-label="Open menu" @click="mobileSidebarOpen = true">
@@ -2414,6 +2417,8 @@ const iconPath = (name: string) => {
                 <div class="tf-dashboard-meta-item"><span class="tf-dashboard-meta-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path :d="iconPath('calendar')" /></svg></span><span><b>{{ tashkentWeekday }}</b><small>{{ tashkentDate }}</small></span></div>
                 <div class="tf-dashboard-meta-separator" />
                 <div class="tf-dashboard-meta-item"><span class="tf-dashboard-meta-icon tf-dashboard-meta-icon--time"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path :d="iconPath('clock')" /></svg></span><span><b>{{ tashkentTime }}</b><small>Tashkent Time</small></span></div>
+                <div class="tf-dashboard-meta-separator tf-dashboard-quote-separator" />
+                <blockquote class="tf-dashboard-quote"><p>“{{ dashboardQuote.text }}”</p><cite>— {{ dashboardQuote.author }}</cite></blockquote>
               </div>
             </div>
             <div v-else class="min-w-0"><h1 class="truncate text-lg font-bold">{{ pageCopy[activePage].title }}</h1><p class="mt-1 truncate text-xs text-task-muted">{{ pageCopy[activePage].subtitle }}</p></div>

@@ -1,13 +1,14 @@
 <script setup lang="ts">
-useHead({
-  script: [
-    {
-      key: 'taskflow-theme-init',
-      tagPosition: 'head',
-      innerHTML: `(function(){try{var theme=localStorage.getItem('taskflow-theme');var dark=theme==='Dark'||(theme==='System'&&window.matchMedia&&window.matchMedia('(prefers-color-scheme: dark)').matches);document.documentElement.classList.toggle('tf-dark',!!dark);document.documentElement.style.colorScheme=dark?'dark':'light';}catch(e){document.documentElement.classList.remove('tf-dark');document.documentElement.style.colorScheme='light';}})()`
+const initialThemeCookie = useCookie<string | null>('taskflow-theme')
+
+if (import.meta.server) {
+  useHead({
+    htmlAttrs: {
+      class: initialThemeCookie.value === 'Dark' ? 'tf-dark' : undefined,
+      style: `color-scheme:${initialThemeCookie.value === 'Dark' ? 'dark' : 'light'}`
     }
-  ]
-})
+  })
+}
 </script>
 
 <template>

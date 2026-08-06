@@ -18,7 +18,7 @@
   </div>
 </template>
 
-<style scoped>
+<style>
 .tf-loading-screen {
   position: fixed;
   inset: 0;
@@ -106,25 +106,30 @@
   animation: dots 1.25s steps(4, end) infinite;
 }
 
-:global(html.tf-dark) .tf-loading-screen {
+html.tf-dark .tf-loading-screen,
+.tf-dark .tf-loading-screen {
   background: #091323;
   color: #d8e8ff;
 }
 
-:global(html.tf-dark) .tf-loading-ambient {
+html.tf-dark .tf-loading-ambient,
+.tf-dark .tf-loading-ambient {
   background: radial-gradient(circle, rgb(37 99 235 / .18), rgb(30 64 175 / .06) 42%, transparent 70%);
 }
 
-:global(html.tf-dark) .tf-loading-ring {
+html.tf-dark .tf-loading-ring,
+.tf-dark .tf-loading-ring {
   border-color: rgb(59 130 246 / .25);
   box-shadow: inset 0 0 30px rgb(37 99 235 / .04), 0 0 30px rgb(37 99 235 / .05);
 }
 
-:global(html.tf-dark) .tf-loading-ring--middle {
+html.tf-dark .tf-loading-ring--middle,
+.tf-dark .tf-loading-ring--middle {
   border-color: rgb(59 130 246 / .45);
 }
 
-:global(html.tf-dark) .tf-loading-subtitle {
+html.tf-dark .tf-loading-subtitle,
+.tf-dark .tf-loading-subtitle {
   color: #71839d;
 }
 
