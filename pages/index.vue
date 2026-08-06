@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import type { Ref } from 'vue'
 
-type PageKey = 'dashboard' | 'tasks' | 'projects' | 'analytics' | 'calendar' | 'team' | 'reports' | 'messages' | 'settings' | 'help'
+type PageKey = 'dashboard' | 'tasks' | 'projects' | 'analytics' | 'calendar' | 'team' | 'reports' | 'messages' | 'notifications' | 'settings' | 'help'
 type ModalKey = 'task' | 'project' | 'event' | 'event-detail' | 'report' | 'member' | 'team-filter' | null
 type ProjectCardMember = {
   id?: string | number
@@ -14,9 +14,22 @@ type ProjectCardMember = {
   job_title?: string
 }
 
-const activePage = ref<PageKey>('dashboard')
 const pageStorageKey = 'taskflow-active-page'
-const validPageKeys: PageKey[] = ['dashboard', 'tasks', 'projects', 'analytics', 'calendar', 'team', 'reports', 'messages', 'settings', 'help']
+const validPageKeys: PageKey[] = ['dashboard', 'tasks', 'projects', 'analytics', 'calendar', 'team', 'reports', 'messages', 'notifications', 'settings', 'help']
+const pageCookie = useCookie<PageKey | null>('taskflow-active-page', { sameSite: 'lax', maxAge: 60 * 60 * 24 * 30 })
+const cookiePage = validPageKeys.includes(pageCookie.value as PageKey) ? pageCookie.value as PageKey : 'dashboard'
+const activePage = ref<PageKey>(cookiePage)
+
+if (import.meta.client) {
+  const hashPage = window.location.hash.replace(/^#/, '').split('?')[0]
+  const storedPage = localStorage.getItem(pageStorageKey) || ''
+  const initialPage = validPageKeys.includes(hashPage as PageKey)
+    ? hashPage as PageKey
+    : validPageKeys.includes(storedPage as PageKey)
+      ? storedPage as PageKey
+      : cookiePage
+  activePage.value = initialPage
+}
 const settingsTab = ref<'profile' | 'security'>('profile')
 const modal = ref<ModalKey>(null)
 const openDropdown = ref<string | null>(null)
@@ -708,6 +721,7 @@ const pageCopy: Record<PageKey, { title: string; subtitle: string; eyebrow?: str
   team: { title: 'Staff List', subtitle: 'Manage your staff and track their performance', eyebrow: 'Staff List' },
   reports: { title: 'Reports', subtitle: 'Generate and download various team reports', eyebrow: 'Reports' },
   messages: { title: 'Messages', subtitle: 'Communicate with your team members', eyebrow: 'Messages' },
+  notifications: { title: 'Notifications', subtitle: 'View all task updates, reminders, and messages', eyebrow: 'Notifications' },
   settings: { title: 'Settings', subtitle: 'Manage your account and application preferences', eyebrow: settingsTab.value === 'profile' ? 'Profile' : 'Settings' },
   help: { title: 'Settings', subtitle: 'Manage your account and application preferences', eyebrow: 'Help & Support' }
 }
@@ -720,6 +734,7 @@ const pageIconName = computed(() => ({
   team: 'users',
   reports: 'file',
   messages: 'message',
+  notifications: 'bell',
   settings: 'settings',
   help: 'help'
 }[activePage.value] || 'grid'))
@@ -733,6 +748,7 @@ const pageAccentClass = computed(() => ({
   team: 'from-[#FDECF1] to-[#F9DDE6] text-[#D94F78]',
   reports: 'from-[#EAF7F7] to-[#D7EEEE] text-[#238A8D]',
   messages: 'from-[#EEF0FF] to-[#E0E4FF] text-[#5969D8]',
+  notifications: 'from-[#E8F2FF] to-[#D8E9FC] text-[#2567AD]',
   settings: 'from-[#E8F2FF] to-[#D8E9FC] text-[#2567AD]',
   help: 'from-[#FFF2E8] to-[#FFE5D1] text-[#D9772B]'
 }[activePage.value] || 'from-[#E8F2FF] to-[#D8E9FC] text-[#2567AD]'))
@@ -826,6 +842,7 @@ const setPage = (key: PageKey) => {
     return
   }
   activePage.value = key
+  pageCookie.value = key
   if (import.meta.client) {
     localStorage.setItem(pageStorageKey, key)
     const nextHash = `#${key}`
@@ -842,7 +859,7 @@ const setPage = (key: PageKey) => {
 
 const restoreActivePage = () => {
   if (!import.meta.client) return
-  const hashPage = window.location.hash.replace(/^#/, '')
+  const hashPage = window.location.hash.replace(/^#/, '').split('?')[0]
   const storedPage = localStorage.getItem(pageStorageKey) || ''
   const restoredPage = (validPageKeys.includes(hashPage as PageKey) ? hashPage : storedPage) as PageKey
   if (validPageKeys.includes(restoredPage) && !isComingSoonPage(restoredPage)) setPage(restoredPage)
@@ -1548,7 +1565,7 @@ const openTask = async (task: Array<string | number>, mode: 'view' | 'edit') => 
     void loadTaskAssignees()
     modal.value = 'task'
   } catch (error) {
-    notifyError(taskFlowApiErrorMessage(error, 'Task ma’lumotlarini yuklab bo‘lmadi'))
+    notifyError(taskFlowApiErrorMessage(error, 'Could not load task details'))
   } finally {
     taskSaving.value = false
   }
@@ -1567,7 +1584,7 @@ const deleteTask = async (task: Array<string | number>) => {
     state.value.tasks = state.value.tasks.filter((item) => String(item[6] || '') !== id)
     notify('Task muvaffaqiyatli o‘chirildi', 'success')
   } catch (error) {
-    notifyError(taskFlowApiErrorMessage(error, 'Taskni o‘chirib bo‘lmadi'))
+    notifyError(taskFlowApiErrorMessage(error, 'Could not delete the task'))
   }
 }
 
@@ -1591,7 +1608,7 @@ const duplicateTask = async (task: Array<string | number>) => {
     state.value.tasks.unshift(taskFlowApi.mapTask(created))
     notify('Task nusxasi yaratildi', 'success')
   } catch (error) {
-    notifyError(taskFlowApiErrorMessage(error, 'Task nusxasini yaratib bo‘lmadi'))
+    notifyError(taskFlowApiErrorMessage(error, 'Could not duplicate the task'))
   }
 }
 
@@ -2317,7 +2334,7 @@ const iconPath = (name: string) => {
 
       </aside>
 
-      <div class="tf-content min-w-0 flex-1 p-4">
+      <div :class="['tf-content min-w-0 flex-1 p-4', activePage === 'calendar' ? 'tf-content-calendar' : '']">
         <header :class="['tf-app-header relative z-30 mb-4 flex items-center justify-between gap-4 overflow-visible', activePage === 'dashboard' ? 'tf-dashboard-heading h-[68px] px-1' : 'tf-panel h-[76px] px-5 shadow-none']">
           <div v-if="activePage !== 'dashboard'" class="pointer-events-none absolute inset-y-0 right-0 w-72 bg-gradient-to-l from-task-blueSoft/70 to-transparent" />
           <svg v-if="activePage !== 'dashboard'" viewBox="0 0 180 80" class="pointer-events-none absolute -right-3 top-0 h-full w-52 text-task-blue opacity-[0.08]" fill="none"><path d="M12 79c28-42 48-5 74-40s57 20 94-34v74H12Z" fill="currentColor" /><circle cx="135" cy="18" r="30" stroke="currentColor" stroke-width="2" /></svg>
@@ -2347,7 +2364,7 @@ const iconPath = (name: string) => {
         <section v-if="activePage === 'dashboard'" class="space-y-4">
           <div class="tf-dashboard-stats grid gap-3 sm:grid-cols-2 lg:grid-cols-4 2xl:grid-cols-7">
             <article v-for="(item, index) in stats" :key="String(item[1])" :class="['tf-panel tf-summary-card border p-4 shadow-none', `tf-summary-card--${index}`]">
-              <div class="flex items-center gap-2.5"><span class="tf-summary-icon grid h-9 w-9 place-items-center rounded-[11px]"><svg viewBox="0 0 24 24" class="h-[17px] w-[17px]" fill="none" stroke="currentColor" stroke-width="1.9"><path :d="index === 1 ? 'm6 12 4 4 8-9' : index === 2 ? 'M12 7v5l3 2' : index === 4 ? 'M5 5h14v14H5V5Zm4 4h6' : index === 5 ? 'M8 12h8M5 4h14v16H5V4Z' : index === 6 ? 'M12 8v5m0 4h.01M5 20h14L12 3 5 20Z' : 'M5 4h14v16H5V4Zm4 4h6m-6 4h6'" /></svg></span><p class="text-[11px] font-semibold text-task-muted">{{ item[1] }}</p></div>
+              <div class="flex items-center gap-2.5"><span class="tf-summary-icon grid h-9 w-9 place-items-center rounded-[11px]"><svg viewBox="0 0 24 24" class="h-[17px] w-[17px]" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><path :d="index === 1 ? 'm6 12 4 4 8-9' : index === 2 ? 'M12 7v5l3 2m7-2a9 9 0 1 1-18 0 9 9 0 0 1 18 0Z' : index === 4 ? 'M4 8h16l-1 12H5L4 8Zm2-4h12l2 4H4l2-4Zm4 8h4' : index === 5 ? 'M12 21a9 9 0 1 0 0-18 9 9 0 0 0 0 18Zm-2-12v6m4-6v6' : index === 6 ? 'M12 9v4m0 4h.01M4.5 19h15L12 4 4.5 19Z' : index === 3 ? 'M6 4h12v16H6V4Zm4 5h4m-4 3h4' : 'M5 4h14v16H5V4Zm4 4h6m-6 4h6'" /></svg></span><p class="text-[11px] font-semibold text-task-muted">{{ item[1] }}</p></div>
               <p class="mt-3 text-2xl font-extrabold text-task-ink">{{ item[0] }}</p>
               <div class="mt-3 flex items-center gap-2 text-[11px] font-bold"><span class="tf-summary-percent">{{ Number(item[2] || 0).toFixed(0) }}%</span><div class="tf-summary-track h-1.5 flex-1 overflow-hidden rounded-full"><div class="tf-summary-progress h-full rounded-full" :style="{ width: `${Math.min(100, Number(item[2] || 0))}%` }" /></div></div>
             </article>
@@ -2803,9 +2820,9 @@ const iconPath = (name: string) => {
         </section>
 
         <section v-else-if="activePage === 'calendar'" class="tf-calendar-layout grid gap-4 xl:grid-cols-[minmax(0,1fr)_340px]">
-          <div class="h-full">
-            <div class="tf-panel h-full overflow-hidden p-4 sm:p-5">
-              <div class="mb-6 flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between"><div class="flex items-center gap-3"><button class="tf-icon-button h-11 w-11" type="button" aria-label="Previous month" @click="moveCalendar(-1)"><svg viewBox="0 0 24 24" class="h-5 w-5" fill="none" stroke="currentColor" stroke-width="2"><path d="m15 18-6-6 6-6" /></svg></button><h2 class="min-w-[150px] text-center text-xl font-bold">{{ calendarMonth }}</h2><button class="tf-icon-button h-11 w-11" type="button" aria-label="Next month" @click="moveCalendar(1)"><svg viewBox="0 0 24 24" class="h-5 w-5" fill="none" stroke="currentColor" stroke-width="2"><path d="m9 18 6-6-6-6" /></svg></button></div><button v-if="canCreateEvent" class="tf-primary h-11 rounded-[12px] px-5" @click="openModal('event')"><svg viewBox="0 0 24 24" class="h-4 w-4" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 5v14M5 12h14" /></svg>Add Event</button></div>
+          <div class="h-full min-h-0">
+            <div class="tf-calendar-main-panel tf-panel flex h-full min-h-0 flex-col overflow-hidden p-4 sm:p-5">
+              <div class="mb-6 flex shrink-0 flex-col gap-4 sm:flex-row sm:items-center sm:justify-between"><div class="flex items-center gap-3"><button class="tf-icon-button h-11 w-11" type="button" aria-label="Previous month" @click="moveCalendar(-1)"><svg viewBox="0 0 24 24" class="h-5 w-5" fill="none" stroke="currentColor" stroke-width="2"><path d="m15 18-6-6 6-6" /></svg></button><h2 class="min-w-[150px] text-center text-xl font-bold">{{ calendarMonth }}</h2><button class="tf-icon-button h-11 w-11" type="button" aria-label="Next month" @click="moveCalendar(1)"><svg viewBox="0 0 24 24" class="h-5 w-5" fill="none" stroke="currentColor" stroke-width="2"><path d="m9 18 6-6-6-6" /></svg></button></div><button v-if="canCreateEvent" class="tf-primary h-11 rounded-[12px] px-5" @click="openModal('event')"><svg viewBox="0 0 24 24" class="h-4 w-4" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 5v14M5 12h14" /></svg>Add Event</button></div>
               <div class="tf-calendar-scroll">
                 <div class="grid min-w-[734px] grid-cols-7 gap-2 text-center text-sm font-semibold text-task-muted"><span class="py-3">Mon</span><span class="py-3">Tue</span><span class="py-3">Wed</span><span class="py-3">Thu</span><span class="py-3">Fri</span><span class="py-3">Sat</span><span class="py-3 text-task-danger">Sun</span></div>
                 <div class="grid min-w-[734px] grid-cols-[repeat(7,minmax(97px,1fr))] gap-2">
@@ -2896,6 +2913,10 @@ const iconPath = (name: string) => {
           </div>
         </section>
 
+        <section v-else-if="activePage === 'notifications'" class="py-1">
+          <NotificationsView />
+        </section>
+
         <section v-else-if="activePage === 'messages'" class="tf-panel grid h-[650px] overflow-hidden p-0 lg:grid-cols-[290px_1fr]">
           <aside class="relative border-r border-task-line p-5"><h2 class="font-bold">Recent Messages</h2><label class="relative mt-4 block"><input v-model="messageSearchInput" class="tf-input w-full pr-10" placeholder="Search here..." /><button v-if="messageSearchInput && !searchLoading.message" type="button" class="tf-search-clear" aria-label="Clear message search" @click="clearSearch('message')">×</button><span v-if="searchLoading.message" class="tf-search-spinner" /></label><div v-if="searchLoading.message" class="tf-search-overlay"><span class="tf-search-loader" /> Searching...</div><div class="mt-4 divide-y divide-task-line"><button v-for="name in filteredMessages" :key="name" :class="['flex w-full items-center gap-3 py-3 text-left', activeMessage === name ? 'bg-task-blueSoft' : '']" @click="activeMessage = name"><span class="grid h-11 w-11 place-items-center rounded-full bg-slate-300 font-bold text-white">{{ initials(name) }}</span><span class="min-w-0 flex-1"><b class="block truncate">{{ name }}</b></span></button><p v-if="!filteredMessages.length" class="py-8 text-sm text-task-muted">No messages.</p></div></aside>
           <div class="flex min-w-0 flex-col items-center justify-center p-6 text-center text-task-muted">
@@ -2916,7 +2937,6 @@ const iconPath = (name: string) => {
               <div class="flex flex-col gap-5 sm:flex-row sm:items-center">
                 <div class="relative shrink-0"><input ref="profileAvatarInput" class="hidden" type="file" accept="image/*" @change="handleProfileAvatar" /><button type="button" class="group relative block h-28 w-28 rounded-full" aria-label="Change profile image" @click="chooseProfileAvatar"><span class="grid h-full w-full place-items-center overflow-hidden rounded-full bg-gradient-to-br from-task-blueSoft to-[#D8E7F8] text-2xl font-bold text-task-blue ring-4 ring-white shadow-lg"><img v-if="profileAvatarPreview" :src="profileAvatarPreview" alt="Profile avatar preview" class="h-full w-full object-cover transition group-hover:brightness-90" /><span v-else>{{ profileFormInitials }}</span></span><span class="absolute bottom-0 right-0 grid h-10 w-10 place-items-center rounded-full border-4 border-white bg-task-blue text-white shadow-lg"><svg viewBox="0 0 24 24" class="h-4 w-4" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 8h4l2-3h4l2 3h4v11H4V8Z" /><circle cx="12" cy="13" r="3" /></svg></span></button></div>
                 <div class="min-w-0 flex-1"><h3 class="truncate text-2xl font-bold">{{ profileName }}</h3><span class="mt-2 inline-flex rounded-full bg-task-blueSoft px-3 py-1 text-xs font-bold text-task-blue">{{ profileForm.role || 'Team Member' }}</span><div class="mt-4 space-y-2 text-sm text-task-muted"><p class="flex items-center gap-2"><svg viewBox="0 0 24 24" class="h-4 w-4" fill="none" stroke="currentColor" stroke-width="1.8"><path :d="iconPath('mail')" /></svg>{{ profileForm.email || 'No email' }}</p><p class="flex items-center gap-2"><svg viewBox="0 0 24 24" class="h-4 w-4" fill="none" stroke="currentColor" stroke-width="1.8"><path :d="iconPath('phone')" /></svg>{{ profileForm.phone || 'No phone' }}</p></div></div>
-                <button type="button" class="tf-icon-button h-11 w-auto shrink-0 gap-2 px-4" @click="chooseProfileAvatar"><svg viewBox="0 0 24 24" class="h-4 w-4" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M12 20h9M16.5 3.5a2.1 2.1 0 0 1 3 3L8 18l-4 1 1-4Z" /></svg>Edit Photo</button>
               </div>
 
               <div class="mt-7 grid gap-4 md:grid-cols-2"><label class="text-sm font-semibold">First Name<input v-model="profileForm.firstName" class="tf-input mt-2 h-12 w-full" /></label><label class="text-sm font-semibold">Last Name<input v-model="profileForm.lastName" class="tf-input mt-2 h-12 w-full" /></label><label class="md:col-span-2 text-sm font-semibold">Email Address<input v-model="profileForm.email" class="tf-input mt-2 h-12 w-full" readonly /></label><label class="text-sm font-semibold">Phone Number<input v-model="profileForm.phone" class="tf-input mt-2 h-12 w-full" inputmode="numeric" placeholder="+998 91 638 31 91" @input="handleProfilePhoneInput" /></label><label class="text-sm font-semibold">Role<input v-model="profileForm.role" class="tf-input mt-2 h-12 w-full" /></label></div>

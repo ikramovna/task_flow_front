@@ -556,6 +556,33 @@ body {
   align-items: stretch;
 }
 
+@media (min-width: 1280px) {
+  .tf-content-calendar {
+    overflow: hidden;
+  }
+
+  .tf-calendar-layout {
+    height: calc(100dvh - 124px);
+    min-height: 0;
+  }
+
+  .tf-calendar-main-panel,
+  .tf-calendar-events-panel {
+    height: 100%;
+    min-height: 0;
+  }
+
+  .tf-calendar-main-panel > .tf-calendar-scroll {
+    min-height: 0;
+    flex: 1;
+    overflow: auto;
+    overscroll-behavior: contain;
+    scrollbar-gutter: stable;
+    scrollbar-width: thin;
+    scrollbar-color: #94a3b8 transparent;
+  }
+}
+
 .tf-calendar-events-panel {
   background: var(--tf-surface);
   isolation: isolate;
@@ -1627,11 +1654,6 @@ body {
   align-items: stretch;
 }
 
-.tf-profile-panel,
-.tf-settings-side {
-  min-height: 650px;
-}
-
 .tf-profile-panel {
   display: flex;
   flex-direction: column;
@@ -1646,8 +1668,7 @@ body {
 }
 
 .tf-settings-side {
-  display: grid;
-  grid-template-rows: minmax(0, 1fr) auto;
+  display: contents;
 }
 
 .tf-security-panel {
@@ -1655,7 +1676,18 @@ body {
 }
 
 .tf-account-summary {
-  min-height: 154px;
+  grid-column: 1 / -1;
+  display: grid;
+  grid-template-columns: minmax(230px, .65fr) minmax(0, 1.35fr);
+  align-items: center;
+  min-height: 116px;
+  gap: 2rem;
+  padding-left: 1.75rem;
+  padding-right: 1.75rem;
+}
+
+.tf-account-summary > .mt-4 {
+  margin-top: 0;
 }
 
 .tf-profile-panel .tf-input,
@@ -1665,13 +1697,17 @@ body {
 }
 
 @media (max-width: 1279px) {
-  .tf-profile-panel,
   .tf-settings-side {
+    display: flex;
+  }
+
+  .tf-account-summary {
+    display: block;
     min-height: auto;
   }
 
-  .tf-settings-side {
-    display: flex;
+  .tf-account-summary > .mt-4 {
+    margin-top: 1rem;
   }
 }
 

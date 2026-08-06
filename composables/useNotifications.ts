@@ -23,7 +23,7 @@ export const useNotifications = () => {
       state.value.totalCount = response.count
       return response
     } catch (error) {
-      state.value.error = taskFlowApiErrorMessage(error, 'Notificationlarni yuklab bo‘lmadi')
+      state.value.error = taskFlowApiErrorMessage(error, 'Could not load notifications')
       throw error
     } finally {
       state.value.loading = false

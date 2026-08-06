@@ -645,13 +645,10 @@ export const useTaskFlowApi = () => {
   const loadDashboardData = async () => {
     if (!getStoredTokens()) return null
 
-    const [dashboard, profile] = await Promise.all([getDashboard(), getMe()])
-    const profileMembership = profile.department_membership || profile.membership || profile.memberships?.[0]
-    const profileRole = String(profile.role || profileMembership?.role || '').trim().toLowerCase()
-    const profileDepartment = String(profile.department || profileMembership?.department || '')
-    const profileIsActive = profile.is_active !== false && profileMembership?.is_active !== false
-
-    const [tasksResult, membersResult, eventsResult, analyticsResult, projectsResult, reportsResult] = await Promise.allSettled([
+    // Start the heavier list requests immediately instead of waiting for the
+    // dashboard/profile round-trip first. This removes one full network
+    // waterfall from every refresh.
+    const secondaryDataPromise = Promise.allSettled([
       apiFetch<PaginatedResponse<ApiTask>>('/tasks/?page_size=100'),
       listMembers({ page_size: 200 }),
       apiFetch<PaginatedResponse<ApiEvent>>('/events/?page_size=100'),
@@ -659,6 +656,13 @@ export const useTaskFlowApi = () => {
       apiFetch<PaginatedResponse<ApiProject>>('/projects/?page_size=40'),
       apiFetch<PaginatedResponse<ApiReport>>('/reports/?page_size=40')
     ])
+    const [dashboard, profile] = await Promise.all([getDashboard(), getMe()])
+    const profileMembership = profile.department_membership || profile.membership || profile.memberships?.[0]
+    const profileRole = String(profile.role || profileMembership?.role || '').trim().toLowerCase()
+    const profileDepartment = String(profile.department || profileMembership?.department || '')
+    const profileIsActive = profile.is_active !== false && profileMembership?.is_active !== false
+
+    const [tasksResult, membersResult, eventsResult, analyticsResult, projectsResult, reportsResult] = await secondaryDataPromise
     const tasks = tasksResult.status === 'fulfilled' ? listItems<ApiTask>(tasksResult.value) : []
     const members = membersResult.status === 'fulfilled' ? listItems<ApiMember>(membersResult.value) : []
     const events = eventsResult.status === 'fulfilled' ? listItems<ApiEvent>(eventsResult.value) : []

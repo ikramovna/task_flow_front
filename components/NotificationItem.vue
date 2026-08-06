@@ -16,7 +16,7 @@ const actorName = computed(() => props.notification.actor_detail?.full_name || p
 const initials = computed(() => actorName.value.split(/\s+/).map(part => part[0]).join('').slice(0, 2).toUpperCase())
 const relativeTime = computed(() => {
   const seconds = Math.max(0, Math.floor((Date.now() - new Date(props.notification.created_at).getTime()) / 1000))
-  const formatter = new Intl.RelativeTimeFormat('uz', { numeric: 'auto' })
+  const formatter = new Intl.RelativeTimeFormat('en', { numeric: 'auto' })
   if (seconds < 60) return formatter.format(-seconds, 'second')
   if (seconds < 3600) return formatter.format(-Math.floor(seconds / 60), 'minute')
   if (seconds < 86400) return formatter.format(-Math.floor(seconds / 3600), 'hour')
