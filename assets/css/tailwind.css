@@ -1461,17 +1461,18 @@ body {
 }
 
 .tf-dashboard-hero {
-  min-height: 248px;
-  padding: 32px 34px;
+  height: 252px;
+  min-height: 252px;
+  padding: 44px 24px 28px;
   border: 1px solid #dbe5f0;
   border-radius: 18px;
   background: #fff;
   box-shadow: 0 18px 42px -30px rgb(41 74 115 / .55);
   isolation: isolate;
 }
-.tf-dashboard-hero-content { position: relative; z-index: 2; width: min(760px, 63%); }
-.tf-dashboard-greeting { font-size: clamp(22px, 2vw, 30px); line-height: 1.15; letter-spacing: -.025em; }
-.tf-dashboard-meta { display: flex; align-items: center; gap: 18px; margin-top: 34px; }
+.tf-dashboard-hero-content { position: relative; z-index: 2; width: min(720px, 56%); }
+.tf-dashboard-greeting { font-size: 30px; line-height: 1.15; letter-spacing: -.035em; }
+.tf-dashboard-meta { display: flex; align-items: center; gap: 16px; margin-top: 35px; }
 .tf-dashboard-meta-item { display: flex; align-items: center; gap: 10px; min-width: 142px; }
 .tf-dashboard-meta-item > span:last-child { display: grid; gap: 2px; }
 .tf-dashboard-meta-item b { font-size: 12px; line-height: 1.2; }
@@ -1480,19 +1481,26 @@ body {
 .tf-dashboard-meta-icon--time { background: #e6f8ef; color: #15966a; }
 .tf-dashboard-meta-icon svg { width: 18px; height: 18px; }
 .tf-dashboard-meta-separator { width: 1px; height: 44px; background: #dfe7f1; }
-.tf-dashboard-quote { max-width: 195px; font-size: 11px; line-height: 1.55; }
+.tf-dashboard-quote-separator { margin-left: 24px; }
+.tf-dashboard-quote { width: 205px; max-width: 205px; font-size: 11px; line-height: 1.55; }
 .tf-dashboard-quote p { color: #33435b; }
 .tf-dashboard-quote cite { display: block; margin-top: 5px; color: #1673d1; font-style: normal; font-weight: 600; }
-.tf-dashboard-hero-art { position: absolute; z-index: 0; inset: 0; overflow: hidden; border-radius: inherit; background: url('/dashboard-hero-afternoon.jpg') center / cover no-repeat; }
-.tf-dashboard-hero-art::after { content: ''; position: absolute; inset: 0; background: linear-gradient(90deg, #fff 0%, rgb(255 255 255 / .98) 32%, rgb(255 255 255 / .84) 48%, transparent 72%); }
-.tf-dark .tf-dashboard-hero { border-color: #263b58; background: #081527; box-shadow: 0 20px 48px -30px #000; }
-.tf-dark .tf-dashboard-hero-art { filter: brightness(.55) saturate(.88) contrast(1.08); }
-.tf-dark .tf-dashboard-hero-art::after { background: linear-gradient(90deg, #081527 0%, rgb(8 21 39 / .98) 34%, rgb(8 21 39 / .83) 51%, transparent 76%); }
+.tf-dashboard-hero-art { position: absolute; z-index: 0; inset: 0 0 0 48%; overflow: hidden; border-radius: 0 18px 18px 0; background: url('/dashboard-hero-afternoon.jpg') 72% 100% / cover no-repeat; }
+.tf-dashboard-hero-art::after { content: ''; position: absolute; inset: 0; background: linear-gradient(90deg, #fff 0%, rgb(255 255 255 / .92) 9%, rgb(255 255 255 / .5) 23%, transparent 42%); }
+.tf-dark .tf-dashboard-hero { border-color: #263b58; background: #07182d; box-shadow: 0 20px 48px -30px #000; }
+.tf-dark .tf-dashboard-hero-art { filter: brightness(.72) saturate(.9) contrast(1.04); }
+.tf-dark .tf-dashboard-hero-art::after { background: linear-gradient(90deg, #07182d 0%, rgb(7 24 45 / .94) 10%, rgb(7 24 45 / .54) 25%, transparent 44%); }
 .tf-dark .tf-dashboard-meta-item small { color: #91a2b9; }
 .tf-dark .tf-dashboard-meta-separator { background: #263b58; }
 .tf-dark .tf-dashboard-meta-icon { background: #102f54; color: #65a9ff; }
 .tf-dark .tf-dashboard-meta-icon--time { background: #0c3c32; color: #4ad2a0; }
 .tf-dark .tf-dashboard-quote p { color: #c9d4e3; }
+
+@media (max-width: 1180px) {
+  .tf-dashboard-hero-content { width: 64%; }
+  .tf-dashboard-quote-separator,
+  .tf-dashboard-quote { display: none; }
+}
 
 .tf-summary-card {
   min-height: 118px;
@@ -1906,7 +1914,8 @@ body {
     font-size: 17px;
   }
 
-  .tf-dashboard-hero { min-height: 176px; padding: 20px; align-items: flex-start; }
+  .tf-dashboard-hero { height: auto; min-height: 190px; padding: 24px 20px; align-items: flex-start; }
+  .tf-dashboard-hero-content { width: 82%; }
   .tf-dashboard-hero-art { left: 58%; opacity: .48; }
   .tf-dashboard-meta { gap: 10px; margin-top: 20px; }
   .tf-dashboard-meta-item { min-width: 0; }
