@@ -1830,6 +1830,20 @@ body {
   box-shadow: 0 4px 12px rgb(0 0 0 / 0.25);
 }
 
+.tf-pill.tf-status-on-hold {
+  border-color: #e5a319;
+  background: #fff1c2;
+  color: #8a4b00;
+  box-shadow: inset 0 1px 0 rgb(255 255 255 / 0.7), 0 2px 7px rgb(180 106 0 / 0.1);
+}
+
+.tf-dark .tf-pill.tf-status-on-hold {
+  border-color: #a86608;
+  background: #3d2a0b;
+  color: #ffc95c;
+  box-shadow: inset 0 1px 0 rgb(255 255 255 / 0.04);
+}
+
 @media (max-width: 767px) {
   .tf-dashboard-heading {
     height: 52px;

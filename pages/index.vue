@@ -19,17 +19,6 @@ const validPageKeys: PageKey[] = ['dashboard', 'tasks', 'projects', 'analytics',
 const pageCookie = useCookie<PageKey | null>('taskflow-active-page', { sameSite: 'lax', maxAge: 60 * 60 * 24 * 30 })
 const cookiePage = validPageKeys.includes(pageCookie.value as PageKey) ? pageCookie.value as PageKey : 'dashboard'
 const activePage = ref<PageKey>(cookiePage)
-
-if (import.meta.client) {
-  const hashPage = window.location.hash.replace(/^#/, '').split('?')[0]
-  const storedPage = localStorage.getItem(pageStorageKey) || ''
-  const initialPage = validPageKeys.includes(hashPage as PageKey)
-    ? hashPage as PageKey
-    : validPageKeys.includes(storedPage as PageKey)
-      ? storedPage as PageKey
-      : cookiePage
-  activePage.value = initialPage
-}
 const settingsTab = ref<'profile' | 'security'>('profile')
 const modal = ref<ModalKey>(null)
 const openDropdown = ref<string | null>(null)
@@ -2246,7 +2235,7 @@ const badgeClass = (value: string) => {
   if (value === 'Low' || value === 'Completed' || value === 'Ready') return 'bg-task-successSoft text-task-success'
   if (value === 'Not Started') return 'bg-slate-100 text-task-muted'
   if (value === 'Backlog') return 'bg-slate-200 text-slate-600'
-  if (value === 'On Hold') return 'bg-amber-100 text-amber-700'
+  if (value === 'On Hold') return 'tf-status-on-hold'
   return 'bg-task-blueSoft text-task-blue'
 }
 
