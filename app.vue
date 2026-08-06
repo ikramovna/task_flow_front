@@ -1,12 +1,5 @@
 <script setup lang="ts">
-const themeCookie = useCookie<string | null>('taskflow-theme')
-const serverDarkTheme = computed(() => themeCookie.value === 'Dark')
-
 useHead({
-  htmlAttrs: {
-    class: computed(() => serverDarkTheme.value ? 'tf-dark' : ''),
-    style: computed(() => `color-scheme:${serverDarkTheme.value ? 'dark' : 'light'}`)
-  },
   script: [
     {
       key: 'taskflow-theme-init',

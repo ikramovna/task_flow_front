@@ -17,8 +17,9 @@ type ProjectCardMember = {
 const pageStorageKey = 'taskflow-active-page'
 const validPageKeys: PageKey[] = ['dashboard', 'tasks', 'projects', 'analytics', 'calendar', 'team', 'reports', 'messages', 'notifications', 'settings', 'help']
 const pageCookie = useCookie<PageKey | null>('taskflow-active-page', { sameSite: 'lax', maxAge: 60 * 60 * 24 * 30 })
-const cookiePage = validPageKeys.includes(pageCookie.value as PageKey) ? pageCookie.value as PageKey : 'dashboard'
-const activePage = ref<PageKey>(cookiePage)
+// Keep SSR and the first client render identical. The URL/local preference is
+// restored after mount, which replaces the active navigation DOM deterministically.
+const activePage = ref<PageKey>('dashboard')
 const settingsTab = ref<'profile' | 'security'>('profile')
 const modal = ref<ModalKey>(null)
 const openDropdown = ref<string | null>(null)
@@ -465,11 +466,20 @@ const isComingSoonPage = (key: PageKey) => comingSoonPages.has(key)
 const profileName = computed(() => `${savedProfile.firstName} ${savedProfile.lastName}`.trim())
 const profileInitials = computed(() => profileName.value ? initials(profileName.value) : '')
 const dashboardTitle = computed(() => profileName.value ? `Welcome back, ${savedProfile.firstName || profileName.value}!` : 'Dashboard')
+const tashkentNowMs = useState<number>('dashboard-tashkent-clock', () => Date.now())
+const tashkentNow = computed(() => new Date(tashkentNowMs.value))
+const tashkentHour = computed(() => Number(new Intl.DateTimeFormat('en-US', {
+  timeZone: 'Asia/Tashkent', hour: '2-digit', hour12: false
+}).format(tashkentNow.value)))
+const dashboardGreetingPeriod = computed(() => tashkentHour.value < 12 ? 'morning' : tashkentHour.value < 18 ? 'afternoon' : 'evening')
+const dashboardGreetingIcon = computed(() => dashboardGreetingPeriod.value === 'morning' ? '☀️' : dashboardGreetingPeriod.value === 'afternoon' ? '🌤️' : '🌙')
 const dashboardGreeting = computed(() => {
-  const hour = new Date().getHours()
-  const greeting = hour < 12 ? 'Good morning' : hour < 18 ? 'Good afternoon' : 'Good evening'
-  return `${greeting}, ${savedProfile.firstName || profileName.value || 'there'}! 👋`
+  return `Good ${dashboardGreetingPeriod.value}, ${savedProfile.firstName || profileName.value || 'there'}!`
 })
+const tashkentWeekday = computed(() => new Intl.DateTimeFormat('en-US', { timeZone: 'Asia/Tashkent', weekday: 'long' }).format(tashkentNow.value))
+const tashkentDate = computed(() => new Intl.DateTimeFormat('en-GB', { timeZone: 'Asia/Tashkent', day: 'numeric', month: 'long', year: 'numeric' }).format(tashkentNow.value))
+const tashkentTime = computed(() => new Intl.DateTimeFormat('en-US', { timeZone: 'Asia/Tashkent', hour: '2-digit', minute: '2-digit', hour12: true }).format(tashkentNow.value))
+let dashboardClockTimer: ReturnType<typeof setInterval> | null = null
 const dashboardDepartmentTotal = computed(() => dashboardDepartments.value.reduce((total, department) => total + Number(department.task_count || 0), 0))
 const hasSavedProfileInfo = computed(() => Boolean(profileName.value || savedProfile.role || savedProfile.email))
 const profileFormInitials = computed(() => {
@@ -968,6 +978,8 @@ onMounted(() => {
   }
   syncRootThemeClass()
   restoreActivePage()
+  tashkentNowMs.value = Date.now()
+  dashboardClockTimer = setInterval(() => { tashkentNowMs.value = Date.now() }, 30_000)
   if (activePage.value === 'tasks') void loadTaskScope(taskScope.value)
 })
 
@@ -979,6 +991,8 @@ onBeforeUnmount(() => {
   if (profileAvatarPreview.value && profileAvatarPreview.value.startsWith('blob:')) URL.revokeObjectURL(profileAvatarPreview.value)
   themeMediaQuery?.removeEventListener('change', updateSystemTheme)
   themeMediaQuery = null
+  if (dashboardClockTimer) clearInterval(dashboardClockTimer)
+  dashboardClockTimer = null
 })
 
 const toggleTheme = () => {
@@ -2379,7 +2393,11 @@ const iconPath = (name: string) => {
       </aside>
 
       <div :class="['tf-content min-w-0 flex-1 p-4', activePage === 'calendar' ? 'tf-content-calendar' : '']">
-        <header :class="['tf-app-header relative z-30 mb-4 flex items-center justify-between gap-4 overflow-visible', activePage === 'dashboard' ? 'tf-dashboard-heading h-[68px] px-1' : 'tf-panel h-[76px] px-5 shadow-none']">
+        <header :class="['tf-app-header relative z-30 mb-4 flex items-center justify-between gap-4 overflow-visible', activePage === 'dashboard' ? 'tf-dashboard-heading tf-dashboard-hero' : 'tf-panel h-[76px] px-5 shadow-none']">
+          <div v-if="activePage === 'dashboard'" class="tf-dashboard-hero-art" aria-hidden="true">
+            <span class="tf-dashboard-sun" /><span class="tf-dashboard-window-line tf-dashboard-window-line--one" /><span class="tf-dashboard-window-line tf-dashboard-window-line--two" />
+            <span class="tf-dashboard-city" /><span class="tf-dashboard-desk" /><span class="tf-dashboard-laptop"><i /></span><span class="tf-dashboard-plant"><i /><b /></span>
+          </div>
           <div v-if="activePage !== 'dashboard'" class="pointer-events-none absolute inset-y-0 right-0 w-72 bg-gradient-to-l from-task-blueSoft/70 to-transparent" />
           <svg v-if="activePage !== 'dashboard'" viewBox="0 0 180 80" class="pointer-events-none absolute -right-3 top-0 h-full w-52 text-task-blue opacity-[0.08]" fill="none"><path d="M12 79c28-42 48-5 74-40s57 20 94-34v74H12Z" fill="currentColor" /><circle cx="135" cy="18" r="30" stroke="currentColor" stroke-width="2" /></svg>
           <button type="button" class="tf-icon-button md:hidden" aria-label="Open menu" @click="mobileSidebarOpen = true">
@@ -2389,7 +2407,16 @@ const iconPath = (name: string) => {
             <span v-if="activePage !== 'dashboard'" :class="['grid h-11 w-11 shrink-0 place-items-center rounded-[14px] bg-gradient-to-br shadow-sm ring-1 ring-white/70', pageAccentClass]">
               <svg viewBox="0 0 24 24" class="h-5 w-5" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path :d="iconPath(pageIconName)" /></svg>
             </span>
-            <div class="min-w-0"><h1 :class="['truncate font-bold', activePage === 'dashboard' ? 'text-[22px]' : 'text-lg']">{{ activePage === 'dashboard' ? dashboardGreeting : pageCopy[activePage].title }}</h1><p class="mt-1 truncate text-xs text-task-muted">{{ pageCopy[activePage].subtitle }}</p></div>
+            <div v-if="activePage === 'dashboard'" class="tf-dashboard-hero-content min-w-0">
+              <h1 class="tf-dashboard-greeting font-bold">{{ dashboardGreeting }} <span aria-hidden="true">{{ dashboardGreetingIcon }}</span></h1>
+              <p class="mt-1.5 text-sm text-task-muted">{{ pageCopy.dashboard.subtitle }}</p>
+              <div class="tf-dashboard-meta">
+                <div class="tf-dashboard-meta-item"><span class="tf-dashboard-meta-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path :d="iconPath('calendar')" /></svg></span><span><b>{{ tashkentWeekday }}</b><small>{{ tashkentDate }}</small></span></div>
+                <div class="tf-dashboard-meta-separator" />
+                <div class="tf-dashboard-meta-item"><span class="tf-dashboard-meta-icon tf-dashboard-meta-icon--time"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path :d="iconPath('clock')" /></svg></span><span><b>{{ tashkentTime }}</b><small>Tashkent Time</small></span></div>
+              </div>
+            </div>
+            <div v-else class="min-w-0"><h1 class="truncate text-lg font-bold">{{ pageCopy[activePage].title }}</h1><p class="mt-1 truncate text-xs text-task-muted">{{ pageCopy[activePage].subtitle }}</p></div>
           </div>
           <div class="relative z-10 flex items-center gap-3">
             <label v-if="false" class="relative hidden sm:block">

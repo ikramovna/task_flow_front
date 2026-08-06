@@ -1,22 +1,5 @@
-<script setup lang="ts">
-const themeCookie = useCookie<string | null>('taskflow-theme')
-const isDarkLoadingTheme = ref(themeCookie.value === 'Dark')
-
-const detectLoadingTheme = () => {
-  if (!import.meta.client) return
-  const savedTheme = localStorage.getItem('taskflow-theme')
-  if (savedTheme) themeCookie.value = savedTheme
-  isDarkLoadingTheme.value = savedTheme === 'Dark' || (
-    savedTheme === 'System' && window.matchMedia('(prefers-color-scheme: dark)').matches
-  ) || (!savedTheme && document.documentElement.classList.contains('tf-dark'))
-}
-
-detectLoadingTheme()
-onMounted(detectLoadingTheme)
-</script>
-
 <template>
-  <div :class="['tf-loading-screen', isDarkLoadingTheme ? 'is-dark' : 'is-light']" role="status" aria-live="polite" aria-label="Loading TaskFlow">
+  <div class="tf-loading-screen" role="status" aria-live="polite" aria-label="Loading TaskFlow">
     <div class="tf-loading-ambient" />
     <div class="tf-loading-pulse">
       <span class="tf-loading-ring tf-loading-ring--outer" />
@@ -123,30 +106,25 @@ onMounted(detectLoadingTheme)
   animation: dots 1.25s steps(4, end) infinite;
 }
 
-:global(.tf-dark) .tf-loading-screen,
-.tf-loading-screen.is-dark {
+:global(html.tf-dark) .tf-loading-screen {
   background: #091323;
   color: #d8e8ff;
 }
 
-:global(.tf-dark) .tf-loading-ambient,
-.tf-loading-screen.is-dark .tf-loading-ambient {
+:global(html.tf-dark) .tf-loading-ambient {
   background: radial-gradient(circle, rgb(37 99 235 / .18), rgb(30 64 175 / .06) 42%, transparent 70%);
 }
 
-:global(.tf-dark) .tf-loading-ring,
-.tf-loading-screen.is-dark .tf-loading-ring {
+:global(html.tf-dark) .tf-loading-ring {
   border-color: rgb(59 130 246 / .25);
   box-shadow: inset 0 0 30px rgb(37 99 235 / .04), 0 0 30px rgb(37 99 235 / .05);
 }
 
-:global(.tf-dark) .tf-loading-ring--middle,
-.tf-loading-screen.is-dark .tf-loading-ring--middle {
+:global(html.tf-dark) .tf-loading-ring--middle {
   border-color: rgb(59 130 246 / .45);
 }
 
-:global(.tf-dark) .tf-loading-subtitle,
-.tf-loading-screen.is-dark .tf-loading-subtitle {
+:global(html.tf-dark) .tf-loading-subtitle {
   color: #71839d;
 }
 
