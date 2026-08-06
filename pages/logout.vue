@@ -12,6 +12,8 @@ onMounted(() => {
   document.documentElement.classList.toggle('tf-dark', isDarkTheme.value)
   document.documentElement.style.colorScheme = isDarkTheme.value ? 'dark' : 'light'
   useTaskFlowApi().logout()
+  useTaskFlowStore().reset()
+  useNotifications().reset()
   setTimeout(() => {
     navigateTo('/login')
   }, 700)

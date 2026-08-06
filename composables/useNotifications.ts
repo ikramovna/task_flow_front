@@ -13,6 +13,9 @@ export const useNotifications = () => {
   const state = useState<NotificationState>('taskflow:notifications', () => ({
     notifications: [], unreadCount: 0, totalCount: 0, loading: false, error: null
   }))
+  const reset = () => {
+    state.value = { notifications: [], unreadCount: 0, totalCount: 0, loading: false, error: null }
+  }
 
   const load = async (options: { unread?: boolean; page?: number; pageSize?: number; append?: boolean } = {}) => {
     state.value.loading = true
@@ -72,5 +75,5 @@ export const useNotifications = () => {
     }
   }
 
-  return { state, load, refreshUnreadCount, markRead, markAllRead }
+  return { state, reset, load, refreshUnreadCount, markRead, markAllRead }
 }

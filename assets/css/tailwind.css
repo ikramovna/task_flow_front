@@ -1805,6 +1805,31 @@ body {
   background: #1b3452;
 }
 
+.tf-hidden-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  width: max-content;
+  border: 1px solid #f5a7b8;
+  border-radius: 999px;
+  background: #fff0f3;
+  padding: 3px 8px;
+  color: #c3264e;
+  font-size: 9px;
+  font-weight: 800;
+  line-height: 1;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  box-shadow: 0 3px 10px rgb(195 38 78 / 0.12);
+}
+
+.tf-dark .tf-hidden-badge {
+  border-color: #b43c5b;
+  background: #431c2a;
+  color: #ff9db4;
+  box-shadow: 0 4px 12px rgb(0 0 0 / 0.25);
+}
+
 @media (max-width: 767px) {
   .tf-dashboard-heading {
     height: 52px;

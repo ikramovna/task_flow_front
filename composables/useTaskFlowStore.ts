@@ -76,6 +76,11 @@ export const useTaskFlowStore = () => {
   const state = useState<TaskFlowState>('taskflow:store', () => ({ ...createEmptyState(), loaded: false }))
   const apiError = useState('taskflow:api-error', () => '')
 
+  const reset = () => {
+    state.value = { ...createEmptyState(), loaded: false }
+    apiError.value = ''
+  }
+
   const loadBackendData = async () => {
     if (!import.meta.client) {
       state.value = { ...createEmptyState(), loaded: false }
@@ -213,6 +218,7 @@ export const useTaskFlowStore = () => {
 
   return {
     state,
+    reset,
     loadBackendData,
     pages: computed(() => state.value.pages),
     stats: computed(() => state.value.stats),

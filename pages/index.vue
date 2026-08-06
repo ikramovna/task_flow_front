@@ -777,7 +777,8 @@ const dashboardDateTime = (value: unknown, kind: 'date' | 'time' = 'date') => {
 }
 
 const loadTaskScope = async (scope: 'all' | 'mine' | 'archived') => {
-  if (scope === 'all' && currentRole.value.toLowerCase() === 'member') scope = 'mine'
+  const isMember = currentRole.value.toLowerCase() === 'member'
+  if (scope === 'all' && isMember) scope = 'mine'
   if (scope === 'archived' && !canManageDepartment.value) scope = 'mine'
   if (taskScopeLoading.value) return
   taskScope.value = scope
@@ -786,7 +787,9 @@ const loadTaskScope = async (scope: 'all' | 'mine' | 'archived') => {
   try {
     const response = await taskFlowApi.listTasks({
       page_size: 100,
-      my_tasks: scope === 'mine' ? 'true' : undefined,
+      // The backend already limits members to tasks they are allowed to see,
+      // including hidden tasks where they are one of the assignees.
+      my_tasks: scope === 'mine' && !isMember ? 'true' : undefined,
       archived: scope === 'archived' ? 'true' : undefined
     })
     state.value.tasks = taskFlowApi.listItems(response).map(taskFlowApi.mapTask)
@@ -2606,7 +2609,7 @@ const iconPath = (name: string) => {
                   @dragend="draggedTaskId = ''"
                   @click="openTaskFromCard(task)"
                 >
-                  <div class="flex items-start justify-between gap-3"><div class="min-w-0"><h4 class="line-clamp-2 text-[14px] font-bold leading-[1.4] tracking-[-0.01em] text-slate-900">{{ task[0] }}</h4><span v-if="taskIsHiddenOf(task)" class="mt-1.5 inline-flex rounded-full bg-slate-200 px-2 py-0.5 text-[9px] font-bold uppercase tracking-wide text-slate-600">Hidden</span></div><span v-if="column.key === 'completed'" class="grid h-6 w-6 shrink-0 place-items-center rounded-full border border-task-success/40 bg-task-successSoft text-task-success"><svg viewBox="0 0 24 24" class="h-3.5 w-3.5" fill="none" stroke="currentColor" stroke-width="2.2"><path d="m6 12 4 4 8-9" /></svg></span></div>
+                  <div class="flex items-start justify-between gap-3"><div class="min-w-0"><h4 class="line-clamp-2 text-[14px] font-bold leading-[1.4] tracking-[-0.01em] text-slate-900">{{ task[0] }}</h4><span v-if="taskIsHiddenOf(task)" class="tf-hidden-badge mt-2"><svg viewBox="0 0 24 24" class="h-3 w-3" fill="none" stroke="currentColor" stroke-width="2"><rect x="5" y="10" width="14" height="11" rx="2" /><path d="M8 10V7a4 4 0 0 1 8 0v3" /></svg>Hidden</span></div><span v-if="column.key === 'completed'" class="grid h-6 w-6 shrink-0 place-items-center rounded-full border border-task-success/40 bg-task-successSoft text-task-success"><svg viewBox="0 0 24 24" class="h-3.5 w-3.5" fill="none" stroke="currentColor" stroke-width="2.2"><path d="m6 12 4 4 8-9" /></svg></span></div>
                   <p v-if="task[7]" class="mt-2 inline-flex max-w-full items-center gap-1.5 truncate text-xs font-medium text-slate-500"><svg viewBox="0 0 24 24" class="h-3.5 w-3.5 shrink-0 text-task-blue" fill="none" stroke="currentColor" stroke-width="1.8"><path :d="iconPath('folder')" /></svg>{{ task[7] }}</p>
 
                   <div v-if="column.key !== 'in_progress'" class="mt-4 flex items-center gap-3 border-t border-slate-100 pt-3">
@@ -3050,7 +3053,7 @@ const iconPath = (name: string) => {
           <template v-else-if="modal === 'task'">
             <div class="mb-4 flex items-center gap-3 rounded-[14px] border border-task-line bg-task-blueSoft px-4 py-3 text-sm">
               <span class="grid h-9 w-9 shrink-0 place-items-center rounded-full bg-white text-task-blue"><svg viewBox="0 0 24 24" class="h-4 w-4" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M4 21V7l8-4 8 4v14M9 21v-5h6v5M8 9h1m6 0h1m-8 3h1m6 0h1" /></svg></span>
-              <div class="min-w-0 flex-1"><div class="flex flex-wrap items-center gap-2"><p class="font-semibold text-task-ink">Current department</p><span v-if="editingTaskId && taskIsHidden" class="rounded-full bg-slate-200 px-2 py-0.5 text-[9px] font-bold uppercase tracking-wide text-slate-600">Hidden</span></div><p class="mt-0.5 text-xs text-task-muted">Task automatically belongs to your department.</p></div>
+              <div class="min-w-0 flex-1"><div class="flex flex-wrap items-center gap-2"><p class="font-semibold text-task-ink">Current department</p><span v-if="editingTaskId && taskIsHidden" class="tf-hidden-badge"><svg viewBox="0 0 24 24" class="h-3 w-3" fill="none" stroke="currentColor" stroke-width="2"><rect x="5" y="10" width="14" height="11" rx="2" /><path d="M8 10V7a4 4 0 0 1 8 0v3" /></svg>Hidden</span></div><p class="mt-0.5 text-xs text-task-muted">Task automatically belongs to your department.</p></div>
             </div>
             <label class="block text-sm font-semibold">
               Task Title

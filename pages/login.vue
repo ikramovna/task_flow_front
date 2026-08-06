@@ -6,6 +6,8 @@ const showPassword = ref(false)
 const isSubmitting = ref(false)
 const errorMessage = ref('')
 const api = useTaskFlowApi()
+const taskFlowStore = useTaskFlowStore()
+const notifications = useNotifications()
 const isDarkTheme = ref(false)
 let themeMediaQuery: MediaQueryList | null = null
 
@@ -53,6 +55,8 @@ const submitLogin = async () => {
 
   try {
     await api.login(email.value, password.value, rememberMe.value)
+    taskFlowStore.reset()
+    notifications.reset()
     await navigateTo('/')
   } catch (error) {
     console.error('TaskFlow login failed.', error)

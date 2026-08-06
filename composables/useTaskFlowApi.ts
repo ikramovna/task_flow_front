@@ -414,6 +414,7 @@ export const useTaskFlowApi = () => {
       body: { email, password }
     })
 
+    meCache.value = null
     saveStoredTokens({
       ...tokens,
       email,
@@ -430,6 +431,7 @@ export const useTaskFlowApi = () => {
 
     accessCookie.value = null
     refreshCookie.value = null
+    meCache.value = null
 
     if (import.meta.client) {
       localStorage.removeItem(authStorageKey)
