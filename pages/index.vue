@@ -1,5 +1,11 @@
 <script setup lang="ts">
 import type { Ref } from 'vue'
+import GreetingMorningLight from '~/components/GreetingMorningLight.vue'
+import GreetingMorningDark from '~/components/GreetingMorningDark.vue'
+import GreetingAfternoonLight from '~/components/GreetingAfternoonLight.vue'
+import GreetingAfternoonDark from '~/components/GreetingAfternoonDark.vue'
+import GreetingEveningLight from '~/components/GreetingEveningLight.vue'
+import GreetingEveningDark from '~/components/GreetingEveningDark.vue'
 
 type PageKey = 'dashboard' | 'tasks' | 'projects' | 'analytics' | 'calendar' | 'team' | 'reports' | 'messages' | 'notifications' | 'settings' | 'help'
 type ModalKey = 'task' | 'project' | 'event' | 'event-detail' | 'report' | 'member' | 'team-filter' | null
@@ -482,6 +488,11 @@ const dashboardQuote = computed(() => ({
 const dashboardGreeting = computed(() => {
   return `Good ${dashboardGreetingPeriod.value}, ${savedProfile.firstName || profileName.value || 'there'}!`
 })
+const dashboardGreetingComponent = computed(() => ({
+  morning: isDarkTheme.value ? GreetingMorningDark : GreetingMorningLight,
+  afternoon: isDarkTheme.value ? GreetingAfternoonDark : GreetingAfternoonLight,
+  evening: isDarkTheme.value ? GreetingEveningDark : GreetingEveningLight
+}[dashboardGreetingPeriod.value]))
 const tashkentWeekday = computed(() => new Intl.DateTimeFormat('en-US', { timeZone: 'Asia/Tashkent', weekday: 'long' }).format(tashkentNow.value))
 const tashkentDate = computed(() => new Intl.DateTimeFormat('en-GB', { timeZone: 'Asia/Tashkent', day: 'numeric', month: 'long', year: 'numeric' }).format(tashkentNow.value))
 const tashkentTime = computed(() => new Intl.DateTimeFormat('en-US', { timeZone: 'Asia/Tashkent', hour: '2-digit', minute: '2-digit', hour12: true }).format(tashkentNow.value))
@@ -2399,7 +2410,15 @@ const iconPath = (name: string) => {
       </aside>
 
       <div :class="['tf-content min-w-0 flex-1 p-4', activePage === 'calendar' ? 'tf-content-calendar' : '']">
-        <header :class="['tf-app-header relative z-30 mb-4 flex items-center justify-between gap-4 overflow-visible', activePage === 'dashboard' ? 'tf-dashboard-heading tf-dashboard-hero' : 'tf-panel h-[76px] px-5 shadow-none']">
+        <component :is="dashboardGreetingComponent" v-if="activePage === 'dashboard'" class="mb-4" :name="savedProfile.firstName || profileName || 'there'">
+          <template #actions>
+            <NotificationCenter :active-page="activePage" @navigate="navigateFromNotification" @view-all="setPage('notifications')" />
+            <button type="button" class="tf-theme-button" :aria-label="isDarkTheme ? 'Switch to light theme' : 'Switch to dark theme'" :aria-pressed="isDarkTheme" :title="isDarkTheme ? 'Light theme' : 'Dark theme'" @click="toggleTheme">
+              <svg viewBox="0 0 24 24" class="h-[17px] w-[17px]" fill="none" stroke="currentColor" stroke-width="1.8"><path :d="iconPath(isDarkTheme ? 'sun' : 'moon')" /></svg>
+            </button>
+          </template>
+        </component>
+        <header v-else class="tf-app-header tf-panel relative z-30 mb-4 flex h-[76px] items-center justify-between gap-4 overflow-visible px-5 shadow-none">
           <div v-if="activePage === 'dashboard'" class="tf-dashboard-hero-art" aria-hidden="true" />
           <div v-if="activePage !== 'dashboard'" class="pointer-events-none absolute inset-y-0 right-0 w-72 bg-gradient-to-l from-task-blueSoft/70 to-transparent" />
           <svg v-if="activePage !== 'dashboard'" viewBox="0 0 180 80" class="pointer-events-none absolute -right-3 top-0 h-full w-52 text-task-blue opacity-[0.08]" fill="none"><path d="M12 79c28-42 48-5 74-40s57 20 94-34v74H12Z" fill="currentColor" /><circle cx="135" cy="18" r="30" stroke="currentColor" stroke-width="2" /></svg>
