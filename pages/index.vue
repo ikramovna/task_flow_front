@@ -540,7 +540,8 @@ const daysInCalendarMonth = computed(() => new Date(calendarYear.value, calendar
 const calendarLeadingBlanks = computed(() => (new Date(calendarYear.value, calendarMonthIndex.value, 1).getDay() + 6) % 7)
 const calendarCells = computed(() => [
   ...Array.from({ length: calendarLeadingBlanks.value }, (_, index) => ({ key: `blank-${calendarMonthIndex.value}-${index}`, day: null as number | null })),
-  ...Array.from({ length: daysInCalendarMonth.value }, (_, index) => ({ key: `day-${calendarMonthIndex.value}-${index + 1}`, day: index + 1 }))
+  ...Array.from({ length: daysInCalendarMonth.value }, (_, index) => ({ key: `day-${calendarMonthIndex.value}-${index + 1}`, day: index + 1 })),
+  ...Array.from({ length: 42 - calendarLeadingBlanks.value - daysInCalendarMonth.value }, (_, index) => ({ key: `trailing-${calendarMonthIndex.value}-${index}`, day: null as number | null }))
 ])
 const eventColorClass = (eventType: string) => {
   const normalized = eventType.toLowerCase()
@@ -2948,16 +2949,16 @@ const iconPath = (name: string) => {
                       ]"
                       @click="selectCalendarDay(cell.day)"
                     >
-                      <span class="flex h-7 items-center gap-2 text-base leading-7">
-                        <span :class="[isTodayCell(cell.day) ? 'grid h-7 w-7 place-items-center rounded-full bg-task-blue text-sm font-bold text-white' : 'font-semibold', cell.day && (calendarLeadingBlanks + cell.day) % 7 === 0 ? 'text-task-danger' : '']">{{ cell.day }}</span>
+                      <span class="flex h-6 items-center gap-1.5 text-sm leading-6">
+                        <span :class="[isTodayCell(cell.day) ? 'grid h-6 w-6 place-items-center rounded-full bg-task-blue text-xs font-bold text-white' : 'font-semibold', cell.day && (calendarLeadingBlanks + cell.day) % 7 === 0 ? 'text-task-danger' : '']">{{ cell.day }}</span>
                         <span v-if="isTodayCell(cell.day)" class="rounded-full bg-white px-2 py-0.5 text-[10px] font-bold text-task-blue shadow-sm">Today</span>
                       </span>
-                      <div class="mt-2 w-full space-y-1">
-                        <span v-for="event in eventsForDay(cell.day).slice(0, 2)" :key="event.id" class="flex w-full items-center gap-1.5 rounded-[7px] bg-task-blueSoft px-2 py-1 text-[11px] font-semibold text-task-blue"><span :class="['h-1.5 w-1.5 shrink-0 rounded-full', event.color]" /><span class="truncate">{{ event.title }}</span></span>
-                        <span v-if="eventsForDay(cell.day).length > 2" class="block px-2 text-[10px] font-bold text-task-muted">+{{ eventsForDay(cell.day).length - 2 }} more</span>
+                      <div class="mt-1.5 w-full space-y-1">
+                        <span v-for="event in eventsForDay(cell.day).slice(0, 1)" :key="event.id" class="flex w-full items-center gap-1.5 rounded-[6px] bg-task-blueSoft px-2 py-1 text-[10px] font-semibold leading-4 text-task-blue"><span :class="['h-1.5 w-1.5 shrink-0 rounded-full', event.color]" /><span class="truncate">{{ event.title }}</span></span>
+                        <span v-if="eventsForDay(cell.day).length > 1" class="block truncate px-2 text-[9px] font-bold leading-3 text-task-muted">+{{ eventsForDay(cell.day).length - 1 }} more</span>
                       </div>
                     </button>
-                    <div v-else class="tf-calendar-cell min-w-[97px]" />
+                    <div v-else class="tf-calendar-cell min-w-[97px] rounded-[12px] border border-task-line/60 bg-slate-50/35" aria-hidden="true" />
                   </template>
                 </div>
               </div>
