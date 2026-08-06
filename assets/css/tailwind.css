@@ -467,6 +467,17 @@ body {
   height: 84px;
 }
 
+.tf-loading-fade-enter-active,
+.tf-loading-fade-leave-active {
+  transition: opacity 280ms ease, visibility 280ms ease;
+}
+
+.tf-loading-fade-enter-from,
+.tf-loading-fade-leave-to {
+  opacity: 0;
+  visibility: hidden;
+}
+
 .tf-member-modal-body {
   overflow-x: hidden;
   padding-bottom: 0;

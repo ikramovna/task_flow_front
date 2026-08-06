@@ -2262,6 +2262,9 @@ const iconPath = (name: string) => {
 
 <template>
   <main :class="['tf-shell', isDarkTheme ? 'tf-dark' : '']">
+    <Transition name="tf-loading-fade">
+      <LoadingPulse v-if="!state.loaded" />
+    </Transition>
     <section class="tf-window">
       <div v-if="mobileSidebarOpen" class="tf-mobile-overlay" @click="mobileSidebarOpen = false" />
       <aside :class="['tf-sidebar relative flex shrink-0 flex-col gap-4 border-r border-task-line bg-white py-5 transition-[width,padding] duration-300 ease-out', sidebarCollapsed ? 'w-[82px] px-3' : 'w-[230px] px-4', mobileSidebarOpen ? 'is-open' : '']">
