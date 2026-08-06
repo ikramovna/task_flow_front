@@ -1348,6 +1348,32 @@ const taskIsHiddenOf = (task: Array<string | number>) => String(task[17] || '') 
 const taskMainAssigneeIdOf = (task: Array<string | number>) => String(task[18] || '')
 const canChangeTaskStatus = (task: Array<string | number>) =>
   Boolean(currentUserId.value) && taskMainAssigneeIdOf(task) === String(currentUserId.value)
+const taskCreatorOf = (task: Array<string | number>): ProjectCardMember | null => {
+  try {
+    return JSON.parse(String(task[20] || 'null')) as ProjectCardMember | null
+  } catch {
+    return null
+  }
+}
+const taskCreatorNameOf = (task: Array<string | number>) => {
+  const creator = taskCreatorOf(task)
+  if (!creator) return '—'
+  const name = projectMemberName(creator)
+  if (name !== 'Member') return name
+  const member = team.value.find((item) => teamMemberId(item) === String(creator.id || ''))
+  return member ? teamMemberName(member) : '—'
+}
+const taskCreatorAvatarOf = (task: Array<string | number>) => {
+  const avatar = String(taskCreatorOf(task)?.avatar || '')
+  if (!avatar || /^https?:\/\//i.test(avatar)) return avatar
+  const apiBase = String(runtimeConfig.public.apiBase || '')
+  if (!apiBase) return avatar
+  try {
+    return new URL(avatar, `${new URL(apiBase).origin}/`).toString()
+  } catch {
+    return avatar
+  }
+}
 const openedTask = computed(() => state.value.tasks.find((task) => String(task[6] || '') === editingTaskId.value))
 const openedTaskCanChangeStatus = computed(() => !editingTaskId.value || Boolean(openedTask.value && canChangeTaskStatus(openedTask.value)))
 
@@ -2369,7 +2395,7 @@ const iconPath = (name: string) => {
               <button v-if="taskSearchInput && !searchLoading.task" type="button" class="tf-search-clear" aria-label="Clear search" @click="clearSearch('task')">×</button>
               <span v-if="searchLoading.task" class="tf-search-spinner" />
             </label>
-            <NotificationCenter @navigate="navigateFromNotification" @view-all="setPage('notifications')" />
+            <NotificationCenter :active-page="activePage" @navigate="navigateFromNotification" @view-all="setPage('notifications')" />
             <button type="button" class="tf-theme-button" :aria-label="isDarkTheme ? 'Switch to light theme' : 'Switch to dark theme'" :aria-pressed="isDarkTheme" :title="isDarkTheme ? 'Light theme' : 'Dark theme'" @click="toggleTheme">
               <svg viewBox="0 0 24 24" class="h-[17px] w-[17px]" fill="none" stroke="currentColor" stroke-width="1.8"><path :d="iconPath(isDarkTheme ? 'sun' : 'moon')" /></svg>
             </button>
@@ -2560,12 +2586,12 @@ const iconPath = (name: string) => {
             </div>
             <div v-else class="rounded-[14px] border border-dashed border-task-line px-5 py-14 text-center"><p class="font-semibold text-task-ink">Backlog is empty</p><p class="mt-1 text-sm text-task-muted">Tasks planned for later will appear here.</p></div>
           </div>
-          <div v-else-if="taskViewMode === 'list'">
-          <table class="w-full text-left text-sm">
-            <thead class="bg-slate-100 text-task-muted"><tr><th class="rounded-l-ui p-3">Task</th><th class="p-3">Assignee</th><th class="p-3">Priority</th><th class="p-3">Status</th><th class="p-3">Due Date</th><th class="p-3">Progress</th><th class="rounded-r-ui p-3 text-right">Actions</th></tr></thead>
+          <div v-else-if="taskViewMode === 'list'" class="overflow-x-auto">
+          <table class="w-full min-w-[1120px] text-left text-sm">
+            <thead class="bg-slate-100 text-task-muted"><tr><th class="rounded-l-ui p-3">Task</th><th class="p-3">Assignee</th><th class="p-3">Assigned by</th><th class="p-3">Priority</th><th class="p-3">Status</th><th class="p-3">Due Date</th><th class="p-3">Progress</th><th class="rounded-r-ui p-3 text-right">Actions</th></tr></thead>
             <tbody class="divide-y divide-task-line">
               <tr v-for="task in paginatedTasks" :key="String(task[6] || `${task[0]}-${task[4]}`)" class="cursor-pointer" @click="openTaskFromCard(task)">
-                <td class="p-3 text-task-muted">{{ task[0] }}</td><td class="p-3"><div class="flex items-center gap-2"><div class="flex -space-x-2"><span v-for="i in 2" :key="i" class="grid h-6 w-6 place-items-center rounded-full border border-white bg-slate-300 text-[9px] font-bold text-white">{{ String(task[1]).slice(i - 1, i) }}</span></div>{{ task[1] }}</div></td><td class="p-3"><span :class="['tf-pill', badgeClass(String(task[2]))]">{{ task[2] }}</span></td><td class="p-3"><span :class="['tf-pill', badgeClass(String(task[3]))]">{{ task[3] }}</span></td><td class="p-3 text-task-muted">{{ task[4] }}</td><td class="p-3"><div class="flex items-center gap-2"><div class="h-2 w-20 rounded-full bg-slate-200"><div class="h-full rounded-full bg-task-blue" :style="{ width: `${task[5]}%` }" /></div><span>{{ task[5] }}%</span></div></td><td class="relative p-3 text-right"><div class="relative inline-flex"><button type="button" class="tf-icon-button" @click="toggleActionMenu(`task-${task[0]}`)"><svg viewBox="0 0 24 24" class="h-4 w-4" fill="none" stroke="currentColor" stroke-width="2"><path :d="iconPath('dots')" /></svg></button><div v-if="actionMenu === `task-${task[0]}`" class="tf-action-menu"><button type="button" class="tf-action-item" @click="actionMenu = null">View</button><button type="button" class="tf-action-item" @click="runAction('edit', 'task', String(task[0]))">Edit</button><button type="button" class="tf-action-item" @click="runAction('duplicate', 'task', String(task[0]))">Duplicate</button><button type="button" class="tf-action-item tf-action-danger" @click="runAction('delete', 'task', String(task[0]))">Delete</button></div></div></td>
+                <td class="p-3 text-task-muted">{{ task[0] }}</td><td class="p-3"><div class="flex items-center gap-2"><div class="flex -space-x-2"><span v-for="i in 2" :key="i" class="grid h-6 w-6 place-items-center rounded-full border border-white bg-slate-300 text-[9px] font-bold text-white">{{ String(task[1]).slice(i - 1, i) }}</span></div>{{ task[1] }}</div></td><td class="p-3"><div class="flex items-center gap-2"><span class="grid h-7 w-7 shrink-0 place-items-center overflow-hidden rounded-full bg-task-blueSoft text-[9px] font-bold text-task-blue"><img v-if="taskCreatorAvatarOf(task)" :src="taskCreatorAvatarOf(task)" :alt="taskCreatorNameOf(task)" class="h-full w-full object-cover" /><span v-else>{{ initials(taskCreatorNameOf(task)) }}</span></span><span class="max-w-40 truncate text-task-muted" :title="taskCreatorNameOf(task)">{{ taskCreatorNameOf(task) }}</span></div></td><td class="p-3"><span :class="['tf-pill', badgeClass(String(task[2]))]">{{ task[2] }}</span></td><td class="p-3"><span :class="['tf-pill', badgeClass(String(task[3]))]">{{ task[3] }}</span></td><td class="p-3 text-task-muted">{{ task[4] }}</td><td class="p-3"><div class="flex items-center gap-2"><div class="h-2 w-20 rounded-full bg-slate-200"><div class="h-full rounded-full bg-task-blue" :style="{ width: `${task[5]}%` }" /></div><span>{{ task[5] }}%</span></div></td><td class="relative p-3 text-right"><div class="relative inline-flex"><button type="button" class="tf-icon-button" @click="toggleActionMenu(`task-${task[0]}`)"><svg viewBox="0 0 24 24" class="h-4 w-4" fill="none" stroke="currentColor" stroke-width="2"><path :d="iconPath('dots')" /></svg></button><div v-if="actionMenu === `task-${task[0]}`" class="tf-action-menu"><button type="button" class="tf-action-item" @click="actionMenu = null">View</button><button type="button" class="tf-action-item" @click="runAction('edit', 'task', String(task[0]))">Edit</button><button type="button" class="tf-action-item" @click="runAction('duplicate', 'task', String(task[0]))">Duplicate</button><button type="button" class="tf-action-item tf-action-danger" @click="runAction('delete', 'task', String(task[0]))">Delete</button></div></div></td>
               </tr>
             </tbody>
           </table>

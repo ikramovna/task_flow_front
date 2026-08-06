@@ -56,6 +56,10 @@ type ApiTask = {
   is_hidden?: boolean
   main_assignee?: string | number | null
   main_assignee_detail?: UserBrief | null
+  created_by?: string | number | UserBrief | null
+  created_by_detail?: UserBrief | null
+  creator_detail?: UserBrief | null
+  owner_detail?: UserBrief | null
   is_archived?: boolean
   archived_at?: string | null
   archived_by?: string | number | UserBrief | null
@@ -750,7 +754,13 @@ export const useTaskFlowApi = () => {
     typeof task.archived_by === 'object' ? JSON.stringify(task.archived_by || {}) : String(task.archived_by || ''),
     task.is_hidden ? 'true' : 'false',
     task.main_assignee === null || task.main_assignee === undefined ? '' : String(task.main_assignee),
-    JSON.stringify(task.main_assignee_detail || null)
+    JSON.stringify(task.main_assignee_detail || null),
+    JSON.stringify(
+      task.created_by_detail ||
+      task.creator_detail ||
+      task.owner_detail ||
+      (typeof task.created_by === 'object' ? task.created_by : task.created_by == null ? null : { id: task.created_by })
+    )
   ]
 
   const mapProject = (project: ApiProject) => [

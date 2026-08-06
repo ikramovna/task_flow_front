@@ -1,12 +1,14 @@
 <script setup lang="ts">
 import type { TaskFlowNotification } from '~/composables/useTaskFlowApi'
 
+const props = defineProps<{ activePage?: string }>()
 const emit = defineEmits<{
   navigate: [target: { kind: 'task' | 'message'; id: string }]
   viewAll: []
 }>()
 const { state, load, refreshUnreadCount, markRead, markAllRead } = useNotifications()
 const open = ref(false)
+const root = ref<HTMLElement | null>(null)
 let poller: ReturnType<typeof setInterval> | undefined
 const badge = computed(() => state.value.unreadCount > 99 ? '99+' : String(state.value.unreadCount))
 
@@ -29,12 +31,31 @@ const viewAll = () => {
   emit('viewAll')
 }
 
-onMounted(() => { void refreshUnreadCount(); poller = setInterval(refreshUnreadCount, 45_000) })
-onBeforeUnmount(() => { if (poller) clearInterval(poller) })
+const closeOnOutsideClick = (event: PointerEvent) => {
+  if (open.value && root.value && !root.value.contains(event.target as Node)) open.value = false
+}
+
+const closeOnEscape = (event: KeyboardEvent) => {
+  if (event.key === 'Escape') open.value = false
+}
+
+watch(() => props.activePage, () => { open.value = false })
+
+onMounted(() => {
+  void refreshUnreadCount()
+  poller = setInterval(refreshUnreadCount, 45_000)
+  document.addEventListener('pointerdown', closeOnOutsideClick)
+  document.addEventListener('keydown', closeOnEscape)
+})
+onBeforeUnmount(() => {
+  if (poller) clearInterval(poller)
+  document.removeEventListener('pointerdown', closeOnOutsideClick)
+  document.removeEventListener('keydown', closeOnEscape)
+})
 </script>
 
 <template>
-  <div class="relative z-[60]">
+  <div ref="root" class="relative z-[60]">
     <button type="button" class="tf-icon-button relative" aria-label="Notifications" :aria-expanded="open" @click="toggle">
       <svg viewBox="0 0 24 24" class="h-4 w-4" fill="none" stroke="currentColor" stroke-width="1.7"><path d="M18 8a6 6 0 0 0-12 0c0 7-3 7-3 9h18c0-2-3-2-3-9Zm-8.3 12a2.5 2.5 0 0 0 4.6 0" /></svg>
       <span v-if="state.unreadCount" class="absolute -right-2 -top-2 grid min-h-5 min-w-5 place-items-center rounded-full border-2 border-white bg-task-danger px-1 text-[9px] font-bold leading-none text-white">{{ badge }}</span>
