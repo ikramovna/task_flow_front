@@ -1405,14 +1405,39 @@ body {
 }
 
 .tf-summary-card {
-  min-height: 108px;
+  min-height: 118px;
   background: var(--tf-surface);
   color: #2563eb;
+  display: flex;
+  flex-direction: column;
+  justify-content: space-between;
+  overflow: hidden;
+  position: relative;
+  transition: transform 180ms ease, border-color 180ms ease, box-shadow 180ms ease;
+}
+
+.tf-summary-card:hover {
+  transform: translateY(-2px);
+  border-color: color-mix(in srgb, currentColor 32%, var(--tf-border));
+  box-shadow: 0 14px 28px -22px currentColor;
+}
+
+.tf-summary-card::after {
+  content: '';
+  position: absolute;
+  inset: auto -24px -32px auto;
+  width: 88px;
+  height: 88px;
+  border-radius: 999px;
+  background: currentColor;
+  opacity: .035;
+  pointer-events: none;
 }
 
 .tf-summary-icon {
   background: #eaf2ff;
   color: currentColor;
+  box-shadow: inset 0 0 0 1px color-mix(in srgb, currentColor 8%, transparent);
 }
 
 .tf-summary-percent { color: currentColor; }
@@ -1432,7 +1457,36 @@ body {
 .tf-summary-card--6 .tf-summary-icon { background: #ffe9ee; }
 
 .tf-dashboard-list {
-  min-height: 260px;
+  display: flex;
+  height: 334px;
+  min-height: 334px;
+  flex-direction: column;
+}
+
+.tf-dashboard-list-header {
+  display: flex;
+  min-height: 54px;
+  flex: 0 0 54px;
+  align-items: center;
+  justify-content: space-between;
+  border-bottom: 1px solid var(--tf-border);
+  padding: 0 1.25rem;
+}
+
+.tf-dashboard-list-body {
+  min-height: 0;
+  flex: 1;
+  overflow-y: auto;
+  scrollbar-width: thin;
+  scrollbar-color: color-mix(in srgb, var(--tf-muted) 35%, transparent) transparent;
+}
+
+.tf-dashboard-list-row {
+  display: flex;
+  min-height: 70px;
+  align-items: center;
+  gap: .75rem;
+  padding: .7rem 1.25rem;
 }
 
 .tf-section-icon {
@@ -1448,13 +1502,20 @@ body {
 
 .tf-empty-events {
   display: flex;
-  min-height: 205px;
+  min-height: 100%;
   flex-direction: column;
   align-items: center;
   justify-content: center;
   color: var(--tf-muted);
   font-size: 12px;
   text-align: center;
+}
+
+.tf-empty-calendar-art {
+  width: 154px;
+  height: 96px;
+  margin-bottom: 8px;
+  filter: drop-shadow(0 16px 18px rgb(49 67 179 / .2));
 }
 
 .tf-empty-events small {
@@ -1474,6 +1535,39 @@ body {
   font-size: 42px;
   box-shadow: 0 18px 35px -18px rgb(48 93 218 / 0.75);
   transform: perspective(120px) rotateX(4deg);
+}
+
+.tf-kanban-column {
+  display: flex;
+  max-height: clamp(500px, calc(100dvh - 330px), 720px);
+  flex-direction: column;
+  overflow: hidden;
+}
+
+.tf-kanban-column-header {
+  flex: 0 0 auto;
+}
+
+.tf-kanban-column-scroll {
+  min-height: 0;
+  flex: 1;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  padding: 1px 5px 8px 1px;
+  scrollbar-gutter: stable;
+  scrollbar-width: thin;
+  scrollbar-color: #94a3b8 transparent;
+}
+
+.tf-kanban-column-scroll::-webkit-scrollbar,
+.tf-dashboard-list-body::-webkit-scrollbar {
+  width: 6px;
+}
+
+.tf-kanban-column-scroll::-webkit-scrollbar-thumb,
+.tf-dashboard-list-body::-webkit-scrollbar-thumb {
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--tf-muted) 38%, transparent);
 }
 
 .tf-department-donut {
@@ -1516,7 +1610,7 @@ body {
 }
 
 .tf-dark .tf-summary-card {
-  background: linear-gradient(145deg, #131d2f, #111a2a);
+  background: radial-gradient(circle at 88% 15%, color-mix(in srgb, currentColor 8%, transparent), transparent 42%), linear-gradient(145deg, #131d2f, #111a2a);
   border-color: #25334a;
 }
 
@@ -1528,6 +1622,58 @@ body {
 .tf-dark .tf-summary-card--3 .tf-summary-icon { background: #302052; }
 .tf-dark .tf-summary-card--4 .tf-summary-icon { background: #263348; }
 .tf-dark .tf-summary-card--6 .tf-summary-icon { background: #4b1c29; }
+
+.tf-settings-grid {
+  align-items: stretch;
+}
+
+.tf-profile-panel,
+.tf-settings-side {
+  min-height: 650px;
+}
+
+.tf-profile-panel {
+  display: flex;
+  flex-direction: column;
+}
+
+.tf-profile-panel > .grid {
+  width: 100%;
+}
+
+.tf-profile-panel > .tf-primary {
+  margin-top: 1.5rem;
+}
+
+.tf-settings-side {
+  display: grid;
+  grid-template-rows: minmax(0, 1fr) auto;
+}
+
+.tf-security-panel {
+  min-height: 0;
+}
+
+.tf-account-summary {
+  min-height: 154px;
+}
+
+.tf-profile-panel .tf-input,
+.tf-security-panel .tf-input {
+  height: 48px;
+  border-radius: 12px;
+}
+
+@media (max-width: 1279px) {
+  .tf-profile-panel,
+  .tf-settings-side {
+    min-height: auto;
+  }
+
+  .tf-settings-side {
+    display: flex;
+  }
+}
 
 .tf-dark .tf-section-icon {
   background: #163764;
