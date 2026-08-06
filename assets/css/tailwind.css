@@ -269,7 +269,12 @@ body {
 
   .tf-calendar-scroll {
     @apply overflow-x-auto pb-1;
+    overflow-y: hidden;
     -webkit-overflow-scrolling: touch;
+  }
+
+  .tf-calendar-cell {
+    height: clamp(82px, calc((100dvh - 280px) / 6), 104px);
   }
 
   .tf-kanban-board {
@@ -604,7 +609,8 @@ body {
   .tf-calendar-main-panel > .tf-calendar-scroll {
     min-height: 0;
     flex: 1;
-    overflow: auto;
+    overflow-x: auto;
+    overflow-y: hidden;
     overscroll-behavior: contain;
     scrollbar-gutter: stable;
     scrollbar-width: thin;

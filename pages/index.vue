@@ -731,6 +731,21 @@ const openEventDetails = (event: CalendarEvent) => {
   modal.value = 'event-detail'
 }
 
+const openDashboardEvent = (event: { id: string; starts_at: string }) => {
+  const eventDate = new Date(event.starts_at)
+  if (Number.isNaN(eventDate.getTime())) return notifyError('Could not open this event date')
+  calendarYear.value = eventDate.getFullYear()
+  calendarMonthIndex.value = eventDate.getMonth()
+  selectedCalendarDay.value = eventDate.getDate()
+  setPage('calendar')
+}
+
+const openDashboardTask = async (task: { id: string; title: string; priority: string; status: string }) => {
+  setPage('tasks')
+  const taskRow = state.value.tasks.find((item) => String(item[6] || '') === String(task.id)) || [task.title, '', task.priority, task.status, '', 0, task.id]
+  await openTaskFromCard(taskRow)
+}
+
 const pageCopy: Record<PageKey, { title: string; subtitle: string; eyebrow?: string }> = {
   dashboard: { title: 'Dashboard', subtitle: "Here's what's happening with your team today", eyebrow: 'Dashboard' },
   tasks: { title: 'Tasks', subtitle: 'Manage and track all team tasks', eyebrow: 'Tasks' },
@@ -2466,8 +2481,8 @@ const iconPath = (name: string) => {
             </article>
           </div>
           <div class="grid items-stretch gap-4 xl:grid-cols-3">
-            <section v-for="panel in [{ title: 'Today’s Events', items: dashboardTodayEvents, upcoming: false }, { title: 'Upcoming Events', items: dashboardUpcomingEvents, upcoming: true }]" :key="panel.title" class="tf-panel tf-dashboard-list overflow-hidden p-0"><header class="tf-dashboard-list-header"><h2 class="flex items-center gap-2 font-bold"><span class="tf-section-icon">▣</span>{{ panel.title }}</h2><span class="tf-pill bg-task-blueSoft text-task-blue">{{ panel.items.length }}</span></header><div class="tf-dashboard-list-body divide-y divide-task-line"><article v-for="event in panel.items" :key="String(event.id)" class="tf-dashboard-list-row"><time class="tf-event-date grid h-11 min-w-14 place-items-center rounded-[9px] bg-task-blueSoft px-2 text-xs font-bold text-task-blue">{{ panel.upcoming ? dashboardDateTime(event.starts_at).split(' ').slice(0, 2).join(' ') : dashboardDateTime(event.starts_at, 'time') }}</time><div class="min-w-0 flex-1"><p class="truncate text-sm font-bold">{{ event.title }}</p><p class="mt-1 truncate text-xs text-task-muted">{{ event.department?.name || 'No department' }} · {{ event.location || 'Online' }}</p></div><span v-if="panel.upcoming" class="text-xs text-task-muted">{{ dashboardDateTime(event.starts_at, 'time') }} ›</span></article><div v-if="!panel.items.length" class="tf-empty-events"><EmptyCalendarArt /><p>No events scheduled for today.</p><small>Enjoy your free time! 🎉</small></div></div></section>
-            <section class="tf-panel tf-dashboard-list overflow-hidden p-0"><header class="tf-dashboard-list-header"><h2 class="font-bold">Upcoming Deadlines</h2><button type="button" class="text-xs font-bold text-task-blue" @click="setPage('tasks')">View all</button></header><div class="tf-dashboard-list-body divide-y divide-task-line"><article v-for="task in dashboardDeadlines" :key="String(task.id)" class="tf-dashboard-list-row"><span :class="['h-2.5 w-2.5 shrink-0 rounded-full', task.priority === 'high' ? 'bg-task-danger' : task.priority === 'medium' ? 'bg-task-warning' : 'bg-task-success']" /><div class="min-w-0 flex-1"><p class="truncate text-sm font-bold">{{ task.title }}</p><p class="mt-1 truncate text-xs text-task-muted">{{ task.department?.name || 'No department' }}</p></div><div class="text-right"><p class="text-xs font-bold">{{ dashboardDateTime(task.due_date) }}</p><p class="mt-1 text-[10px] font-semibold text-task-warning">{{ task.days_remaining }} days left</p></div></article><div v-if="!dashboardDeadlines.length" class="tf-empty-events"><p>No upcoming deadlines.</p><small>You are all caught up.</small></div></div></section>
+            <section v-for="panel in [{ title: 'Today’s Events', items: dashboardTodayEvents, upcoming: false }, { title: 'Upcoming Events', items: dashboardUpcomingEvents, upcoming: true }]" :key="panel.title" class="tf-panel tf-dashboard-list overflow-hidden p-0"><header class="tf-dashboard-list-header"><h2 class="flex items-center gap-2 font-bold"><span class="tf-section-icon">▣</span>{{ panel.title }}</h2><span class="tf-pill bg-task-blueSoft text-task-blue">{{ panel.items.length }}</span></header><div class="tf-dashboard-list-body divide-y divide-task-line"><button v-for="event in panel.items" :key="String(event.id)" type="button" class="tf-dashboard-list-row w-full text-left transition hover:bg-task-blueSoft focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-task-blue" @click="openDashboardEvent(event)"><time class="tf-event-date grid h-11 min-w-14 place-items-center rounded-[9px] bg-task-blueSoft px-2 text-xs font-bold text-task-blue">{{ panel.upcoming ? dashboardDateTime(event.starts_at).split(' ').slice(0, 2).join(' ') : dashboardDateTime(event.starts_at, 'time') }}</time><div class="min-w-0 flex-1"><p class="truncate text-sm font-bold">{{ event.title }}</p><p class="mt-1 truncate text-xs text-task-muted">{{ event.department?.name || 'No department' }} · {{ event.location || 'Online' }}</p></div><span class="text-xs text-task-muted">{{ panel.upcoming ? dashboardDateTime(event.starts_at, 'time') : '' }} ›</span></button><div v-if="!panel.items.length" class="tf-empty-events"><EmptyCalendarArt /><p>No events scheduled for today.</p><small>Enjoy your free time! 🎉</small></div></div></section>
+            <section class="tf-panel tf-dashboard-list overflow-hidden p-0"><header class="tf-dashboard-list-header"><h2 class="font-bold">Upcoming Deadlines</h2><div class="flex items-center gap-3"><span class="tf-pill bg-task-blueSoft text-task-blue">{{ dashboardDeadlines.length }}</span><button type="button" class="text-xs font-bold text-task-blue" @click="setPage('tasks')">View all</button></div></header><div class="tf-dashboard-list-body divide-y divide-task-line"><button v-for="task in dashboardDeadlines" :key="String(task.id)" type="button" class="tf-dashboard-list-row w-full text-left transition hover:bg-task-blueSoft focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-task-blue" @click="openDashboardTask(task)"><span :class="['h-2.5 w-2.5 shrink-0 rounded-full', task.priority === 'high' ? 'bg-task-danger' : task.priority === 'medium' ? 'bg-task-warning' : 'bg-task-success']" /><div class="min-w-0 flex-1"><p class="truncate text-sm font-bold">{{ task.title }}</p><p class="mt-1 truncate text-xs text-task-muted">{{ task.department?.name || 'No department' }}</p></div><div class="text-right"><p class="text-xs font-bold">{{ dashboardDateTime(task.due_date) }}</p><p class="mt-1 text-[10px] font-semibold text-task-warning">{{ task.days_remaining }} days left</p></div></button><div v-if="!dashboardDeadlines.length" class="tf-empty-events"><p>No upcoming deadlines.</p><small>You are all caught up.</small></div></div></section>
           </div>
           <div class="grid gap-4 xl:grid-cols-[0.8fr_1.2fr]">
             <section class="tf-panel p-5">
@@ -2918,16 +2933,16 @@ const iconPath = (name: string) => {
         <section v-else-if="activePage === 'calendar'" class="tf-calendar-layout grid gap-4 xl:grid-cols-[minmax(0,1fr)_340px]">
           <div class="h-full min-h-0">
             <div class="tf-calendar-main-panel tf-panel flex h-full min-h-0 flex-col overflow-hidden p-4 sm:p-5">
-              <div class="mb-6 flex shrink-0 flex-col gap-4 sm:flex-row sm:items-center sm:justify-between"><div class="flex items-center gap-3"><button class="tf-icon-button h-11 w-11" type="button" aria-label="Previous month" @click="moveCalendar(-1)"><svg viewBox="0 0 24 24" class="h-5 w-5" fill="none" stroke="currentColor" stroke-width="2"><path d="m15 18-6-6 6-6" /></svg></button><h2 class="min-w-[150px] text-center text-xl font-bold">{{ calendarMonth }}</h2><button class="tf-icon-button h-11 w-11" type="button" aria-label="Next month" @click="moveCalendar(1)"><svg viewBox="0 0 24 24" class="h-5 w-5" fill="none" stroke="currentColor" stroke-width="2"><path d="m9 18 6-6-6-6" /></svg></button></div><button v-if="canCreateEvent" class="tf-primary h-11 rounded-[12px] px-5" @click="openModal('event')"><svg viewBox="0 0 24 24" class="h-4 w-4" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 5v14M5 12h14" /></svg>Add Event</button></div>
+              <div class="mb-4 flex shrink-0 flex-col gap-3 sm:flex-row sm:items-center sm:justify-between"><div class="flex items-center gap-3"><button class="tf-icon-button h-10 w-10" type="button" aria-label="Previous month" @click="moveCalendar(-1)"><svg viewBox="0 0 24 24" class="h-5 w-5" fill="none" stroke="currentColor" stroke-width="2"><path d="m15 18-6-6 6-6" /></svg></button><h2 class="min-w-[150px] text-center text-xl font-bold">{{ calendarMonth }}</h2><button class="tf-icon-button h-10 w-10" type="button" aria-label="Next month" @click="moveCalendar(1)"><svg viewBox="0 0 24 24" class="h-5 w-5" fill="none" stroke="currentColor" stroke-width="2"><path d="m9 18 6-6-6-6" /></svg></button></div><button v-if="canCreateEvent" class="tf-primary h-10 rounded-[12px] px-5" @click="openModal('event')"><svg viewBox="0 0 24 24" class="h-4 w-4" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 5v14M5 12h14" /></svg>Add Event</button></div>
               <div class="tf-calendar-scroll">
-                <div class="grid min-w-[734px] grid-cols-7 gap-2 text-center text-sm font-semibold text-task-muted"><span class="py-3">Mon</span><span class="py-3">Tue</span><span class="py-3">Wed</span><span class="py-3">Thu</span><span class="py-3">Fri</span><span class="py-3">Sat</span><span class="py-3 text-task-danger">Sun</span></div>
+                <div class="grid min-w-[734px] grid-cols-7 gap-2 text-center text-sm font-semibold text-task-muted"><span class="py-2">Mon</span><span class="py-2">Tue</span><span class="py-2">Wed</span><span class="py-2">Thu</span><span class="py-2">Fri</span><span class="py-2">Sat</span><span class="py-2 text-task-danger">Sun</span></div>
                 <div class="grid min-w-[734px] grid-cols-[repeat(7,minmax(97px,1fr))] gap-2">
                   <template v-for="cell in calendarCells" :key="cell.key">
                     <button
                       v-if="cell.day"
                       type="button"
                       :class="[
-                        'flex h-[126px] min-w-[97px] flex-col rounded-[12px] border border-task-line bg-white p-[10px] text-left shadow-[0_5px_18px_-16px_rgba(15,23,42,.5)] transition hover:-translate-y-0.5 hover:border-task-blue/40 hover:bg-task-blueSoft hover:shadow-card',
+                        'tf-calendar-cell flex min-w-[97px] flex-col rounded-[12px] border border-task-line bg-white p-2.5 text-left shadow-[0_5px_18px_-16px_rgba(15,23,42,.5)] transition hover:-translate-y-0.5 hover:border-task-blue/40 hover:bg-task-blueSoft hover:shadow-card',
                         isTodayCell(cell.day) ? 'relative z-10 border-task-blue bg-task-blueSoft ring-1 ring-task-blue/20' : '',
                         selectedCalendarDay === cell.day ? 'relative z-10 border-task-blue bg-task-blueSoft ring-1 ring-task-blue/20' : ''
                       ]"
@@ -2942,7 +2957,7 @@ const iconPath = (name: string) => {
                         <span v-if="eventsForDay(cell.day).length > 2" class="block px-2 text-[10px] font-bold text-task-muted">+{{ eventsForDay(cell.day).length - 2 }} more</span>
                       </div>
                     </button>
-                    <div v-else class="h-[126px] min-w-[97px]" />
+                    <div v-else class="tf-calendar-cell min-w-[97px]" />
                   </template>
                 </div>
               </div>
