@@ -25,7 +25,7 @@ const relativeTime = computed(() => {
 </script>
 
 <template>
-  <button type="button" :class="['group flex w-full gap-3 px-4 py-3 text-left transition hover:bg-slate-50', !notification.is_read ? 'bg-task-blueSoft/60' : 'bg-white']" @click="$emit('select', notification)">
+  <button type="button" :class="['tf-notification-item group flex w-full gap-3 px-4 py-3.5 text-left transition', !notification.is_read ? 'is-unread' : 'is-read']" @click="$emit('select', notification)">
     <span :class="['mt-0.5 grid h-9 w-9 shrink-0 place-items-center rounded-[11px]', meta.color]"><svg viewBox="0 0 24 24" class="h-4 w-4" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path :d="meta.path" /></svg></span>
     <span class="min-w-0 flex-1"><span class="flex items-start justify-between gap-2"><b class="truncate text-sm text-task-ink">{{ notification.title }}</b><i v-if="!notification.is_read" class="mt-1.5 h-2 w-2 shrink-0 rounded-full bg-task-blue" /></span><span class="mt-1 line-clamp-2 block text-xs leading-5 text-task-muted">{{ notification.body }}</span><span class="mt-2 flex items-center gap-2 text-[11px] text-task-muted"><span class="grid h-5 w-5 place-items-center overflow-hidden rounded-full bg-slate-200 text-[8px] font-bold"><img v-if="notification.actor_detail?.avatar" :src="notification.actor_detail.avatar" :alt="actorName" class="h-full w-full object-cover" /><span v-else>{{ initials }}</span></span>{{ actorName }} · {{ relativeTime }}</span></span>
   </button>

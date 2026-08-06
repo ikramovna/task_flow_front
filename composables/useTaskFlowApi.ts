@@ -53,6 +53,9 @@ type ApiTask = {
   category?: string
   assignees?: Array<string | number>
   assignee_details?: UserBrief[]
+  is_hidden?: boolean
+  main_assignee?: string | number | null
+  main_assignee_detail?: UserBrief | null
   is_archived?: boolean
   archived_at?: string | null
   archived_by?: string | number | UserBrief | null
@@ -68,6 +71,7 @@ type TaskPayload = {
   assignees: Array<string | number>
   due_date: string
   progress: number
+  is_hidden: boolean
 }
 
 type ApiProject = {
@@ -741,7 +745,10 @@ export const useTaskFlowApi = () => {
     JSON.stringify(task.assignees || []),
     task.is_archived ? 'true' : 'false',
     task.archived_at || '',
-    typeof task.archived_by === 'object' ? JSON.stringify(task.archived_by || {}) : String(task.archived_by || '')
+    typeof task.archived_by === 'object' ? JSON.stringify(task.archived_by || {}) : String(task.archived_by || ''),
+    task.is_hidden ? 'true' : 'false',
+    task.main_assignee === null || task.main_assignee === undefined ? '' : String(task.main_assignee),
+    JSON.stringify(task.main_assignee_detail || null)
   ]
 
   const mapProject = (project: ApiProject) => [

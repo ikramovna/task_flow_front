@@ -65,7 +65,7 @@ const runtimeConfig = useRuntimeConfig()
 
 void taskFlowStore.loadBackendData()
 
-const { state, pages, stats, projectStats, analyticsStats, monthlyProgress, tasksByCategory, tasks, projects, team, workload, reports, events, messages, heatmap, currentDepartmentId, currentRole, currentUserActive, apiError, dashboardTodayEvents, dashboardUpcomingEvents, dashboardDeadlines, dashboardDepartments, dashboardRecentTasks, dashboardGeneratedAt } = taskFlowStore
+const { state, pages, stats, projectStats, analyticsStats, monthlyProgress, tasksByCategory, tasks, projects, team, workload, reports, events, messages, heatmap, currentUserId, currentDepartmentId, currentRole, currentUserActive, apiError, dashboardTodayEvents, dashboardUpcomingEvents, dashboardDeadlines, dashboardDepartments, dashboardRecentTasks, dashboardGeneratedAt } = taskFlowStore
 const normalizedRole = computed(() => currentRole.value.trim().toLowerCase())
 const canManageDepartment = computed(() => ['owner', 'admin', 'manager'].includes(normalizedRole.value))
 const canAddTask = computed(() => currentUserActive.value && ['owner', 'admin', 'manager'].includes(normalizedRole.value))
@@ -238,6 +238,7 @@ const form = reactive({
 const eventTypeOptions = ['Meeting', 'Review', 'Workshop']
 const taskStatusOptions = ['Backlog', 'Not Started', 'In Progress', 'On Hold', 'Completed']
 const taskFormStatus = ref('Not Started')
+const taskIsHidden = ref(false)
 const taskAssigneeIds = ref<string[]>([])
 const taskAssigneeLabels = ref<string[]>([])
 const taskAssigneeSearch = ref('')
@@ -1286,6 +1287,7 @@ const openModal = (value: Exclude<ModalKey, null>) => {
   if (value === 'task') {
     editingTaskId.value = ''
     taskModalMode.value = 'create'
+    taskIsHidden.value = false
     taskAssigneeIds.value = []
     taskAssigneeLabels.value = []
     taskAssigneeSearch.value = ''
@@ -1350,6 +1352,12 @@ const loadTaskAssignees = async () => {
     taskAssigneesLoading.value = false
   }
 }
+const taskIsHiddenOf = (task: Array<string | number>) => String(task[17] || '') === 'true'
+const taskMainAssigneeIdOf = (task: Array<string | number>) => String(task[18] || '')
+const canChangeTaskStatus = (task: Array<string | number>) =>
+  Boolean(currentUserId.value) && taskMainAssigneeIdOf(task) === String(currentUserId.value)
+const openedTask = computed(() => state.value.tasks.find((task) => String(task[6] || '') === editingTaskId.value))
+const openedTaskCanChangeStatus = computed(() => !editingTaskId.value || Boolean(openedTask.value && canChangeTaskStatus(openedTask.value)))
 
 const selectTaskAssignee = (member: Array<string | number>) => {
   const id = teamMemberId(member)
@@ -1512,6 +1520,10 @@ const editProject = (project: Array<string | number>) => {
 const updateTaskStatus = async (task: Array<string | number>, status: string) => {
   const id = String(task[6] || '')
   if (!id || updatingTaskId.value === id) return
+  if (!canChangeTaskStatus(task)) {
+    notifyError('Only the main assignee can update task status and progress.')
+    return
+  }
 
   updatingTaskId.value = id
   try {
@@ -1551,6 +1563,7 @@ const openTask = async (task: Array<string | number>, mode: 'view' | 'edit') => 
     form.title = String(mapped[0] || '')
     form.priority = String(mapped[2] || 'Medium')
     taskFormStatus.value = String(mapped[3] || 'Not Started')
+    taskIsHidden.value = taskIsHiddenOf(mapped)
     form.description = String(mapped[10] || '')
     form.category = String(mapped[11] || '')
     const rawDueDate = String(mapped[12] || '')
@@ -1559,7 +1572,11 @@ const openTask = async (task: Array<string | number>, mode: 'view' | 'edit') => 
     const rawAssignees = JSON.parse(String(mapped[13] || '[]')) as Array<string | number>
     taskAssigneeIds.value = rawAssignees.map(String)
     if (!taskAssigneeIds.value.length) taskAssigneeIds.value = assigneeDetails.map((member) => String(member.id || '')).filter(Boolean)
-    taskAssigneeLabels.value = assigneeDetails.map(projectMemberName)
+    taskAssigneeLabels.value = taskAssigneeIds.value.map((id) => {
+      const detail = assigneeDetails.find((member) => String(member.id || '') === id)
+      const teamMember = team.value.find((member) => teamMemberId(member) === id)
+      return detail ? projectMemberName(detail) : teamMember ? teamMemberName(teamMember) : `User ${id}`
+    })
     taskAssigneeSearch.value = ''
     taskAssigneeOptions.value = [...departmentTeam.value]
     void loadTaskAssignees()
@@ -1603,7 +1620,8 @@ const duplicateTask = async (task: Array<string | number>) => {
       category: String(task[11] || ''),
       assignees,
       due_date: String(task[12] || todayIsoDate()),
-      progress: Number(task[5] || 0)
+      progress: Number(task[5] || 0),
+      is_hidden: taskIsHiddenOf(task)
     })
     state.value.tasks.unshift(taskFlowApi.mapTask(created))
     notify('Task nusxasi yaratildi', 'success')
@@ -1614,7 +1632,7 @@ const duplicateTask = async (task: Array<string | number>) => {
 
 const dropTaskInColumn = (status: string) => {
   const task = tasks.value.find((item) => String(item[6] || '') === draggedTaskId.value)
-  if (task) void updateTaskStatus(task, status)
+  if (task && canChangeTaskStatus(task)) void updateTaskStatus(task, status)
 }
 
 const patchProjectStatus = async (project: Array<string | number>, status: string) => {
@@ -1771,13 +1789,15 @@ const submitModal = async () => {
       category: form.category.trim(),
       assignees: taskAssigneeIds.value.map(payloadMemberId),
       due_date: parseProjectDate(form.dueDate) || todayIsoDate(),
-      progress: status === 'completed' ? 100 : 0
+      progress: status === 'completed' ? 100 : 0,
+      is_hidden: taskIsHidden.value
     }
 
     taskSaving.value = true
     try {
+      const { status: _status, progress: _progress, ...nonStatusPayload } = payload
       const saved = editingTaskId.value
-        ? await taskFlowApi.updateTask(editingTaskId.value, payload)
+        ? await taskFlowApi.patchTask(editingTaskId.value, openedTaskCanChangeStatus.value ? payload : nonStatusPayload)
         : await taskFlowApi.createTask(payload)
       if (editingTaskId.value) replaceTaskRow(editingTaskId.value, taskFlowApi.mapTask(saved))
       else state.value.tasks.unshift(taskFlowApi.mapTask(saved))
@@ -2357,7 +2377,7 @@ const iconPath = (name: string) => {
               <button v-if="taskSearchInput && !searchLoading.task" type="button" class="tf-search-clear" aria-label="Clear search" @click="clearSearch('task')">×</button>
               <span v-if="searchLoading.task" class="tf-search-spinner" />
             </label>
-            <NotificationCenter @navigate="navigateFromNotification" />
+            <NotificationCenter @navigate="navigateFromNotification" @view-all="setPage('notifications')" />
             <button type="button" class="tf-theme-button" :aria-label="isDarkTheme ? 'Switch to light theme' : 'Switch to dark theme'" :aria-pressed="isDarkTheme" :title="isDarkTheme ? 'Light theme' : 'Dark theme'" @click="toggleTheme">
               <svg viewBox="0 0 24 24" class="h-[17px] w-[17px]" fill="none" stroke="currentColor" stroke-width="1.8"><path :d="iconPath(isDarkTheme ? 'sun' : 'moon')" /></svg>
             </button>
@@ -2580,13 +2600,13 @@ const iconPath = (name: string) => {
                 <article
                   v-for="task in column.tasks"
                   :key="String(task[6] || `${task[0]}-${task[4]}`)"
-                  :draggable="Boolean(task[6])"
+                  :draggable="Boolean(task[6]) && canChangeTaskStatus(task)"
                   :class="['tf-kanban-card group', updatingTaskId === String(task[6]) ? 'pointer-events-none opacity-60' : '']"
-                  @dragstart="draggedTaskId = String(task[6] || '')"
+                  @dragstart="canChangeTaskStatus(task) && (draggedTaskId = String(task[6] || ''))"
                   @dragend="draggedTaskId = ''"
                   @click="openTaskFromCard(task)"
                 >
-                  <div class="flex items-start justify-between gap-3"><h4 class="line-clamp-2 text-[14px] font-bold leading-[1.4] tracking-[-0.01em] text-slate-900">{{ task[0] }}</h4><span v-if="column.key === 'completed'" class="grid h-6 w-6 shrink-0 place-items-center rounded-full border border-task-success/40 bg-task-successSoft text-task-success"><svg viewBox="0 0 24 24" class="h-3.5 w-3.5" fill="none" stroke="currentColor" stroke-width="2.2"><path d="m6 12 4 4 8-9" /></svg></span></div>
+                  <div class="flex items-start justify-between gap-3"><div class="min-w-0"><h4 class="line-clamp-2 text-[14px] font-bold leading-[1.4] tracking-[-0.01em] text-slate-900">{{ task[0] }}</h4><span v-if="taskIsHiddenOf(task)" class="mt-1.5 inline-flex rounded-full bg-slate-200 px-2 py-0.5 text-[9px] font-bold uppercase tracking-wide text-slate-600">Hidden</span></div><span v-if="column.key === 'completed'" class="grid h-6 w-6 shrink-0 place-items-center rounded-full border border-task-success/40 bg-task-successSoft text-task-success"><svg viewBox="0 0 24 24" class="h-3.5 w-3.5" fill="none" stroke="currentColor" stroke-width="2.2"><path d="m6 12 4 4 8-9" /></svg></span></div>
                   <p v-if="task[7]" class="mt-2 inline-flex max-w-full items-center gap-1.5 truncate text-xs font-medium text-slate-500"><svg viewBox="0 0 24 24" class="h-3.5 w-3.5 shrink-0 text-task-blue" fill="none" stroke="currentColor" stroke-width="1.8"><path :d="iconPath('folder')" /></svg>{{ task[7] }}</p>
 
                   <div v-if="column.key !== 'in_progress'" class="mt-4 flex items-center gap-3 border-t border-slate-100 pt-3">
@@ -2613,7 +2633,7 @@ const iconPath = (name: string) => {
                     </span>
                   </div>
 
-                  <select class="tf-kanban-status-select" :value="column.key" :disabled="updatingTaskId === String(task[6]) || !task[6]" aria-label="Change task status" @click.stop @change="updateTaskStatus(task, ($event.target as HTMLSelectElement).value)">
+                  <select class="tf-kanban-status-select" :value="column.key" :disabled="updatingTaskId === String(task[6]) || !task[6] || !canChangeTaskStatus(task)" aria-label="Change task status" @click.stop @change="updateTaskStatus(task, ($event.target as HTMLSelectElement).value)">
                     <option value="backlog">Backlog</option>
                     <option value="not_started">Not Started</option>
                     <option value="in_progress">In Progress</option>
@@ -3030,7 +3050,7 @@ const iconPath = (name: string) => {
           <template v-else-if="modal === 'task'">
             <div class="mb-4 flex items-center gap-3 rounded-[14px] border border-task-line bg-task-blueSoft px-4 py-3 text-sm">
               <span class="grid h-9 w-9 shrink-0 place-items-center rounded-full bg-white text-task-blue"><svg viewBox="0 0 24 24" class="h-4 w-4" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M4 21V7l8-4 8 4v14M9 21v-5h6v5M8 9h1m6 0h1m-8 3h1m6 0h1" /></svg></span>
-              <div><p class="font-semibold text-task-ink">Current department</p><p class="mt-0.5 text-xs text-task-muted">Task automatically belongs to your department.</p></div>
+              <div class="min-w-0 flex-1"><div class="flex flex-wrap items-center gap-2"><p class="font-semibold text-task-ink">Current department</p><span v-if="editingTaskId && taskIsHidden" class="rounded-full bg-slate-200 px-2 py-0.5 text-[9px] font-bold uppercase tracking-wide text-slate-600">Hidden</span></div><p class="mt-0.5 text-xs text-task-muted">Task automatically belongs to your department.</p></div>
             </div>
             <label class="block text-sm font-semibold">
               Task Title
@@ -3071,9 +3091,14 @@ const iconPath = (name: string) => {
                 <span v-for="(member, index) in taskAssigneeLabels" :key="`${member}-${taskAssigneeIds[index]}`" class="inline-flex h-10 items-center gap-2 rounded-full border border-[#B9C8D8] bg-task-blueSoft pl-2 pr-3 text-sm font-semibold text-task-ink">
                   <span class="grid h-7 w-7 place-items-center rounded-full bg-white text-[9px] font-bold text-task-blue">{{ initials(member) }}</span>
                   {{ member }}
+                  <span v-if="index === 0" class="rounded-full bg-task-blue px-2 py-0.5 text-[9px] font-bold uppercase tracking-wide text-white">Main</span>
                   <button type="button" class="grid h-5 w-5 place-items-center rounded-full text-lg leading-none text-task-muted transition hover:bg-white hover:text-task-danger" :aria-label="`Remove ${member}`" @click="removeTaskAssignee(index)">×</button>
                 </span>
               </div>
+            </label>
+            <label class="mt-4 flex cursor-pointer items-center justify-between gap-4 rounded-[12px] border border-task-line bg-slate-50 px-4 py-3 text-sm" :class="taskModalMode === 'view' ? 'cursor-default opacity-75' : ''">
+              <span><span class="block font-semibold text-task-ink">Hide task</span><span class="mt-0.5 block text-xs text-task-muted">Only permitted roles and assigned users can see this task.</span></span>
+              <input v-model="taskIsHidden" type="checkbox" class="h-5 w-5 shrink-0 accent-task-blue" :disabled="taskModalMode === 'view'" />
             </label>
             <label class="mt-4 block text-sm font-semibold">
               Category
@@ -3098,7 +3123,7 @@ const iconPath = (name: string) => {
               <label class="text-sm font-semibold">
                 Status
                 <div class="tf-dropdown mt-2">
-                  <button type="button" class="tf-dropdown-button h-12" @click="openDropdown = openDropdown === 'taskStatus' ? null : 'taskStatus'">
+                  <button type="button" class="tf-dropdown-button h-12 disabled:cursor-not-allowed disabled:opacity-60" :disabled="!openedTaskCanChangeStatus" @click="openDropdown = openDropdown === 'taskStatus' ? null : 'taskStatus'">
                     <span>{{ taskFormStatus }}</span>
                     <svg viewBox="0 0 20 20" class="h-4 w-4 shrink-0 text-task-muted transition" fill="none" stroke="currentColor" stroke-width="2"><path d="m5 7.5 5 5 5-5" /></svg>
                   </button>

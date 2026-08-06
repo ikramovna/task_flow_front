@@ -1733,6 +1733,78 @@ body {
   box-shadow: 0 20px 38px -17px rgb(31 78 190 / 0.75);
 }
 
+.tf-notification-dropdown {
+  border-color: #d8e2ee;
+  background: #ffffff;
+  color: #172033;
+  box-shadow: 0 24px 60px -22px rgb(15 23 42 / 0.35), 0 10px 24px -16px rgb(15 23 42 / 0.2);
+}
+
+.tf-notification-header,
+.tf-notification-footer {
+  border-color: #e2e8f0;
+  background: #ffffff;
+}
+
+.tf-notification-footer:hover {
+  background: #f4f8fd;
+}
+
+.tf-notification-item {
+  color: #172033;
+}
+
+.tf-notification-item.is-read {
+  background: #ffffff;
+}
+
+.tf-notification-item.is-unread {
+  background: #edf5ff;
+  box-shadow: inset 3px 0 0 #2f80d1;
+}
+
+.tf-notification-item:hover {
+  background: #f5f8fc;
+}
+
+.tf-notification-item.is-unread:hover {
+  background: #e5f1ff;
+}
+
+.tf-dark .tf-notification-dropdown {
+  border-color: #2c3b52;
+  background: #111c2e;
+  color: #f1f5f9;
+  box-shadow: 0 28px 70px -24px rgb(0 0 0 / 0.8), 0 12px 28px -18px rgb(0 0 0 / 0.65);
+}
+
+.tf-dark .tf-notification-header,
+.tf-dark .tf-notification-footer {
+  border-color: #2c3b52;
+  background: #111c2e;
+}
+
+.tf-dark .tf-notification-footer:hover {
+  background: #18263b;
+}
+
+.tf-dark .tf-notification-item.is-read {
+  background: #111c2e;
+}
+
+.tf-dark .tf-notification-item.is-unread {
+  background: #172b45;
+  box-shadow: inset 3px 0 0 #5ea7ff;
+}
+
+.tf-dark .tf-notification-item:hover {
+  background: #1a2940;
+}
+
+.tf-dark .tf-notification-item.is-unread:hover {
+  background: #1b3452;
+}
+
 @media (max-width: 767px) {
   .tf-dashboard-heading {
     height: 52px;
