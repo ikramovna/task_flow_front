@@ -4,10 +4,15 @@
 
 :root {
   color-scheme: light;
-  --tf-page: #f4f7fb;
+  --tf-page: #f5f7fb;
   --tf-surface: #ffffff;
-  --tf-surface-soft: #f8fafc;
-  --tf-border: #e2e8f0;
+  --tf-surface-soft: #f7f9fc;
+  --tf-border: #e5eaf1;
+  --tf-ink: #172033;
+  --tf-muted: #6f7b8e;
+  --tf-accent: #2877d4;
+  --tf-accent-soft: #eaf3ff;
+  --tf-shadow: 0 16px 40px -30px rgb(26 45 77 / 0.35), 0 2px 5px rgb(26 45 77 / 0.04);
 }
 
 * {
@@ -18,7 +23,7 @@ body {
   margin: 0;
   background: var(--tf-page);
   font-family: 'Inter Tight', Inter, ui-sans-serif, system-ui, sans-serif;
-  color: #111827;
+  color: var(--tf-ink);
   -webkit-font-smoothing: antialiased;
   text-rendering: geometricPrecision;
 }
@@ -532,10 +537,15 @@ body {
 }
 
 .tf-dark {
-  --tf-page: #0f172a;
-  --tf-surface: #172033;
-  --tf-surface-soft: #1b2638;
-  --tf-border: #2b364a;
+  --tf-page: #0b1220;
+  --tf-surface: #131d2f;
+  --tf-surface-soft: #172338;
+  --tf-border: #25334a;
+  --tf-ink: #f1f5fb;
+  --tf-muted: #97a6ba;
+  --tf-accent: #5ea7ff;
+  --tf-accent-soft: #152f50;
+  --tf-shadow: 0 18px 44px -28px rgb(0 0 0 / 0.75), inset 0 1px 0 rgb(255 255 255 / 0.025);
   background: var(--tf-page);
   color: #e5e7eb;
   color-scheme: dark;
@@ -1101,5 +1111,219 @@ body {
   .tf-support-launcher {
     height: 52px;
     width: 52px;
+  }
+}
+
+/* 2026 theme refresh: clearer surfaces, softer depth and a tactile mode switch. */
+.tf-shell {
+  color: var(--tf-ink);
+  background:
+    radial-gradient(circle at 78% -10%, rgb(40 119 212 / 0.08), transparent 32rem),
+    var(--tf-page);
+}
+
+.tf-content {
+  background:
+    radial-gradient(circle at 82% 0%, rgb(40 119 212 / 0.07), transparent 30rem),
+    var(--tf-page);
+}
+
+.tf-sidebar {
+  background: color-mix(in srgb, var(--tf-page) 84%, var(--tf-surface));
+  border-color: var(--tf-border);
+}
+
+.tf-sidebar nav,
+.tf-sidebar > .tf-panel {
+  background: color-mix(in srgb, var(--tf-surface) 92%, transparent);
+  border-color: var(--tf-border);
+}
+
+.tf-panel {
+  border-color: var(--tf-border);
+  box-shadow: var(--tf-shadow);
+}
+
+.tf-app-header {
+  background: color-mix(in srgb, var(--tf-surface) 92%, transparent);
+  border-color: var(--tf-border);
+  box-shadow: var(--tf-shadow);
+}
+
+.tf-nav-item {
+  isolation: isolate;
+}
+
+.tf-nav-item.is-active {
+  background: var(--tf-accent-soft);
+  color: var(--tf-accent);
+  box-shadow: inset 0 0 0 1px rgb(40 119 212 / 0.06);
+}
+
+.tf-nav-item.is-active::before {
+  left: -0.8rem;
+  top: 8px;
+  bottom: 8px;
+  background: var(--tf-accent);
+  box-shadow: 0 0 16px color-mix(in srgb, var(--tf-accent) 42%, transparent);
+}
+
+.tf-theme-switch {
+  position: relative;
+  display: inline-flex;
+  height: 36px;
+  width: 62px;
+  flex: 0 0 auto;
+  align-items: center;
+  border-radius: 999px;
+  border: 1px solid #d8e1ed;
+  padding: 3px;
+  background: #edf2f8;
+  color: #7c8aa0;
+  box-shadow: inset 0 1px 3px rgb(15 23 42 / 0.08), 0 4px 12px -8px rgb(15 23 42 / 0.4);
+  transition: border-color 220ms ease, background-color 220ms ease, box-shadow 220ms ease;
+}
+
+.tf-theme-switch:hover {
+  border-color: #aac7e8;
+  box-shadow: inset 0 1px 3px rgb(15 23 42 / 0.08), 0 6px 16px -8px rgb(40 119 212 / 0.55);
+}
+
+.tf-theme-switch:focus-visible {
+  outline: 3px solid rgb(59 130 246 / 0.22);
+  outline-offset: 2px;
+}
+
+.tf-theme-switch__track {
+  position: relative;
+  display: flex;
+  height: 28px;
+  width: 54px;
+  align-items: center;
+  justify-content: space-between;
+  padding: 0 7px;
+}
+
+.tf-theme-switch__sun,
+.tf-theme-switch__moon {
+  position: relative;
+  z-index: 2;
+  height: 13px;
+  width: 13px;
+  transition: color 220ms ease, opacity 220ms ease;
+}
+
+.tf-theme-switch__sun { color: #f59e0b; }
+.tf-theme-switch__moon { color: #728198; opacity: 0.55; }
+
+.tf-theme-switch__thumb {
+  position: absolute;
+  z-index: 1;
+  left: 0;
+  top: 0;
+  height: 28px;
+  width: 28px;
+  border-radius: 999px;
+  background: #ffffff;
+  box-shadow: 0 3px 9px rgb(15 23 42 / 0.2);
+  transition: transform 240ms cubic-bezier(.2,.8,.2,1), background-color 220ms ease;
+}
+
+.tf-theme-switch.is-dark {
+  border-color: #31415b;
+  background: #0d1728;
+}
+
+.tf-theme-switch.is-dark .tf-theme-switch__thumb {
+  transform: translateX(26px);
+  background: #223554;
+  box-shadow: 0 3px 10px rgb(0 0 0 / 0.5);
+}
+
+.tf-theme-switch.is-dark .tf-theme-switch__sun { color: #73839a; opacity: 0.5; }
+.tf-theme-switch.is-dark .tf-theme-switch__moon { color: #9bc8ff; opacity: 1; }
+
+.tf-search-highlight {
+  border-radius: 3px;
+  padding: 0 1px;
+  background: #dbeafe;
+  color: #1d4f91;
+}
+
+.tf-dark .tf-search-highlight {
+  background: transparent;
+  color: inherit;
+}
+
+.tf-sidebar-user {
+  border-color: var(--tf-border);
+  background: var(--tf-surface);
+  box-shadow: 0 10px 24px -20px rgb(15 23 42 / 0.5);
+}
+
+.tf-support-launcher {
+  background: linear-gradient(145deg, #59a4f2, #2269ba);
+  box-shadow: 0 14px 30px -12px rgb(37 103 173 / 0.65);
+}
+
+.tf-dark .tf-shell,
+.tf-dark .tf-content {
+  background:
+    radial-gradient(circle at 78% -10%, rgb(53 115 196 / 0.16), transparent 34rem),
+    var(--tf-page);
+}
+
+.tf-dark .tf-sidebar {
+  background: #0d1626;
+  border-color: #202d42;
+  box-shadow: 14px 0 38px -30px rgb(0 0 0 / 0.9);
+}
+
+.tf-dark .tf-sidebar nav,
+.tf-dark .tf-sidebar > .tf-panel,
+.tf-dark .tf-app-header {
+  background: rgb(19 29 47 / 0.92);
+  border-color: var(--tf-border);
+}
+
+.tf-dark .tf-panel {
+  border-color: var(--tf-border);
+  box-shadow: var(--tf-shadow);
+}
+
+.tf-dark .tf-panel:hover {
+  border-color: #304361;
+}
+
+.tf-dark .tf-nav-item.is-active {
+  background: linear-gradient(90deg, #17385f, #162f50);
+  color: #9ac8ff;
+  box-shadow: inset 0 0 0 1px rgb(91 163 247 / 0.1), 0 7px 18px -14px rgb(38 112 197 / 0.8);
+}
+
+.tf-dark .tf-nav-item.is-active > span:first-child {
+  background: #1b4777;
+  color: #b9dbff;
+}
+
+.tf-dark .tf-app-header::before {
+  box-shadow: inset 0 1px 0 rgb(255 255 255 / 0.035);
+}
+
+.tf-dark .tf-sidebar-avatar {
+  background: #29305a;
+  color: #c9c1ff;
+}
+
+.tf-dark .tf-support-launcher {
+  box-shadow: 0 14px 34px -12px rgb(19 93 178 / 0.8), inset 0 1px 0 rgb(255 255 255 / 0.16);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .tf-theme-switch,
+  .tf-theme-switch *,
+  html,
+  body {
+    transition: none !important;
   }
 }

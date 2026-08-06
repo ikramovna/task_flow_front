@@ -2326,8 +2326,12 @@ const iconPath = (name: string) => {
               <svg viewBox="0 0 24 24" class="h-4 w-4" fill="none" stroke="currentColor" stroke-width="1.7"><path :d="iconPath('bell')" /></svg>
               <span v-if="showNotificationBadge" class="absolute right-2 top-2 h-2 w-2 rounded-full bg-task-danger" />
             </button>
-            <button type="button" class="tf-icon-button" :aria-label="isDarkTheme ? 'Switch to light theme' : 'Switch to dark theme'" :title="isDarkTheme ? 'Light theme' : 'Dark theme'" @click="toggleTheme">
-              <svg viewBox="0 0 24 24" class="h-4 w-4" fill="none" stroke="currentColor" stroke-width="1.8"><path :d="iconPath(isDarkTheme ? 'sun' : 'moon')" /></svg>
+            <button type="button" :class="['tf-theme-switch', isDarkTheme ? 'is-dark' : '']" :aria-label="isDarkTheme ? 'Switch to light theme' : 'Switch to dark theme'" :aria-pressed="isDarkTheme" :title="isDarkTheme ? 'Light theme' : 'Dark theme'" @click="toggleTheme">
+              <span class="tf-theme-switch__track" aria-hidden="true">
+                <svg viewBox="0 0 24 24" class="tf-theme-switch__sun" fill="none" stroke="currentColor" stroke-width="1.8"><path :d="iconPath('sun')" /></svg>
+                <svg viewBox="0 0 24 24" class="tf-theme-switch__moon" fill="none" stroke="currentColor" stroke-width="1.8"><path :d="iconPath('moon')" /></svg>
+                <span class="tf-theme-switch__thumb" />
+              </span>
             </button>
           </div>
         </header>
@@ -3006,7 +3010,7 @@ const iconPath = (name: string) => {
                       <span :class="['grid h-8 w-8 shrink-0 place-items-center rounded-full text-[10px] font-bold', taskAssigneeIds.includes(teamMemberId(member)) ? 'bg-task-blue text-white' : 'bg-task-blueSoft text-task-blue']">{{ initials(String(member[0])) }}</span>
                       <span class="min-w-0">
                         <span class="block truncate">
-                          {{ highlightedMemberName(String(member[0])).before }}<mark v-if="highlightedMemberName(String(member[0])).match" class="rounded bg-yellow-300 px-0.5 text-inherit">{{ highlightedMemberName(String(member[0])).match }}</mark>{{ highlightedMemberName(String(member[0])).after }}
+                          {{ highlightedMemberName(String(member[0])).before }}<mark v-if="highlightedMemberName(String(member[0])).match" class="tf-search-highlight">{{ highlightedMemberName(String(member[0])).match }}</mark>{{ highlightedMemberName(String(member[0])).after }}
                         </span>
                         <span class="block truncate text-[11px] font-normal text-task-muted">{{ member[2] }}</span>
                       </span>
@@ -3255,7 +3259,7 @@ const iconPath = (name: string) => {
                   <div v-if="openDropdown === 'projectManager'" class="tf-dropdown-menu max-h-64 overflow-y-auto p-2">
                     <button v-for="(member, index) in filteredProjectManagers" :key="teamMemberId(member) || String(member[0])" type="button" class="flex w-full items-center gap-3 rounded-[11px] px-3 py-2.5 text-left transition hover:bg-task-blueSoft" @click="form.projectManager = teamMemberName(member); projectManagerSearch = teamMemberName(member); openDropdown = null">
                       <span :class="['grid h-9 w-9 shrink-0 place-items-center rounded-full text-xs font-bold', index % 4 === 0 ? 'bg-task-blueSoft text-task-blue' : index % 4 === 1 ? 'bg-task-lavender text-[#8057D5]' : index % 4 === 2 ? 'bg-task-successSoft text-task-success' : 'bg-task-warningSoft text-task-warning']">{{ initials(teamMemberName(member)) }}</span>
-                      <span class="min-w-0 flex-1"><span class="block truncate text-sm font-semibold"><template v-for="(part, partIndex) in [highlightedSearchText(teamMemberName(member), projectManagerSearch)]" :key="partIndex">{{ part.before }}<mark v-if="part.match" class="rounded bg-yellow-200 px-0.5 text-task-ink">{{ part.match }}</mark>{{ part.after }}</template></span><span class="block truncate text-xs text-task-muted">{{ teamMemberEmail(member) }}</span></span>
+                      <span class="min-w-0 flex-1"><span class="block truncate text-sm font-semibold"><template v-for="(part, partIndex) in [highlightedSearchText(teamMemberName(member), projectManagerSearch)]" :key="partIndex">{{ part.before }}<mark v-if="part.match" class="tf-search-highlight">{{ part.match }}</mark>{{ part.after }}</template></span><span class="block truncate text-xs text-task-muted">{{ teamMemberEmail(member) }}</span></span>
                       <span v-if="form.projectManager === teamMemberName(member)" class="text-task-blue">✓</span>
                     </button>
                     <p v-if="!filteredProjectManagers.length" class="py-5 text-center text-sm text-task-muted">No manager found.</p>
@@ -3283,7 +3287,7 @@ const iconPath = (name: string) => {
                     <button v-for="(member, index) in availableProjectMembers" v-else :key="teamMemberId(member)" type="button" class="flex w-full items-center gap-3 rounded-[10px] px-3 py-2.5 text-left transition hover:bg-task-blueSoft" @click="selectProjectMember(member)">
                       <span :class="['grid h-9 w-9 shrink-0 place-items-center rounded-full text-xs font-bold', index % 4 === 0 ? 'bg-task-blueSoft text-task-blue' : index % 4 === 1 ? 'bg-task-lavender text-[#8057D5]' : index % 4 === 2 ? 'bg-task-successSoft text-task-success' : 'bg-task-warningSoft text-task-warning']">{{ initials(teamMemberName(member)) }}</span>
                       <span class="min-w-0">
-                        <span class="block truncate text-sm font-semibold text-task-ink"><template v-for="(part, partIndex) in [highlightedSearchText(teamMemberName(member), projectMemberSearch)]" :key="partIndex">{{ part.before }}<mark v-if="part.match" class="rounded bg-yellow-200 px-0.5 text-task-ink">{{ part.match }}</mark>{{ part.after }}</template></span>
+                        <span class="block truncate text-sm font-semibold text-task-ink"><template v-for="(part, partIndex) in [highlightedSearchText(teamMemberName(member), projectMemberSearch)]" :key="partIndex">{{ part.before }}<mark v-if="part.match" class="tf-search-highlight">{{ part.match }}</mark>{{ part.after }}</template></span>
                         <span class="block truncate text-xs text-task-muted">{{ teamMemberEmail(member) }}</span>
                       </span>
                     </button>
