@@ -181,6 +181,7 @@ const systemPrefersDark = ref(false)
 let themeMediaQuery: MediaQueryList | null = null
 let previousBodyOverflow = ''
 const themeStorageKey = 'taskflow-theme'
+const themeCookie = useCookie<string | null>('taskflow-theme', { sameSite: 'lax', maxAge: 60 * 60 * 24 * 365 })
 
 const updateSystemTheme = (event: MediaQueryListEvent) => {
   systemPrefersDark.value = event.matches
@@ -191,6 +192,7 @@ const isThemeOption = (value: string | null): value is 'Light' | 'Dark' | 'Syste
 const persistTheme = (theme: string) => {
   if (!import.meta.client || !isThemeOption(theme)) return
   localStorage.setItem(themeStorageKey, theme)
+  themeCookie.value = theme
 }
 type CalendarEvent = {
   id: string
@@ -962,6 +964,7 @@ onMounted(() => {
   if (isThemeOption(savedTheme)) {
     dropdownValues.theme = savedTheme
     appliedAppearance.theme = savedTheme
+    themeCookie.value = savedTheme
   }
   syncRootThemeClass()
   restoreActivePage()
@@ -2324,7 +2327,7 @@ const iconPath = (name: string) => {
 
         <nav :class="['tf-panel flex min-h-0 flex-1 flex-col overflow-hidden py-4 shadow-none', sidebarCollapsed ? 'px-2' : 'px-3']">
           <p v-if="!sidebarCollapsed" class="mb-3 text-xs font-medium text-task-muted">Menu</p>
-          <div class="space-y-1">
+          <div :key="`menu-${activePage}`" class="space-y-1">
             <button
               v-for="item in menuPages"
               :key="item.key"

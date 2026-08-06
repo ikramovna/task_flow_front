@@ -1,9 +1,11 @@
 <script setup lang="ts">
-const isDarkLoadingTheme = ref(false)
+const themeCookie = useCookie<string | null>('taskflow-theme')
+const isDarkLoadingTheme = ref(themeCookie.value === 'Dark')
 
 const detectLoadingTheme = () => {
   if (!import.meta.client) return
   const savedTheme = localStorage.getItem('taskflow-theme')
+  if (savedTheme) themeCookie.value = savedTheme
   isDarkLoadingTheme.value = savedTheme === 'Dark' || (
     savedTheme === 'System' && window.matchMedia('(prefers-color-scheme: dark)').matches
   ) || (!savedTheme && document.documentElement.classList.contains('tf-dark'))

@@ -8,6 +8,7 @@ const errorMessage = ref('')
 const api = useTaskFlowApi()
 const taskFlowStore = useTaskFlowStore()
 const notifications = useNotifications()
+const themeCookie = useCookie<string | null>('taskflow-theme', { sameSite: 'lax', maxAge: 60 * 60 * 24 * 365 })
 const isDarkTheme = ref(false)
 let themeMediaQuery: MediaQueryList | null = null
 
@@ -17,6 +18,7 @@ useHead({
 
 onMounted(() => {
   const savedTheme = localStorage.getItem('taskflow-theme')
+  if (savedTheme) themeCookie.value = savedTheme
   themeMediaQuery = window.matchMedia('(prefers-color-scheme: dark)')
   isDarkTheme.value = savedTheme === 'Dark' || (savedTheme === 'System' && themeMediaQuery.matches)
   document.documentElement.classList.toggle('tf-dark', isDarkTheme.value)
