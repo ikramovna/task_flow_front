@@ -178,6 +178,29 @@ type DashboardResponse = {
   generated_at: string
 }
 
+export type NotificationType = 'task_assigned' | 'deadline_reminder' | 'task_overdue' | 'task_completed' | 'new_message'
+
+export type TaskFlowNotification = {
+  id: string
+  notification_type: NotificationType
+  title: string
+  body: string
+  actor_detail?: UserBrief | null
+  task?: string | null
+  message?: string | null
+  is_read: boolean
+  read_at?: string | null
+  created_at: string
+}
+
+export type NotificationPreferences = {
+  task_assigned: boolean
+  deadline_reminder: boolean
+  task_overdue: boolean
+  task_updates: boolean
+  team_messages: boolean
+}
+
 type ApiEvent = {
   id?: string
   title: string
@@ -428,6 +451,19 @@ export const useTaskFlowApi = () => {
 
   const getMe = async () => await apiFetch<MeProfile>('/me/')
   const getDashboard = async () => await apiFetch<DashboardResponse>('/dashboard/')
+  const getNotifications = async (query: { unread?: boolean; page?: number; page_size?: number } = {}) => {
+    const params = new URLSearchParams()
+    if (query.unread !== undefined) params.set('unread', String(query.unread))
+    if (query.page !== undefined) params.set('page', String(query.page))
+    params.set('page_size', String(query.page_size ?? 10))
+    return await apiFetch<PaginatedResponse<TaskFlowNotification> & { next?: string | null; previous?: string | null }>(`/notifications/?${params}`)
+  }
+  const getUnreadNotificationCount = async () => await apiFetch<{ unread_count: number }>('/notifications/unread_count/')
+  const markNotificationRead = async (id: string) => await apiFetch<TaskFlowNotification>(`/notifications/${id}/mark_read/`, { method: 'POST' })
+  const markAllNotificationsRead = async () => await apiFetch<{ updated: number }>('/notifications/mark_all_read/', { method: 'POST' })
+  const getNotificationPreferences = async () => await apiFetch<NotificationPreferences>('/me/preferences/')
+  const patchNotificationPreferences = async (preference: Partial<NotificationPreferences>) =>
+    await apiFetch<NotificationPreferences>('/me/preferences/', { method: 'PATCH', body: preference })
 
   const updateMe = async (
     profile: Required<Pick<MeProfile, 'first_name' | 'last_name' | 'phone' | 'job_title'>>,
@@ -780,6 +816,12 @@ export const useTaskFlowApi = () => {
     deleteAccount,
     getMe,
     getDashboard,
+    getNotifications,
+    getUnreadNotificationCount,
+    markNotificationRead,
+    markAllNotificationsRead,
+    getNotificationPreferences,
+    patchNotificationPreferences,
     updateMe,
     listProjects,
     listMembers,

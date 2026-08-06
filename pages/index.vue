@@ -460,6 +460,12 @@ const isComingSoonPage = (key: PageKey) => comingSoonPages.has(key)
 const profileName = computed(() => `${savedProfile.firstName} ${savedProfile.lastName}`.trim())
 const profileInitials = computed(() => profileName.value ? initials(profileName.value) : '')
 const dashboardTitle = computed(() => profileName.value ? `Welcome back, ${savedProfile.firstName || profileName.value}!` : 'Dashboard')
+const dashboardGreeting = computed(() => {
+  const hour = new Date().getHours()
+  const greeting = hour < 12 ? 'Good morning' : hour < 18 ? 'Good afternoon' : 'Good evening'
+  return `${greeting}, ${savedProfile.firstName || profileName.value || 'there'}! 👋`
+})
+const dashboardDepartmentTotal = computed(() => dashboardDepartments.value.reduce((total, department) => total + Number(department.task_count || 0), 0))
 const hasSavedProfileInfo = computed(() => Boolean(profileName.value || savedProfile.role || savedProfile.email))
 const profileFormInitials = computed(() => {
   const name = `${profileForm.firstName} ${profileForm.lastName}`.trim()
@@ -850,6 +856,15 @@ const focusTaskSearch = () => {
 const openNotifications = () => {
   unreadNotificationCount.value = 0
   notify('No new notifications')
+}
+
+const navigateFromNotification = async (target: { kind: 'task' | 'message'; id: string }) => {
+  if (target.kind === 'task') {
+    await navigateTo(`/tasks/${target.id}`)
+    return
+  }
+  setPage('messages')
+  if (import.meta.client) window.history.replaceState(window.history.state, '', `/#messages?message=${encodeURIComponent(target.id)}`)
 }
 
 const applyProfileData = (profile: { first_name?: string; last_name?: string; avatar?: string; email?: string; phone?: string; job_title?: string }) => {
@@ -2285,13 +2300,13 @@ const iconPath = (name: string) => {
           </div>
           <div :class="['tf-sidebar-user mt-auto', sidebarCollapsed ? 'flex-col justify-center p-1.5' : '']">
           <button type="button" :class="['flex min-w-0 items-center gap-2 text-left', sidebarCollapsed ? 'justify-center' : 'flex-1']" :title="sidebarCollapsed ? profileName : undefined" @click="setPage('settings')">
-            <span class="tf-sidebar-avatar overflow-hidden">
-              <img v-if="savedProfile.avatar" :src="savedProfile.avatar" alt="Profile avatar" class="h-full w-full object-cover" />
+            <span class="tf-sidebar-avatar">
+              <img v-if="savedProfile.avatar" :src="savedProfile.avatar" alt="Profile avatar" class="h-full w-full rounded-full object-cover" />
               <span v-else>{{ profileInitials }}</span>
             </span>
             <span v-if="!sidebarCollapsed" class="min-w-0">
-              <span class="block truncate text-sm font-bold leading-4">{{ profileName }}</span>
-              <span class="block truncate text-[11px] text-task-muted">{{ savedProfile.email }}</span>
+              <span class="tf-sidebar-profile-name block truncate text-sm font-bold leading-4">{{ profileName }}</span>
+              <span class="tf-sidebar-profile-email block truncate text-[11px]">{{ savedProfile.email }}</span>
             </span>
           </button>
           <button v-if="!sidebarCollapsed" type="button" class="tf-sidebar-logout" aria-label="Logout" title="Logout" @click="handleLogout">
@@ -2303,17 +2318,17 @@ const iconPath = (name: string) => {
       </aside>
 
       <div class="tf-content min-w-0 flex-1 p-4">
-        <header class="tf-app-header tf-panel relative mb-4 flex h-[76px] items-center justify-between gap-4 overflow-hidden px-5 shadow-none">
-          <div class="pointer-events-none absolute inset-y-0 right-0 w-72 bg-gradient-to-l from-task-blueSoft/70 to-transparent" />
-          <svg viewBox="0 0 180 80" class="pointer-events-none absolute -right-3 top-0 h-full w-52 text-task-blue opacity-[0.08]" fill="none"><path d="M12 79c28-42 48-5 74-40s57 20 94-34v74H12Z" fill="currentColor" /><circle cx="135" cy="18" r="30" stroke="currentColor" stroke-width="2" /></svg>
+        <header :class="['tf-app-header relative mb-4 flex items-center justify-between gap-4', activePage === 'dashboard' ? 'tf-dashboard-heading h-[68px] px-1' : 'tf-panel h-[76px] overflow-hidden px-5 shadow-none']">
+          <div v-if="activePage !== 'dashboard'" class="pointer-events-none absolute inset-y-0 right-0 w-72 bg-gradient-to-l from-task-blueSoft/70 to-transparent" />
+          <svg v-if="activePage !== 'dashboard'" viewBox="0 0 180 80" class="pointer-events-none absolute -right-3 top-0 h-full w-52 text-task-blue opacity-[0.08]" fill="none"><path d="M12 79c28-42 48-5 74-40s57 20 94-34v74H12Z" fill="currentColor" /><circle cx="135" cy="18" r="30" stroke="currentColor" stroke-width="2" /></svg>
           <button type="button" class="tf-icon-button md:hidden" aria-label="Open menu" @click="mobileSidebarOpen = true">
             <svg viewBox="0 0 24 24" class="h-5 w-5" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M4 7h16M4 12h16M4 17h16" /></svg>
           </button>
           <div class="tf-app-title relative z-10 flex min-w-0 flex-1 items-center gap-3.5">
-            <span :class="['grid h-11 w-11 shrink-0 place-items-center rounded-[14px] bg-gradient-to-br shadow-sm ring-1 ring-white/70', pageAccentClass]">
+            <span v-if="activePage !== 'dashboard'" :class="['grid h-11 w-11 shrink-0 place-items-center rounded-[14px] bg-gradient-to-br shadow-sm ring-1 ring-white/70', pageAccentClass]">
               <svg viewBox="0 0 24 24" class="h-5 w-5" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path :d="iconPath(pageIconName)" /></svg>
             </span>
-            <div class="min-w-0"><h1 class="truncate text-lg font-bold">{{ activePage === 'dashboard' ? dashboardTitle : pageCopy[activePage].title }}</h1><p class="truncate text-xs text-task-muted">{{ pageCopy[activePage].subtitle }}</p></div>
+            <div class="min-w-0"><h1 :class="['truncate font-bold', activePage === 'dashboard' ? 'text-[22px]' : 'text-lg']">{{ activePage === 'dashboard' ? dashboardGreeting : pageCopy[activePage].title }}</h1><p class="mt-1 truncate text-xs text-task-muted">{{ pageCopy[activePage].subtitle }}</p></div>
           </div>
           <div class="relative z-10 flex items-center gap-3">
             <label v-if="false" class="relative hidden sm:block">
@@ -2322,33 +2337,43 @@ const iconPath = (name: string) => {
               <button v-if="taskSearchInput && !searchLoading.task" type="button" class="tf-search-clear" aria-label="Clear search" @click="clearSearch('task')">×</button>
               <span v-if="searchLoading.task" class="tf-search-spinner" />
             </label>
-            <button type="button" class="tf-icon-button relative" @click="openNotifications">
-              <svg viewBox="0 0 24 24" class="h-4 w-4" fill="none" stroke="currentColor" stroke-width="1.7"><path :d="iconPath('bell')" /></svg>
-              <span v-if="showNotificationBadge" class="absolute right-2 top-2 h-2 w-2 rounded-full bg-task-danger" />
-            </button>
-            <button type="button" :class="['tf-theme-switch', isDarkTheme ? 'is-dark' : '']" :aria-label="isDarkTheme ? 'Switch to light theme' : 'Switch to dark theme'" :aria-pressed="isDarkTheme" :title="isDarkTheme ? 'Light theme' : 'Dark theme'" @click="toggleTheme">
-              <span class="tf-theme-switch__track" aria-hidden="true">
-                <svg viewBox="0 0 24 24" class="tf-theme-switch__sun" fill="none" stroke="currentColor" stroke-width="1.8"><path :d="iconPath('sun')" /></svg>
-                <svg viewBox="0 0 24 24" class="tf-theme-switch__moon" fill="none" stroke="currentColor" stroke-width="1.8"><path :d="iconPath('moon')" /></svg>
-                <span class="tf-theme-switch__thumb" />
-              </span>
+            <NotificationCenter @navigate="navigateFromNotification" />
+            <button type="button" class="tf-theme-button" :aria-label="isDarkTheme ? 'Switch to light theme' : 'Switch to dark theme'" :aria-pressed="isDarkTheme" :title="isDarkTheme ? 'Light theme' : 'Dark theme'" @click="toggleTheme">
+              <svg viewBox="0 0 24 24" class="h-[17px] w-[17px]" fill="none" stroke="currentColor" stroke-width="1.8"><path :d="iconPath(isDarkTheme ? 'sun' : 'moon')" /></svg>
             </button>
           </div>
         </header>
 
         <section v-if="activePage === 'dashboard'" class="space-y-4">
-          <div class="grid gap-3 sm:grid-cols-2 lg:grid-cols-4 2xl:grid-cols-7">
-            <article v-for="(item, index) in stats" :key="String(item[1])" :class="['tf-panel border p-4 shadow-none', dashboardSummaryStyles[index]]">
-              <div class="flex items-start justify-between gap-3"><div><p class="text-xs font-semibold text-task-muted">{{ item[1] }}</p><p class="mt-3 text-3xl font-extrabold text-task-ink">{{ item[0] }}</p></div><span class="grid h-11 w-11 place-items-center rounded-[13px] bg-white/80 shadow-sm"><svg viewBox="0 0 24 24" class="h-5 w-5" fill="none" stroke="currentColor" stroke-width="1.9"><path :d="index === 1 ? 'm6 12 4 4 8-9' : index === 2 ? 'M12 7v5l3 2' : index === 4 ? 'M5 5h14v14H5V5Zm4 4h6' : index === 5 ? 'M8 12h8M5 4h14v16H5V4Z' : index === 6 ? 'M12 8v5m0 4h.01M5 20h14L12 3 5 20Z' : 'M5 4h14v16H5V4Zm4 4h6m-6 4h6'" /></svg></span></div>
-              <div class="mt-3 flex items-center gap-2 text-xs font-bold"><span>{{ Number(item[2] || 0).toFixed(1) }}%</span><div class="h-1.5 flex-1 overflow-hidden rounded-full bg-white/70"><div class="h-full rounded-full bg-current" :style="{ width: `${Math.min(100, Number(item[2] || 0))}%` }" /></div></div>
+          <div class="tf-dashboard-stats grid gap-3 sm:grid-cols-2 lg:grid-cols-4 2xl:grid-cols-7">
+            <article v-for="(item, index) in stats" :key="String(item[1])" :class="['tf-panel tf-summary-card border p-4 shadow-none', `tf-summary-card--${index}`]">
+              <div class="flex items-center gap-2.5"><span class="tf-summary-icon grid h-9 w-9 place-items-center rounded-[11px]"><svg viewBox="0 0 24 24" class="h-[17px] w-[17px]" fill="none" stroke="currentColor" stroke-width="1.9"><path :d="index === 1 ? 'm6 12 4 4 8-9' : index === 2 ? 'M12 7v5l3 2' : index === 4 ? 'M5 5h14v14H5V5Zm4 4h6' : index === 5 ? 'M8 12h8M5 4h14v16H5V4Z' : index === 6 ? 'M12 8v5m0 4h.01M5 20h14L12 3 5 20Z' : 'M5 4h14v16H5V4Zm4 4h6m-6 4h6'" /></svg></span><p class="text-[11px] font-semibold text-task-muted">{{ item[1] }}</p></div>
+              <p class="mt-3 text-2xl font-extrabold text-task-ink">{{ item[0] }}</p>
+              <div class="mt-3 flex items-center gap-2 text-[11px] font-bold"><span class="tf-summary-percent">{{ Number(item[2] || 0).toFixed(0) }}%</span><div class="tf-summary-track h-1.5 flex-1 overflow-hidden rounded-full"><div class="tf-summary-progress h-full rounded-full" :style="{ width: `${Math.min(100, Number(item[2] || 0))}%` }" /></div></div>
             </article>
           </div>
           <div class="grid gap-4 xl:grid-cols-3">
-            <section v-for="panel in [{ title: 'Today’s Events', items: dashboardTodayEvents, upcoming: false }, { title: 'Upcoming Events', items: dashboardUpcomingEvents, upcoming: true }]" :key="panel.title" class="tf-panel overflow-hidden p-0"><header class="flex items-center justify-between border-b border-task-line px-5 py-4"><h2 class="font-bold">{{ panel.title }}</h2><span class="tf-pill bg-task-blueSoft text-task-blue">{{ panel.items.length }}</span></header><div class="divide-y divide-task-line"><article v-for="event in panel.items" :key="String(event.id)" class="flex gap-3 px-5 py-4"><time class="grid h-11 min-w-16 place-items-center rounded-[11px] bg-task-blueSoft px-2 text-xs font-bold text-task-blue">{{ panel.upcoming ? dashboardDateTime(event.starts_at).split(' ').slice(0, 2).join(' ') : dashboardDateTime(event.starts_at, 'time') }}</time><div class="min-w-0 flex-1"><p class="truncate text-sm font-bold">{{ event.title }}</p><p class="mt-1 truncate text-xs text-task-muted">{{ event.department?.name || 'No department' }} · {{ event.location || 'Online' }}</p></div></article><p v-if="!panel.items.length" class="px-5 py-10 text-center text-sm text-task-muted">No events available.</p></div></section>
+            <section v-for="panel in [{ title: 'Today’s Events', items: dashboardTodayEvents, upcoming: false }, { title: 'Upcoming Events', items: dashboardUpcomingEvents, upcoming: true }]" :key="panel.title" class="tf-panel tf-dashboard-list overflow-hidden p-0"><header class="flex items-center justify-between border-b border-task-line px-5 py-3"><h2 class="flex items-center gap-2 font-bold"><span class="tf-section-icon">▣</span>{{ panel.title }}</h2><span class="tf-pill bg-task-blueSoft text-task-blue">{{ panel.items.length }}</span></header><div class="divide-y divide-task-line"><article v-for="event in panel.items" :key="String(event.id)" class="flex items-center gap-3 px-5 py-3"><time class="tf-event-date grid h-11 min-w-14 place-items-center rounded-[9px] bg-task-blueSoft px-2 text-xs font-bold text-task-blue">{{ panel.upcoming ? dashboardDateTime(event.starts_at).split(' ').slice(0, 2).join(' ') : dashboardDateTime(event.starts_at, 'time') }}</time><div class="min-w-0 flex-1"><p class="truncate text-sm font-bold">{{ event.title }}</p><p class="mt-1 truncate text-xs text-task-muted">{{ event.department?.name || 'No department' }} · {{ event.location || 'Online' }}</p></div><span v-if="panel.upcoming" class="text-xs text-task-muted">{{ dashboardDateTime(event.starts_at, 'time') }} ›</span></article><div v-if="!panel.items.length" class="tf-empty-events"><span class="tf-empty-calendar">▦</span><p>No events scheduled for today.</p><small>Enjoy your free time! 🎉</small></div></div></section>
             <section class="tf-panel overflow-hidden p-0"><header class="flex items-center justify-between border-b border-task-line px-5 py-4"><h2 class="font-bold">Upcoming Deadlines</h2><button type="button" class="text-xs font-bold text-task-blue" @click="setPage('tasks')">View all</button></header><div class="divide-y divide-task-line"><article v-for="task in dashboardDeadlines" :key="String(task.id)" class="flex items-center gap-3 px-5 py-4"><span :class="['h-2.5 w-2.5 shrink-0 rounded-full', task.priority === 'high' ? 'bg-task-danger' : task.priority === 'medium' ? 'bg-task-warning' : 'bg-task-success']" /><div class="min-w-0 flex-1"><p class="truncate text-sm font-bold">{{ task.title }}</p><p class="mt-1 truncate text-xs text-task-muted">{{ task.department?.name || 'No department' }}</p></div><div class="text-right"><p class="text-xs font-bold">{{ dashboardDateTime(task.due_date) }}</p><p class="mt-1 text-[10px] font-semibold text-task-warning">{{ task.days_remaining }} days left</p></div></article><p v-if="!dashboardDeadlines.length" class="px-5 py-10 text-center text-sm text-task-muted">No upcoming deadlines.</p></div></section>
           </div>
           <div class="grid gap-4 xl:grid-cols-[0.8fr_1.2fr]">
-            <section class="tf-panel p-5"><h2 class="font-bold">Tasks by Department</h2><p class="mt-1 text-xs text-task-muted">Role-filtered task distribution</p><div class="mt-5 space-y-4"><div v-for="department in dashboardDepartments" :key="String(department.department_id)"><div class="mb-2 flex items-center justify-between text-sm"><span class="font-semibold">{{ department.department_name }}</span><span><b>{{ department.task_count }}</b> · {{ Number(department.percentage).toFixed(1) }}%</span></div><div class="h-2 overflow-hidden rounded-full bg-slate-100"><div class="h-full rounded-full bg-gradient-to-r from-task-blue to-[#7654ED]" :style="{ width: `${Math.min(100, Number(department.percentage))}%` }" /></div></div><p v-if="!dashboardDepartments.length" class="py-10 text-center text-sm text-task-muted">No department statistics available.</p></div></section>
+            <section class="tf-panel p-5">
+              <h2 class="flex items-center gap-2 font-bold"><span class="tf-section-icon">◴</span>Tasks by Department</h2>
+              <p class="mt-1 text-xs text-task-muted">Role-filtered task distribution</p>
+              <div v-if="dashboardDepartments.length" class="mt-5 flex items-center gap-6">
+                <div class="tf-department-donut"><span><b>{{ dashboardDepartmentTotal }}</b><small>Total</small></span></div>
+                <div class="min-w-0 flex-1 space-y-4">
+                  <div v-for="department in dashboardDepartments" :key="String(department.department_id)">
+                    <div class="mb-2 flex items-center justify-between text-xs">
+                      <span class="flex items-center gap-2 font-semibold"><i class="h-2 w-2 rounded-full bg-task-blue" />{{ department.department_name }}</span>
+                      <span><b>{{ department.task_count }}</b> ({{ Number(department.percentage).toFixed(0) }}%)</span>
+                    </div>
+                    <div class="h-1.5 overflow-hidden rounded-full bg-slate-100"><div class="h-full rounded-full bg-task-blue" :style="{ width: `${Math.min(100, Number(department.percentage))}%` }" /></div>
+                  </div>
+                </div>
+              </div>
+              <p v-else class="py-10 text-center text-sm text-task-muted">No department statistics available.</p>
+            </section>
             <section class="tf-panel overflow-hidden p-0"><header class="flex items-center justify-between border-b border-task-line px-5 py-4"><div><h2 class="font-bold">Recent Tasks</h2><p class="mt-1 text-xs text-task-muted">Latest activity</p></div><button type="button" class="text-xs font-bold text-task-blue" @click="setPage('tasks')">View all</button></header><div class="overflow-x-auto"><table class="w-full min-w-[620px] text-left text-sm"><thead class="bg-slate-50 text-xs text-task-muted"><tr><th class="px-5 py-3">Task</th><th class="px-4 py-3">Department</th><th class="px-4 py-3">Created</th><th class="px-5 py-3">Status</th></tr></thead><tbody class="divide-y divide-task-line"><tr v-for="task in dashboardRecentTasks" :key="String(task.id)"><td class="px-5 py-3.5 font-semibold">{{ task.title }}</td><td class="px-4 py-3.5 text-task-muted">{{ task.department?.name || '—' }}</td><td class="px-4 py-3.5 text-task-muted">{{ dashboardDateTime(task.created_at) }}</td><td class="px-5 py-3.5"><span :class="['tf-pill', badgeClass(dashboardStatus(task.status))]">{{ dashboardStatus(task.status) }}</span></td></tr></tbody></table><p v-if="!dashboardRecentTasks.length" class="py-10 text-center text-sm text-task-muted">No recent tasks.</p></div></section>
           </div>
           <p v-if="dashboardGeneratedAt" class="text-right text-[11px] text-task-muted">Last updated {{ dashboardDateTime(dashboardGeneratedAt) }} at {{ dashboardDateTime(dashboardGeneratedAt, 'time') }}</p>
@@ -2777,9 +2802,9 @@ const iconPath = (name: string) => {
           </div>
         </section>
 
-        <section v-else-if="activePage === 'calendar'" class="grid items-start gap-4 xl:grid-cols-[minmax(0,1fr)_340px]">
-          <div class="space-y-4">
-            <div class="tf-panel overflow-hidden p-4 sm:p-5">
+        <section v-else-if="activePage === 'calendar'" class="tf-calendar-layout grid gap-4 xl:grid-cols-[minmax(0,1fr)_340px]">
+          <div class="h-full">
+            <div class="tf-panel h-full overflow-hidden p-4 sm:p-5">
               <div class="mb-6 flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between"><div class="flex items-center gap-3"><button class="tf-icon-button h-11 w-11" type="button" aria-label="Previous month" @click="moveCalendar(-1)"><svg viewBox="0 0 24 24" class="h-5 w-5" fill="none" stroke="currentColor" stroke-width="2"><path d="m15 18-6-6 6-6" /></svg></button><h2 class="min-w-[150px] text-center text-xl font-bold">{{ calendarMonth }}</h2><button class="tf-icon-button h-11 w-11" type="button" aria-label="Next month" @click="moveCalendar(1)"><svg viewBox="0 0 24 24" class="h-5 w-5" fill="none" stroke="currentColor" stroke-width="2"><path d="m9 18 6-6-6-6" /></svg></button></div><button v-if="canCreateEvent" class="tf-primary h-11 rounded-[12px] px-5" @click="openModal('event')"><svg viewBox="0 0 24 24" class="h-4 w-4" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 5v14M5 12h14" /></svg>Add Event</button></div>
               <div class="tf-calendar-scroll">
                 <div class="grid min-w-[734px] grid-cols-7 gap-2 text-center text-sm font-semibold text-task-muted"><span class="py-3">Mon</span><span class="py-3">Tue</span><span class="py-3">Wed</span><span class="py-3">Thu</span><span class="py-3">Fri</span><span class="py-3">Sat</span><span class="py-3 text-task-danger">Sun</span></div>
@@ -2810,10 +2835,10 @@ const iconPath = (name: string) => {
               </div>
             </div>
           </div>
-          <aside class="space-y-4 xl:sticky xl:top-0 xl:self-start">
-            <div class="tf-panel overflow-hidden p-0">
+          <aside class="h-full min-h-0">
+            <div class="tf-calendar-events-panel tf-panel flex h-full min-h-0 flex-col overflow-hidden p-0">
               <div class="border-b border-task-line bg-white/90 px-5 py-4 backdrop-blur"><div class="flex items-center justify-between gap-3"><div class="flex items-center gap-2"><span class="grid h-9 w-9 place-items-center rounded-[11px] bg-task-blueSoft text-task-blue"><svg viewBox="0 0 24 24" class="h-5 w-5" fill="none" stroke="currentColor" stroke-width="1.8"><path :d="iconPath('calendar')" /></svg></span><h2 class="text-lg font-bold">{{ selectedCalendarDay ? `${String(selectedCalendarDay).padStart(2, '0')} ${monthNames[calendarMonthIndex]}` : 'Upcoming Events' }}</h2></div><span class="grid h-8 min-w-8 place-items-center rounded-[10px] bg-task-blueSoft px-2 text-xs font-bold text-task-blue">{{ selectedDayEvents.length }}</span></div><div class="mt-2 flex items-center justify-between"><p class="text-xs text-task-muted">Scroll to view all events</p><button v-if="selectedCalendarDay" type="button" class="text-xs font-bold text-task-blue hover:underline" @click="selectedCalendarDay = null">View all</button></div></div>
-              <div class="tf-event-scroll max-h-[calc(100vh-250px)] min-h-[220px] space-y-3 overflow-y-auto p-4 xl:max-h-[620px]">
+              <div class="tf-event-scroll min-h-[220px] flex-1 space-y-3 overflow-y-auto p-4">
                 <button v-for="event in selectedDayEvents" :key="event.id" type="button" class="group flex w-full gap-3 rounded-[14px] border border-transparent bg-slate-50 p-3 text-left transition hover:border-task-blue/20 hover:bg-task-blueSoft" @click="openEventDetails(event)">
                   <span :class="['grid h-12 w-12 shrink-0 place-items-center rounded-[12px] text-center text-[10px] font-bold leading-tight text-white shadow-sm', event.color]">{{ String(event.day).padStart(2, '0') }}<br />{{ event.meridiem }}</span>
                   <span class="min-w-0 flex-1"><span class="block truncate text-sm font-bold text-task-ink">{{ event.title }}</span><span class="mt-1 block text-[11px] leading-4 text-task-muted">{{ eventFullDate(event) }} · {{ event.time }}</span><span class="mt-1.5 inline-flex rounded-full bg-white px-2 py-0.5 text-[10px] font-semibold text-task-muted">{{ event.attendees }} attendees</span></span>
@@ -2888,9 +2913,7 @@ const iconPath = (name: string) => {
 
           <div class="grid items-stretch gap-4 xl:grid-cols-[1.15fr_.85fr]">
             <div class="tf-panel h-full p-5 sm:p-7">
-              <div class="flex items-start gap-3"><span class="grid h-10 w-10 place-items-center rounded-xl bg-task-blueSoft text-task-blue"><svg viewBox="0 0 24 24" class="h-5 w-5" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M16 21v-2a4 4 0 0 0-4-4H7a4 4 0 0 0-4 4v2M9.5 11a4 4 0 1 0 0-8 4 4 0 0 0 0 8Z" /></svg></span><div><h2 class="text-xl font-bold">My Profile</h2><p class="mt-1 text-sm text-task-muted">Manage your personal information and account details.</p></div></div>
-
-              <div class="mt-7 flex flex-col gap-5 sm:flex-row sm:items-center">
+              <div class="flex flex-col gap-5 sm:flex-row sm:items-center">
                 <div class="relative shrink-0"><input ref="profileAvatarInput" class="hidden" type="file" accept="image/*" @change="handleProfileAvatar" /><button type="button" class="group relative block h-28 w-28 rounded-full" aria-label="Change profile image" @click="chooseProfileAvatar"><span class="grid h-full w-full place-items-center overflow-hidden rounded-full bg-gradient-to-br from-task-blueSoft to-[#D8E7F8] text-2xl font-bold text-task-blue ring-4 ring-white shadow-lg"><img v-if="profileAvatarPreview" :src="profileAvatarPreview" alt="Profile avatar preview" class="h-full w-full object-cover transition group-hover:brightness-90" /><span v-else>{{ profileFormInitials }}</span></span><span class="absolute bottom-0 right-0 grid h-10 w-10 place-items-center rounded-full border-4 border-white bg-task-blue text-white shadow-lg"><svg viewBox="0 0 24 24" class="h-4 w-4" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 8h4l2-3h4l2 3h4v11H4V8Z" /><circle cx="12" cy="13" r="3" /></svg></span></button></div>
                 <div class="min-w-0 flex-1"><h3 class="truncate text-2xl font-bold">{{ profileName }}</h3><span class="mt-2 inline-flex rounded-full bg-task-blueSoft px-3 py-1 text-xs font-bold text-task-blue">{{ profileForm.role || 'Team Member' }}</span><div class="mt-4 space-y-2 text-sm text-task-muted"><p class="flex items-center gap-2"><svg viewBox="0 0 24 24" class="h-4 w-4" fill="none" stroke="currentColor" stroke-width="1.8"><path :d="iconPath('mail')" /></svg>{{ profileForm.email || 'No email' }}</p><p class="flex items-center gap-2"><svg viewBox="0 0 24 24" class="h-4 w-4" fill="none" stroke="currentColor" stroke-width="1.8"><path :d="iconPath('phone')" /></svg>{{ profileForm.phone || 'No phone' }}</p></div></div>
                 <button type="button" class="tf-icon-button h-11 w-auto shrink-0 gap-2 px-4" @click="chooseProfileAvatar"><svg viewBox="0 0 24 24" class="h-4 w-4" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M12 20h9M16.5 3.5a2.1 2.1 0 0 1 3 3L8 18l-4 1 1-4Z" /></svg>Edit Photo</button>
@@ -2910,7 +2933,7 @@ const iconPath = (name: string) => {
                 </div>
               </div>
 
-              <div class="order-first tf-panel p-4 sm:p-5">
+              <div class="tf-panel p-4 sm:p-5">
                 <div class="flex items-start gap-3"><span class="grid h-9 w-9 place-items-center rounded-[11px] bg-task-blueSoft text-task-blue"><svg viewBox="0 0 24 24" class="h-4 w-4" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M12 3v9l6 3M12 21a9 9 0 1 1 9-9" /></svg></span><div><h2 class="text-lg font-bold">Account Summary</h2><p class="mt-0.5 text-xs text-task-muted">Overview of your account information.</p></div></div>
                 <div class="mt-4 grid grid-cols-3 gap-3">
                   <div class="flex items-center gap-2.5"><span class="grid h-10 w-10 shrink-0 place-items-center rounded-[12px] bg-task-blueSoft text-task-blue"><svg viewBox="0 0 24 24" class="h-5 w-5" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M7 3v4m10-4v4M4 9h16M5 5h14v15H5V5Z" /></svg></span><div class="min-w-0"><p class="text-[11px] font-medium text-task-muted">Joined Date</p><p class="mt-0.5 truncate text-xs font-bold text-task-ink">{{ accountJoinedDate }}</p></div></div>
@@ -2920,6 +2943,7 @@ const iconPath = (name: string) => {
               </div>
             </div>
           </div>
+          <NotificationPreferences />
         </section>
 
         <section v-else-if="activePage === 'help'" class="flex min-h-[calc(100vh-120px)] justify-center px-4 py-14">
@@ -2962,9 +2986,9 @@ const iconPath = (name: string) => {
     </section>
 
     <div v-if="modal" class="fixed inset-0 z-50 grid place-items-center bg-slate-900/45 p-3 backdrop-blur-[2px] sm:p-6" @click.self="modal = null">
-      <div :class="['tf-app-modal flex max-h-[calc(100vh-24px)] w-full flex-col overflow-hidden rounded-[22px] border border-white/70 bg-[#E3EAF2] shadow-[0_30px_90px_-20px_rgba(15,23,42,0.45)] sm:max-h-[calc(100vh-48px)]', modal === 'project' ? 'tf-project-modal max-w-[600px]' : modal === 'task' ? 'max-w-[620px]' : modal === 'event' || modal === 'event-detail' || modal === 'report' ? 'max-w-[620px]' : 'max-w-[520px]']">
+      <div :class="['tf-app-modal flex max-h-[calc(100vh-24px)] w-full flex-col overflow-hidden rounded-[22px] border border-white/70 bg-[#E3EAF2] shadow-[0_30px_90px_-20px_rgba(15,23,42,0.45)] sm:max-h-[calc(100vh-48px)]', modal === 'project' ? 'tf-project-modal max-w-[600px]' : modal === 'task' ? 'max-w-[620px]' : modal === 'member' ? 'tf-member-modal max-w-[520px]' : modal === 'event' || modal === 'event-detail' || modal === 'report' ? 'max-w-[620px]' : 'max-w-[520px]']">
         <div class="flex shrink-0 items-center justify-between px-5 py-3.5 sm:px-6 sm:py-4"><h2 class="text-[21px] font-semibold tracking-[-0.025em] sm:text-[22px]">{{ modal === 'task' ? (taskModalMode === 'view' ? 'Task Details' : taskModalMode === 'edit' ? 'Edit Task' : 'Create Task') : modal === 'project' ? 'Create New Project' : modal === 'event' ? 'Add New Event' : modal === 'event-detail' ? 'Event Details' : modal === 'report' ? 'Custom Report Builder' : modal === 'member' ? 'Add Department Member' : 'Filter Staff' }}</h2><button type="button" class="grid h-9 w-9 place-items-center rounded-full text-[28px] font-light leading-none transition hover:bg-white/60 hover:text-task-blue" aria-label="Close modal" @click="modal = null">×</button></div>
-        <div :class="['min-h-0 overflow-y-auto bg-white', modal === 'project' || modal === 'task' ? 'mx-3 mb-3 rounded-[18px] p-5' : 'mx-2 mb-2 rounded-[16px] p-4']">
+        <div :class="['min-h-0 overflow-y-auto bg-white', modal === 'project' || modal === 'task' ? 'mx-3 mb-3 rounded-[18px] p-5' : 'mx-2 mb-2 rounded-[16px] p-4', modal === 'member' ? 'tf-member-modal-body' : '']">
           <template v-if="modal === 'event-detail' && selectedCalendarEvent">
             <div class="flex items-start gap-3 border-b border-task-line pb-3"><span :class="['grid h-12 w-12 shrink-0 place-items-center rounded-full text-center text-[11px] font-bold text-white', selectedCalendarEvent.color]">{{ String(selectedCalendarEvent.day).padStart(2, '0') }}<br />{{ selectedCalendarEvent.meridiem }}</span><div><h3 class="text-lg font-bold text-task-ink">{{ selectedCalendarEvent.title }}</h3><span class="mt-1.5 inline-flex rounded-full bg-task-blueSoft px-3 py-1 text-xs font-semibold text-task-blue">{{ selectedCalendarEvent.eventType }}</span></div></div>
             <div class="mt-4 grid gap-3 sm:grid-cols-2"><div class="rounded-ui bg-slate-100 p-3"><p class="text-xs font-semibold uppercase tracking-wide text-task-muted">Date</p><p class="mt-1.5 text-sm font-semibold text-task-ink">{{ eventFullDate(selectedCalendarEvent) }}</p></div><div class="rounded-ui bg-slate-100 p-3"><p class="text-xs font-semibold uppercase tracking-wide text-task-muted">Time</p><p class="mt-1.5 text-sm font-semibold text-task-ink">{{ selectedCalendarEvent.time }}</p></div></div>
@@ -2978,7 +3002,7 @@ const iconPath = (name: string) => {
             <div class="rounded-ui bg-task-blueSoft p-4 text-sm text-task-muted">The member will be added to your current department automatically.</div>
             <div class="mt-4 grid gap-4 sm:grid-cols-2"><label class="block text-sm font-semibold">First Name<input v-model="memberFirstName" class="tf-input mt-2 h-12 w-full" placeholder="Enter first name" autocomplete="given-name" /></label><label class="block text-sm font-semibold">Last Name<input v-model="memberLastName" class="tf-input mt-2 h-12 w-full" placeholder="Enter last name" autocomplete="family-name" /></label></div>
             <label class="mt-4 block text-sm font-semibold">Email Address <span class="text-task-danger">*</span><input v-model="memberEmail" type="email" class="tf-input mt-2 h-12 w-full" placeholder="ali@example.com" autocomplete="email" required /></label>
-            <label class="mt-4 block text-sm font-semibold">Role<div class="tf-dropdown mt-2"><button type="button" class="tf-dropdown-button h-12" @click="openDropdown = openDropdown === 'memberRole' ? null : 'memberRole'"><span class="capitalize">{{ memberRole }}</span><svg viewBox="0 0 20 20" class="h-4 w-4 text-task-muted" fill="none" stroke="currentColor" stroke-width="2"><path d="m5 7.5 5 5 5-5" /></svg></button><div v-if="openDropdown === 'memberRole'" class="tf-dropdown-menu"><button v-for="role in memberRoleOptions" :key="role" type="button" class="tf-dropdown-option capitalize" @click="memberRole = role; openDropdown = null"><span>{{ role }}</span><span v-if="memberRole === role">✓</span></button></div></div></label>
+            <label class="mb-5 mt-4 block text-sm font-semibold">Role<div class="tf-dropdown mt-2"><button type="button" class="tf-dropdown-button h-12" @click="openDropdown = openDropdown === 'memberRole' ? null : 'memberRole'"><span class="capitalize">{{ memberRole }}</span><svg viewBox="0 0 20 20" :class="['h-4 w-4 text-task-muted transition-transform', openDropdown === 'memberRole' ? 'rotate-180' : '']" fill="none" stroke="currentColor" stroke-width="2"><path d="m5 7.5 5 5 5-5" /></svg></button><div v-if="openDropdown === 'memberRole'" class="tf-dropdown-menu tf-member-role-menu"><button v-for="role in memberRoleOptions" :key="role" type="button" class="tf-dropdown-option capitalize" @click="memberRole = role; openDropdown = null"><span>{{ role }}</span><span v-if="memberRole === role" class="text-task-blue">✓</span></button></div></div></label>
           </template>
           <template v-else-if="modal === 'task'">
             <div class="mb-4 flex items-center gap-3 rounded-[14px] border border-task-line bg-task-blueSoft px-4 py-3 text-sm">
