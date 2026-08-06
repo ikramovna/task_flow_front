@@ -274,7 +274,7 @@ body {
   }
 
   .tf-calendar-cell {
-    height: clamp(82px, calc((100dvh - 280px) / 6), 104px);
+    height: clamp(78px, calc((100dvh - 305px) / 6), 96px);
   }
 
   .tf-kanban-board {

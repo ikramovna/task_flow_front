@@ -2958,7 +2958,7 @@ const iconPath = (name: string) => {
                         <span v-if="eventsForDay(cell.day).length > 1" class="block truncate px-2 text-[9px] font-bold leading-3 text-task-muted">+{{ eventsForDay(cell.day).length - 1 }} more</span>
                       </div>
                     </button>
-                    <div v-else class="tf-calendar-cell min-w-[97px] rounded-[12px] border border-task-line/60 bg-slate-50/35" aria-hidden="true" />
+                    <div v-else class="tf-calendar-cell min-w-[97px] invisible" aria-hidden="true" />
                   </template>
                 </div>
               </div>
