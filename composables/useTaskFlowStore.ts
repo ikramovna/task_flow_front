@@ -85,7 +85,37 @@ export const useTaskFlowStore = () => {
     const api = useTaskFlowApi()
 
     try {
-      const backend = await api.loadDashboardData()
+      const backend = await api.loadDashboardData(({ dashboard, profile }) => {
+        const membership = profile.department_membership || profile.membership || profile.memberships?.[0]
+        const metric = (key: keyof typeof dashboard.summary) => ({
+          count: Number(dashboard.summary?.[key]?.count ?? 0),
+          percentage: Number(dashboard.summary?.[key]?.percentage ?? 0)
+        })
+        apiError.value = ''
+        state.value = {
+          ...state.value,
+          loaded: true,
+          stats: [
+            [String(metric('total_tasks').count), 'Total Tasks', metric('total_tasks').percentage],
+            [String(metric('completed_tasks').count), 'Completed Tasks', metric('completed_tasks').percentage],
+            [String(metric('in_progress_tasks').count), 'In Progress', metric('in_progress_tasks').percentage],
+            [String(metric('not_started_tasks').count), 'Not Started', metric('not_started_tasks').percentage],
+            [String(metric('backlog_tasks').count), 'Backlog', metric('backlog_tasks').percentage],
+            [String(metric('on_hold_tasks').count), 'On Hold', metric('on_hold_tasks').percentage],
+            [String(metric('overdue_tasks').count), 'Overdue Tasks', metric('overdue_tasks').percentage]
+          ],
+          dashboardTodayEvents: dashboard.today_events || [],
+          dashboardUpcomingEvents: dashboard.upcoming_events || [],
+          dashboardDeadlines: dashboard.upcoming_deadlines || [],
+          dashboardDepartments: dashboard.tasks_by_department || [],
+          dashboardRecentTasks: dashboard.recent_tasks || [],
+          dashboardGeneratedAt: dashboard.generated_at || '',
+          currentUserId: String(profile.id ?? ''),
+          currentDepartmentId: String(profile.department || membership?.department || ''),
+          currentRole: String(profile.role || membership?.role || '').trim().toLowerCase(),
+          currentUserActive: profile.is_active !== false && membership?.is_active !== false
+        }
+      })
 
       if (!backend) {
         apiError.value = ''

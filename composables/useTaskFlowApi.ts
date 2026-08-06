@@ -227,6 +227,7 @@ type EventPayload = {
 }
 
 const authStorageKey = 'taskflow-auth'
+let sharedMeRequest: Promise<MeProfile> | null = null
 
 export const taskFlowApiErrorMessage = (error: unknown, fallback: string) => {
   const data = (error as { data?: unknown })?.data
@@ -360,6 +361,7 @@ const saveStoredTokens = (tokens: Partial<ApiTokens> & Record<string, unknown>) 
 export const useTaskFlowApi = () => {
   const config = useRuntimeConfig()
   const apiBase = String(config.public.apiBase || '').replace(/\/$/, '')
+  const meCache = useState<MeProfile | null>('taskflow:me-cache', () => null)
 
   const refreshToken = async () => {
     const tokens = getStoredTokens()
@@ -449,7 +451,18 @@ export const useTaskFlowApi = () => {
       body: { password }
     })
 
-  const getMe = async () => await apiFetch<MeProfile>('/me/')
+  const getMe = async (force = false) => {
+    if (!force && meCache.value) return meCache.value
+    if (!force && sharedMeRequest) return await sharedMeRequest
+    sharedMeRequest = apiFetch<MeProfile>('/me/')
+    try {
+      const profile = await sharedMeRequest
+      meCache.value = profile
+      return profile
+    } finally {
+      sharedMeRequest = null
+    }
+  }
   const getDashboard = async () => await apiFetch<DashboardResponse>('/dashboard/')
   const getNotifications = async (query: { unread?: boolean; page?: number; page_size?: number } = {}) => {
     const params = new URLSearchParams()
@@ -477,10 +490,12 @@ export const useTaskFlowApi = () => {
     form.append('job_title', profile.job_title)
     if (avatarFile) form.append('avatar', avatarFile)
 
-    return await apiFetch<MeProfile>('/me/', {
+    const updated = await apiFetch<MeProfile>('/me/', {
       method: 'PUT',
       body: form
     })
+    meCache.value = updated
+    return updated
   }
 
   const listItems = <T>(response: ListResponse<T> | unknown): T[] => {
@@ -642,7 +657,7 @@ export const useTaskFlowApi = () => {
 
   const getReport = async (id: string) => await apiFetch<ApiReport>(`/reports/${id}/`)
 
-  const loadDashboardData = async () => {
+  const loadDashboardData = async (onCoreLoaded?: (core: { dashboard: DashboardResponse; profile: MeProfile }) => void) => {
     if (!getStoredTokens()) return null
 
     // Start the heavier list requests immediately instead of waiting for the
@@ -652,11 +667,14 @@ export const useTaskFlowApi = () => {
       apiFetch<PaginatedResponse<ApiTask>>('/tasks/?page_size=100'),
       listMembers({ page_size: 200 }),
       apiFetch<PaginatedResponse<ApiEvent>>('/events/?page_size=100'),
-      apiFetch<ApiAnalytics>('/analytics/'),
-      apiFetch<PaginatedResponse<ApiProject>>('/projects/?page_size=40'),
-      apiFetch<PaginatedResponse<ApiReport>>('/reports/?page_size=40')
+      // These sections are currently marked "Coming soon" in the UI. Avoid
+      // downloading their full datasets during every application refresh.
+      Promise.resolve({} as ApiAnalytics),
+      Promise.resolve({ count: 0, results: [] } as PaginatedResponse<ApiProject>),
+      Promise.resolve({ count: 0, results: [] } as PaginatedResponse<ApiReport>)
     ])
     const [dashboard, profile] = await Promise.all([getDashboard(), getMe()])
+    onCoreLoaded?.({ dashboard, profile })
     const profileMembership = profile.department_membership || profile.membership || profile.memberships?.[0]
     const profileRole = String(profile.role || profileMembership?.role || '').trim().toLowerCase()
     const profileDepartment = String(profile.department || profileMembership?.department || '')

@@ -63,7 +63,7 @@ const taskFlowStore = useTaskFlowStore()
 const taskFlowApi = useTaskFlowApi()
 const runtimeConfig = useRuntimeConfig()
 
-await taskFlowStore.loadBackendData()
+void taskFlowStore.loadBackendData()
 
 const { state, pages, stats, projectStats, analyticsStats, monthlyProgress, tasksByCategory, tasks, projects, team, workload, reports, events, messages, heatmap, currentDepartmentId, currentRole, currentUserActive, apiError, dashboardTodayEvents, dashboardUpcomingEvents, dashboardDeadlines, dashboardDepartments, dashboardRecentTasks, dashboardGeneratedAt } = taskFlowStore
 const normalizedRole = computed(() => currentRole.value.trim().toLowerCase())
@@ -2363,6 +2363,7 @@ const iconPath = (name: string) => {
 
         <section v-if="activePage === 'dashboard'" class="space-y-4">
           <div class="tf-dashboard-stats grid gap-3 sm:grid-cols-2 lg:grid-cols-4 2xl:grid-cols-7">
+            <article v-for="index in state.loaded ? 0 : 7" :key="`summary-skeleton-${index}`" class="tf-panel h-[118px] animate-pulse border p-4 shadow-none"><div class="h-9 w-9 rounded-[11px] bg-slate-200" /><div class="mt-3 h-6 w-12 rounded bg-slate-200" /><div class="mt-3 h-1.5 rounded-full bg-slate-200" /></article>
             <article v-for="(item, index) in stats" :key="String(item[1])" :class="['tf-panel tf-summary-card border p-4 shadow-none', `tf-summary-card--${index}`]">
               <div class="flex items-center gap-2.5"><span class="tf-summary-icon grid h-9 w-9 place-items-center rounded-[11px]"><svg viewBox="0 0 24 24" class="h-[17px] w-[17px]" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><path :d="index === 1 ? 'm6 12 4 4 8-9' : index === 2 ? 'M12 7v5l3 2m7-2a9 9 0 1 1-18 0 9 9 0 0 1 18 0Z' : index === 4 ? 'M4 8h16l-1 12H5L4 8Zm2-4h12l2 4H4l2-4Zm4 8h4' : index === 5 ? 'M12 21a9 9 0 1 0 0-18 9 9 0 0 0 0 18Zm-2-12v6m4-6v6' : index === 6 ? 'M12 9v4m0 4h.01M4.5 19h15L12 4 4.5 19Z' : index === 3 ? 'M6 4h12v16H6V4Zm4 5h4m-4 3h4' : 'M5 4h14v16H5V4Zm4 4h6m-6 4h6'" /></svg></span><p class="text-[11px] font-semibold text-task-muted">{{ item[1] }}</p></div>
               <p class="mt-3 text-2xl font-extrabold text-task-ink">{{ item[0] }}</p>
