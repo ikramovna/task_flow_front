@@ -2172,7 +2172,7 @@ const sendFeedbackToTeam = async () => {
     feedbackDraft.value = ''
     clearFeedbackScreenshot()
     supportWidgetOpen.value = false
-    notify('Murojaatingiz jamoaga yuborildi', 'success')
+    notify('Your request has been sent to the team', 'success')
   } catch (error) {
     console.error('Support message send failed.', error)
     notifyError(taskFlowApiErrorMessage(error, 'Murojaatni yuborib bo‘lmadi.'))
