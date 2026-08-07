@@ -175,6 +175,10 @@ type DashboardEvent = {
 type DashboardTask = {
   id: string; title: string; department: DashboardDepartment; priority: string; status: string
   due_date?: string; days_remaining?: number; created_at?: string
+  created_by?: string | number | UserBrief | null
+  created_by_detail?: UserBrief | null
+  creator_detail?: UserBrief | null
+  owner_detail?: UserBrief | null
 }
 type DashboardResponse = {
   summary: Partial<Record<'total_tasks' | 'completed_tasks' | 'in_progress_tasks' | 'not_started_tasks' | 'backlog_tasks' | 'on_hold_tasks' | 'overdue_tasks', DashboardMetric>>

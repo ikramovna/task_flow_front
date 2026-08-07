@@ -1069,6 +1069,15 @@ const taskAssigneeDetailsOf = (task: Array<string | number>): ProjectCardMember[
 }
 const projectMemberName = (member: ProjectCardMember) =>
   member.full_name || `${member.first_name || ''} ${member.last_name || ''}`.trim() || member.email || 'Member'
+const dashboardTaskCreatorName = (task: Record<string, any>) => {
+  const creator = task.created_by_detail || task.creator_detail || task.owner_detail || task.created_by
+  if (creator && typeof creator === 'object') return projectMemberName(creator)
+  if (creator !== undefined && creator !== null && String(creator) !== '') {
+    const member = team.value.find((item) => teamMemberId(item) === String(creator))
+    if (member) return teamMemberName(member)
+  }
+  return '—'
+}
 const teamMemberId = (member: Array<string | number>) => {
   const rawId = member[7]
   if (rawId !== undefined && rawId !== null && String(rawId) !== '') return String(rawId)
@@ -2503,7 +2512,7 @@ const iconPath = (name: string) => {
               </div>
               <p v-else class="py-10 text-center text-sm text-task-muted">No department statistics available.</p>
             </section>
-            <section class="tf-panel overflow-hidden p-0"><header class="flex items-center justify-between border-b border-task-line px-5 py-4"><div><h2 class="font-bold">Recent Tasks</h2><p class="mt-1 text-xs text-task-muted">Latest activity</p></div><button type="button" class="text-xs font-bold text-task-blue" @click="setPage('tasks')">View all</button></header><div class="overflow-x-auto"><table class="w-full min-w-[620px] text-left text-sm"><thead class="bg-slate-50 text-xs text-task-muted"><tr><th class="px-5 py-3">Task</th><th class="px-4 py-3">Department</th><th class="px-4 py-3">Created</th><th class="px-5 py-3">Status</th></tr></thead><tbody class="divide-y divide-task-line"><tr v-for="task in dashboardRecentTasks" :key="String(task.id)"><td class="px-5 py-3.5 font-semibold">{{ task.title }}</td><td class="px-4 py-3.5 text-task-muted">{{ task.department?.name || '—' }}</td><td class="px-4 py-3.5 text-task-muted">{{ dashboardDateTime(task.created_at) }}</td><td class="px-5 py-3.5"><span :class="['tf-pill', badgeClass(dashboardStatus(task.status))]">{{ dashboardStatus(task.status) }}</span></td></tr></tbody></table><p v-if="!dashboardRecentTasks.length" class="py-10 text-center text-sm text-task-muted">No recent tasks.</p></div></section>
+            <section class="tf-panel overflow-hidden p-0"><header class="flex items-center justify-between border-b border-task-line px-5 py-4"><div><h2 class="font-bold">Recent Tasks</h2><p class="mt-1 text-xs text-task-muted">Latest activity</p></div><button type="button" class="text-xs font-bold text-task-blue" @click="setPage('tasks')">View all</button></header><div class="overflow-x-auto"><table class="w-full min-w-[760px] text-left text-sm"><thead class="bg-slate-50 text-xs text-task-muted"><tr><th class="px-5 py-3">Task</th><th class="px-4 py-3">Department</th><th class="px-4 py-3">Created by</th><th class="px-4 py-3">Created</th><th class="px-5 py-3">Status</th></tr></thead><tbody class="divide-y divide-task-line"><tr v-for="task in dashboardRecentTasks" :key="String(task.id)"><td class="px-5 py-3.5 font-semibold">{{ task.title }}</td><td class="px-4 py-3.5 text-task-muted">{{ task.department?.name || '—' }}</td><td class="px-4 py-3.5 font-medium text-task-ink">{{ dashboardTaskCreatorName(task) }}</td><td class="px-4 py-3.5 text-task-muted">{{ dashboardDateTime(task.created_at) }}</td><td class="px-5 py-3.5"><span :class="['tf-pill', badgeClass(dashboardStatus(task.status))]">{{ dashboardStatus(task.status) }}</span></td></tr></tbody></table><p v-if="!dashboardRecentTasks.length" class="py-10 text-center text-sm text-task-muted">No recent tasks.</p></div></section>
           </div>
           <p v-if="dashboardGeneratedAt" class="text-right text-[11px] text-task-muted">Last updated {{ dashboardDateTime(dashboardGeneratedAt) }} at {{ dashboardDateTime(dashboardGeneratedAt, 'time') }}</p>
         </section>
