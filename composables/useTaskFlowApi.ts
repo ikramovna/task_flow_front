@@ -492,6 +492,17 @@ export const useTaskFlowApi = () => {
   const patchNotificationPreferences = async (preference: Partial<NotificationPreferences>) =>
     await apiFetch<NotificationPreferences>('/me/preferences/', { method: 'PATCH', body: preference })
 
+  const sendSupportMessage = async (message: string, screenshot?: File | null) => {
+    const form = new FormData()
+    form.append('message', message.trim())
+    if (screenshot) form.append('screenshot', screenshot)
+
+    return await apiFetch<{ detail: string }>('/support/bot/', {
+      method: 'POST',
+      body: form
+    })
+  }
+
   const updateMe = async (
     profile: Required<Pick<MeProfile, 'first_name' | 'last_name' | 'phone' | 'job_title'>>,
     avatarFile?: File | null
@@ -867,6 +878,7 @@ export const useTaskFlowApi = () => {
     markAllNotificationsRead,
     getNotificationPreferences,
     patchNotificationPreferences,
+    sendSupportMessage,
     updateMe,
     listProjects,
     listMembers,

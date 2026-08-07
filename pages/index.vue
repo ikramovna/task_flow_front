@@ -90,6 +90,8 @@ const feedbackDraft = ref('')
 const feedbackScreenshotInput = ref<HTMLInputElement | null>(null)
 const feedbackScreenshotName = ref('')
 const feedbackScreenshotPreview = ref('')
+const feedbackScreenshotFile = ref<File | null>(null)
+const feedbackSending = ref(false)
 const profileAvatarInput = ref<HTMLInputElement | null>(null)
 const profileAvatarPreview = ref('')
 const profileAvatarFile = ref<File | null>(null)
@@ -2128,6 +2130,7 @@ const clearFeedbackScreenshot = () => {
   if (feedbackScreenshotPreview.value) URL.revokeObjectURL(feedbackScreenshotPreview.value)
   feedbackScreenshotName.value = ''
   feedbackScreenshotPreview.value = ''
+  feedbackScreenshotFile.value = null
   if (feedbackScreenshotInput.value) feedbackScreenshotInput.value.value = ''
 }
 
@@ -2140,23 +2143,42 @@ const handleFeedbackScreenshot = (event: Event) => {
   const file = input.files?.[0]
   if (!file) return
 
-  if (!file.type.startsWith('image/')) {
+  const allowedTypes = ['image/jpeg', 'image/png', 'image/webp']
+  if (!allowedTypes.includes(file.type)) {
     clearFeedbackScreenshot()
-    notifyError('Please upload an image')
+    notifyError('Faqat JPEG, PNG yoki WebP fayl yuklash mumkin.')
+    return
+  }
+
+  if (file.size > 5 * 1024 * 1024) {
+    clearFeedbackScreenshot()
+    notifyError('Screenshot hajmi 5 MB’dan oshmasligi kerak.')
     return
   }
 
   if (feedbackScreenshotPreview.value) URL.revokeObjectURL(feedbackScreenshotPreview.value)
+  feedbackScreenshotFile.value = file
   feedbackScreenshotName.value = file.name
   feedbackScreenshotPreview.value = URL.createObjectURL(file)
 }
 
-const sendFeedbackToTeam = () => {
-  supportRequests.value.unshift(feedbackDraft.value.trim() || 'New feedback')
-  feedbackDraft.value = ''
-  clearFeedbackScreenshot()
-  supportWidgetOpen.value = false
-  notify('Feedback sent to team')
+const sendFeedbackToTeam = async () => {
+  const message = feedbackDraft.value.trim()
+  if (!message || feedbackSending.value) return
+
+  feedbackSending.value = true
+  try {
+    await taskFlowApi.sendSupportMessage(message, feedbackScreenshotFile.value)
+    feedbackDraft.value = ''
+    clearFeedbackScreenshot()
+    supportWidgetOpen.value = false
+    notify('Murojaatingiz jamoaga yuborildi', 'success')
+  } catch (error) {
+    console.error('Support message send failed.', error)
+    notifyError(taskFlowApiErrorMessage(error, 'Murojaatni yuborib bo‘lmadi.'))
+  } finally {
+    feedbackSending.value = false
+  }
 }
 
 const saveSettings = async (section: string) => {
@@ -3496,7 +3518,7 @@ const iconPath = (name: string) => {
       </div>
     </div>
 
-    <button v-if="supportWidgetOpen" type="button" class="fixed inset-0 z-[65] bg-slate-950/30 backdrop-blur-[1px]" aria-label="Close help support" @click="supportWidgetOpen = false" />
+    <button v-if="supportWidgetOpen" type="button" class="fixed inset-0 z-[65] bg-slate-950/30 backdrop-blur-[1px]" aria-label="Close help support" @click="!feedbackSending && (supportWidgetOpen = false)" />
     <div class="fixed bottom-5 right-5 z-[70] flex flex-col items-end gap-3">
       <div v-if="supportWidgetOpen" class="tf-panel w-[380px] max-w-[calc(100vw-40px)] p-4 shadow-xl">
         <div class="mb-4 flex items-start justify-between gap-4">
@@ -3515,7 +3537,7 @@ const iconPath = (name: string) => {
               <p class="mt-1 text-sm font-medium leading-5 text-task-muted">Found a bug or have feedback? Describe it and attach a screenshot.</p>
             </div>
           </div>
-          <button type="button" class="tf-icon-button h-8 w-8 shrink-0" aria-label="Close support" title="Close" @click="supportWidgetOpen = false">
+          <button type="button" class="tf-icon-button h-8 w-8 shrink-0 disabled:cursor-not-allowed disabled:opacity-50" :disabled="feedbackSending" aria-label="Close support" title="Close" @click="supportWidgetOpen = false">
             <svg viewBox="0 0 24 24" class="h-4 w-4" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M18 6 6 18M6 6l12 12" /></svg>
           </button>
         </div>
@@ -3523,25 +3545,29 @@ const iconPath = (name: string) => {
           v-model="feedbackDraft"
           class="tf-input h-32 w-full resize-none p-3 leading-5"
           placeholder="What went wrong, or what would you improve?"
+          maxlength="3000"
+          :disabled="feedbackSending"
         />
-        <button type="button" class="mt-3 flex h-11 w-full items-center justify-center gap-2 rounded-ui border border-dashed border-task-line bg-white text-sm font-semibold text-task-muted transition hover:border-task-blue hover:text-task-blue" @click="attachFeedbackScreenshot">
+        <div class="mt-1 text-right text-xs text-task-muted">{{ feedbackDraft.length }}/3000</div>
+        <button type="button" class="mt-3 flex h-11 w-full items-center justify-center gap-2 rounded-ui border border-dashed border-task-line bg-white text-sm font-semibold text-task-muted transition hover:border-task-blue hover:text-task-blue disabled:cursor-not-allowed disabled:opacity-60" :disabled="feedbackSending" @click="attachFeedbackScreenshot">
           <svg viewBox="0 0 24 24" class="h-5 w-5" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M4 5h16v14H4V5Zm4 10 3-3 2 2 3-4 4 5M8 8h.01" /></svg>
           {{ feedbackScreenshotName || 'Attach screenshot' }}
         </button>
-        <input ref="feedbackScreenshotInput" class="hidden" type="file" accept="image/*" @change="handleFeedbackScreenshot" />
+        <input ref="feedbackScreenshotInput" class="hidden" type="file" accept="image/jpeg,image/png,image/webp" @change="handleFeedbackScreenshot" />
         <div v-if="feedbackScreenshotPreview" class="mt-3 flex items-center gap-3 rounded-ui border border-task-line p-2">
           <img :src="feedbackScreenshotPreview" :alt="feedbackScreenshotName" class="h-14 w-20 rounded-ui object-cover" />
           <div class="min-w-0 flex-1">
             <p class="truncate text-sm font-bold">{{ feedbackScreenshotName }}</p>
             <p class="text-xs text-task-muted">Screenshot attached</p>
           </div>
-          <button type="button" class="tf-icon-button h-8 w-8" aria-label="Remove screenshot" title="Remove screenshot" @click="clearFeedbackScreenshot">
+          <button type="button" class="tf-icon-button h-8 w-8 disabled:cursor-not-allowed disabled:opacity-50" :disabled="feedbackSending" aria-label="Remove screenshot" title="Remove screenshot" @click="clearFeedbackScreenshot">
             <svg viewBox="0 0 24 24" class="h-4 w-4" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M18 6 6 18M6 6l12 12" /></svg>
           </button>
         </div>
-        <button type="button" class="tf-primary mt-3 h-11 w-full" @click="sendFeedbackToTeam">
-          <svg viewBox="0 0 24 24" class="h-5 w-5" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M22 2 11 13M22 2l-7 20-4-9-9-4 20-7Z" /></svg>
-          Send to team
+        <button type="button" class="tf-primary mt-3 h-11 w-full disabled:cursor-not-allowed disabled:opacity-60" :disabled="!feedbackDraft.trim() || feedbackSending" @click="sendFeedbackToTeam">
+          <svg v-if="feedbackSending" viewBox="0 0 24 24" class="h-5 w-5 animate-spin" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 3a9 9 0 1 1-9 9" /></svg>
+          <svg v-else viewBox="0 0 24 24" class="h-5 w-5" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M22 2 11 13M22 2l-7 20-4-9-9-4 20-7Z" /></svg>
+          {{ feedbackSending ? 'Sending...' : 'Send to team' }}
         </button>
       </div>
       <button type="button" class="tf-support-launcher" aria-label="Open help support" title="Help & Support" @click="supportWidgetOpen = !supportWidgetOpen">
