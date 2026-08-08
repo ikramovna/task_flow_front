@@ -130,6 +130,9 @@ type MemberPayload = {
   last_name: string
   email: string
   username: string
+  password: string
+  phone: string
+  job_title: string
   department: string
   role: string
   is_active: boolean
@@ -565,11 +568,16 @@ export const useTaskFlowApi = () => {
 
   const getMember = async (id: string) => await apiFetch<ApiMember>(`/members/${id}/`)
 
-  const createMember = async (member: MemberPayload) =>
-    await apiFetch<ApiMember>('/members/', {
+  const createMember = async (member: MemberPayload, avatarFile?: File | null) => {
+    const form = new FormData()
+    Object.entries(member).forEach(([key, value]) => form.append(key, String(value)))
+    if (avatarFile) form.append('avatar', avatarFile)
+
+    return await apiFetch<ApiMember>('/members/', {
       method: 'POST',
-      body: member
+      body: form
     })
+  }
 
   const patchMember = async (id: string, member: Partial<MemberPayload>) =>
     await apiFetch<ApiMember>(`/members/${id}/`, {

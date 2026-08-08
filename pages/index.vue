@@ -272,8 +272,17 @@ const highlightedSearchText = (name: string, search: string) => {
 const memberFirstName = ref('')
 const memberLastName = ref('')
 const memberEmail = ref('')
+const memberUsername = ref('')
+const memberPassword = ref('')
+const memberPasswordConfirm = ref('')
+const memberPhone = ref('')
+const memberJobTitle = ref('')
+const memberAvatarInput = ref<HTMLInputElement | null>(null)
+const memberAvatarFile = ref<File | null>(null)
+const memberAvatarPreview = ref('')
 const memberRole = ref('member')
-const memberRoleOptions = ['member', 'manager', 'admin']
+const memberIsActive = ref(true)
+const memberRoleOptions = ['member', 'manager', 'admin', 'owner']
 const editingProjectId = ref('')
 const editingProjectDepartment = ref('')
 const editingProjectMembers = ref<string[]>([])
@@ -1356,10 +1365,20 @@ const openModal = (value: Exclude<ModalKey, null>) => {
     void loadTaskAssignees()
   }
   if (value === 'member') {
+    if (memberAvatarPreview.value.startsWith('blob:')) URL.revokeObjectURL(memberAvatarPreview.value)
     memberFirstName.value = ''
     memberLastName.value = ''
     memberEmail.value = ''
+    memberUsername.value = ''
+    memberPassword.value = ''
+    memberPasswordConfirm.value = ''
+    memberPhone.value = ''
+    memberJobTitle.value = ''
+    memberAvatarFile.value = null
+    memberAvatarPreview.value = ''
+    if (memberAvatarInput.value) memberAvatarInput.value.value = ''
     memberRole.value = 'member'
+    memberIsActive.value = true
   }
   if (value === 'event') {
     eventAttendeeIds.value = []
@@ -1815,12 +1834,22 @@ const submitModal = async () => {
       return
     }
     const email = memberEmail.value.trim().toLowerCase()
-    if (!memberFirstName.value.trim() || !memberLastName.value.trim() || !email) {
-      notifyError('First name, last name, and email are required')
+    const username = memberUsername.value.trim()
+    const password = memberPassword.value
+    if (!memberFirstName.value.trim() || !memberLastName.value.trim() || !email || !username || !password) {
+      notifyError('First name, last name, email, username, and password are required')
       return
     }
     if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
       notifyError('Enter a valid email address')
+      return
+    }
+    if (password.length < 8) {
+      notifyError('Password must be at least 8 characters')
+      return
+    }
+    if (password !== memberPasswordConfirm.value) {
+      notifyError('Passwords do not match')
       return
     }
 
@@ -1829,11 +1858,14 @@ const submitModal = async () => {
         first_name: memberFirstName.value.trim(),
         last_name: memberLastName.value.trim(),
         email,
-        username: email,
+        username,
+        password,
+        phone: memberPhone.value.trim(),
+        job_title: memberJobTitle.value.trim(),
         department: effectiveDepartmentId.value,
         role: memberRole.value,
-        is_active: true
-      })
+        is_active: memberIsActive.value
+      }, memberAvatarFile.value)
       await loadMembersFromBackend()
       notify('Member added successfully', 'success')
     } catch (error) {
@@ -2028,6 +2060,34 @@ const sendMessage = () => {
 
 const generateReport = (name: string) => {
   notify(`${name} can be generated after backend endpoint is connected`)
+}
+
+const chooseMemberAvatar = () => memberAvatarInput.value?.click()
+
+const handleMemberAvatar = (event: Event) => {
+  const input = event.target as HTMLInputElement
+  const file = input.files?.[0]
+  if (!file) return
+  if (!file.type.startsWith('image/')) {
+    input.value = ''
+    notifyError('Please upload an image file')
+    return
+  }
+  if (file.size > 5 * 1024 * 1024) {
+    input.value = ''
+    notifyError('Avatar must be smaller than 5 MB')
+    return
+  }
+  if (memberAvatarPreview.value.startsWith('blob:')) URL.revokeObjectURL(memberAvatarPreview.value)
+  memberAvatarFile.value = file
+  memberAvatarPreview.value = URL.createObjectURL(file)
+}
+
+const removeMemberAvatar = () => {
+  memberAvatarFile.value = null
+  if (memberAvatarPreview.value.startsWith('blob:')) URL.revokeObjectURL(memberAvatarPreview.value)
+  memberAvatarPreview.value = ''
+  if (memberAvatarInput.value) memberAvatarInput.value.value = ''
 }
 
 const chooseProfileAvatar = () => {
@@ -3172,7 +3232,12 @@ const iconPath = (name: string) => {
             <div class="rounded-ui bg-task-blueSoft p-4 text-sm text-task-muted">The member will be added to your current department automatically.</div>
             <div class="mt-4 grid gap-4 sm:grid-cols-2"><label class="block text-sm font-semibold">First Name<input v-model="memberFirstName" class="tf-input mt-2 h-12 w-full" placeholder="Enter first name" autocomplete="given-name" /></label><label class="block text-sm font-semibold">Last Name<input v-model="memberLastName" class="tf-input mt-2 h-12 w-full" placeholder="Enter last name" autocomplete="family-name" /></label></div>
             <label class="mt-4 block text-sm font-semibold">Email Address <span class="text-task-danger">*</span><input v-model="memberEmail" type="email" class="tf-input mt-2 h-12 w-full" placeholder="ali@example.com" autocomplete="email" required /></label>
-            <label class="mb-5 mt-4 block text-sm font-semibold">Role<div class="tf-dropdown mt-2"><button type="button" class="tf-dropdown-button h-12" @click="openDropdown = openDropdown === 'memberRole' ? null : 'memberRole'"><span class="capitalize">{{ memberRole }}</span><svg viewBox="0 0 20 20" :class="['h-4 w-4 text-task-muted transition-transform', openDropdown === 'memberRole' ? 'rotate-180' : '']" fill="none" stroke="currentColor" stroke-width="2"><path d="m5 7.5 5 5 5-5" /></svg></button><div v-if="openDropdown === 'memberRole'" class="tf-dropdown-menu tf-member-role-menu"><button v-for="role in memberRoleOptions" :key="role" type="button" class="tf-dropdown-option capitalize" @click="memberRole = role; openDropdown = null"><span>{{ role }}</span><span v-if="memberRole === role" class="text-task-blue">✓</span></button></div></div></label>
+            <label class="mt-4 block text-sm font-semibold">Username <span class="text-task-danger">*</span><input v-model="memberUsername" class="tf-input mt-2 h-12 w-full" placeholder="Enter username" autocomplete="username" required /></label>
+            <div class="mt-4 grid gap-4 sm:grid-cols-2"><label class="block text-sm font-semibold">Password <span class="text-task-danger">*</span><input v-model="memberPassword" type="password" class="tf-input mt-2 h-12 w-full" placeholder="Minimum 8 characters" autocomplete="new-password" required /></label><label class="block text-sm font-semibold">Confirm Password <span class="text-task-danger">*</span><input v-model="memberPasswordConfirm" type="password" class="tf-input mt-2 h-12 w-full" placeholder="Repeat password" autocomplete="new-password" required /></label></div>
+            <div class="mt-4 grid gap-4 sm:grid-cols-2"><label class="block text-sm font-semibold">Phone<input v-model="memberPhone" type="tel" class="tf-input mt-2 h-12 w-full" placeholder="+998 90 123 45 67" autocomplete="tel" /></label><label class="block text-sm font-semibold">Job Title<input v-model="memberJobTitle" class="tf-input mt-2 h-12 w-full" placeholder="e.g. Designer" autocomplete="organization-title" /></label></div>
+            <div class="mt-4 text-sm font-semibold">Avatar <span class="font-normal text-task-muted">(optional)</span><input ref="memberAvatarInput" class="hidden" type="file" accept="image/*" @change="handleMemberAvatar" /><div class="mt-2 flex items-center gap-4 rounded-ui border border-task-line p-3"><button type="button" class="grid h-16 w-16 shrink-0 place-items-center overflow-hidden rounded-full bg-task-blueSoft font-bold text-task-blue" aria-label="Choose avatar" @click="chooseMemberAvatar"><img v-if="memberAvatarPreview" :src="memberAvatarPreview" alt="Member avatar preview" class="h-full w-full object-cover" /><span v-else>Photo</span></button><div class="min-w-0 flex-1"><p class="truncate text-sm font-semibold">{{ memberAvatarFile?.name || 'No image selected' }}</p><p class="mt-1 text-xs font-normal text-task-muted">PNG, JPG, WEBP — maximum 5 MB</p><div class="mt-2 flex gap-3"><button type="button" class="text-xs font-semibold text-task-blue" @click="chooseMemberAvatar">Choose file</button><button v-if="memberAvatarFile" type="button" class="text-xs font-semibold text-task-danger" @click="removeMemberAvatar">Remove</button></div></div></div></div>
+            <label class="mt-4 block text-sm font-semibold">Role<div class="tf-dropdown mt-2"><button type="button" class="tf-dropdown-button h-12" @click="openDropdown = openDropdown === 'memberRole' ? null : 'memberRole'"><span class="capitalize">{{ memberRole }}</span><svg viewBox="0 0 20 20" :class="['h-4 w-4 text-task-muted transition-transform', openDropdown === 'memberRole' ? 'rotate-180' : '']" fill="none" stroke="currentColor" stroke-width="2"><path d="m5 7.5 5 5 5-5" /></svg></button><div v-if="openDropdown === 'memberRole'" class="tf-dropdown-menu tf-member-role-menu"><button v-for="role in memberRoleOptions" :key="role" type="button" class="tf-dropdown-option capitalize" @click="memberRole = role; openDropdown = null"><span>{{ role }}</span><span v-if="memberRole === role" class="text-task-blue">✓</span></button></div></div></label>
+            <label class="mb-5 mt-4 flex items-center justify-between gap-4 rounded-ui border border-task-line px-4 py-3 text-sm font-semibold"><span><span class="block">Active member</span><span class="mt-0.5 block text-xs font-normal text-task-muted">Allow this member to sign in immediately.</span></span><input v-model="memberIsActive" type="checkbox" class="h-5 w-5 accent-task-blue" /></label>
           </template>
           <template v-else-if="modal === 'task'">
             <div class="mb-4 flex items-center gap-3 rounded-[14px] border border-task-line bg-task-blueSoft px-4 py-3 text-sm">
