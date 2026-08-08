@@ -1503,6 +1503,9 @@ const taskCreatorOf = (task: Array<string | number>): ProjectCardMember | null =
     return null
   }
 }
+const isTaskCreator = (task: Array<string | number>) =>
+  Boolean(currentUserId.value) && String(taskCreatorOf(task)?.id || '') === String(currentUserId.value)
+const canDeleteTask = (task: Array<string | number>) => canManageDepartment.value || isTaskCreator(task)
 const taskCreatorNameOf = (task: Array<string | number>) => {
   const creator = taskCreatorOf(task)
   if (!creator) return '—'
@@ -1523,6 +1526,7 @@ const taskCreatorAvatarOf = (task: Array<string | number>) => {
   }
 }
 const openedTask = computed(() => state.value.tasks.find((task) => String(task[6] || '') === editingTaskId.value))
+const canDeleteOpenedTask = computed(() => Boolean(openedTask.value && canDeleteTask(openedTask.value)))
 const openedTaskCanChangeStatus = computed(() => !editingTaskId.value || Boolean(openedTask.value && canChangeTaskStatus(openedTask.value)))
 
 const selectTaskAssignee = (member: Array<string | number>) => {
@@ -1760,7 +1764,14 @@ const openTaskFromCard = (task: Array<string | number>) =>
 const deleteTask = async (task: Array<string | number>) => {
   actionMenu.value = null
   const id = String(task[6] || '')
-  if (!id) return notifyError('Task backend bilan hali sinxronlanmagan')
+  if (!id) {
+    notifyError('Task backend bilan hali sinxronlanmagan')
+    return false
+  }
+  if (!canDeleteTask(task)) {
+    notifyError('You can delete only tasks you created')
+    return false
+  }
   if (import.meta.client && !window.confirm(`“${String(task[0])}” taskini o‘chirmoqchimisiz?`)) return
   try {
     await taskFlowApi.deleteTask(id)
@@ -1768,7 +1779,15 @@ const deleteTask = async (task: Array<string | number>) => {
     notify('Task muvaffaqiyatli o‘chirildi', 'success')
   } catch (error) {
     notifyError(taskFlowApiErrorMessage(error, 'Could not delete the task'))
+    return false
   }
+}
+
+const deleteOpenedTask = async () => {
+  if (!openedTask.value) return
+  const id = String(openedTask.value[6] || '')
+  await deleteTask(openedTask.value)
+  if (id && !state.value.tasks.some((task) => String(task[6] || '') === id)) modal.value = null
 }
 
 const duplicateTask = async (task: Array<string | number>) => {
@@ -2420,6 +2439,13 @@ const toggleActionMenu = (key: string) => {
 const runAction = async (action: string, type: string, label: string) => {
   actionMenu.value = null
 
+  if (type === 'task' && action === 'delete') {
+    const task = state.value.tasks.find((item) => String(item[0]) === label)
+    if (!task) return notifyError('Task not found')
+    if (!canDeleteTask(task)) return notifyError('You can delete only tasks you created')
+    return await deleteTask(task)
+  }
+
   if (type === 'task' && !canManageDepartment.value) {
     notifyError('Members can update only task status and progress')
     return
@@ -2430,7 +2456,6 @@ const runAction = async (action: string, type: string, label: string) => {
     if (!task) return notifyError('Task topilmadi')
     if (action === 'edit') return await openTask(task, 'edit')
     if (action === 'duplicate') return await duplicateTask(task)
-    if (action === 'delete') return await deleteTask(task)
   }
 
   if (action === 'delete') {
@@ -3646,6 +3671,7 @@ const iconPath = (name: string) => {
             </div>
           </template>
           <div :class="['sticky bottom-0 flex justify-end gap-2.5 bg-white', modal === 'project' || modal === 'task' ? '-mx-5 -mb-5 mt-5 px-5 py-3' : '-mx-4 -mb-4 mt-4 border-t border-task-line px-4 py-3']">
+            <button v-if="modal === 'task' && editingTaskId && canDeleteOpenedTask" class="mr-auto h-10 rounded-full border border-task-danger bg-white px-5 text-sm font-semibold text-task-danger transition hover:bg-task-dangerSoft" @click="deleteOpenedTask">Delete Task</button>
             <button v-if="modal === 'task' && editingTaskId && taskFormStatus === 'Completed' && canManageDepartment" class="mr-auto h-10 rounded-full border border-slate-300 bg-slate-50 px-5 text-sm font-semibold text-slate-600 transition hover:border-task-blue hover:bg-task-blueSoft hover:text-task-blue" @click="archiveOpenedTask">Archive</button>
             <button class="h-10 rounded-full border border-task-line bg-white px-5 text-sm font-semibold shadow-button transition hover:border-task-blue hover:text-task-blue" @click="modal = null">Cancel</button>
             <button v-if="modal !== 'event-detail' && !(modal === 'task' && taskModalMode === 'view')" :disabled="taskSaving" class="h-10 rounded-full bg-gradient-to-b from-[#72A4D7] to-[#2567AD] px-6 text-sm font-semibold text-white shadow-button transition hover:-translate-y-0.5 disabled:cursor-not-allowed disabled:opacity-60" @click="submitModal">{{ taskSaving ? 'Saving...' : modal === 'report' ? 'Generate Report' : modal === 'event' ? 'Create Event' : modal === 'project' ? (editingProjectId ? 'Update Project' : 'Create Project') : modal === 'member' ? 'Add Member' : modal === 'team-filter' ? 'Apply' : taskModalMode === 'edit' ? 'Save Changes' : 'Create Task' }}</button>
