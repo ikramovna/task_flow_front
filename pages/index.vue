@@ -1340,6 +1340,12 @@ const loadMembersFromBackend = async () => {
   }
 }
 
+const isTodayDatePickerCell = (day: number | null, month?: number, year?: number) => {
+  if (!day || month === undefined || year === undefined) return false
+  const today = new Date()
+  return day === today.getDate() && month === today.getMonth() && year === today.getFullYear()
+}
+
 const loadMemberDepartments = async () => {
   memberDepartmentsLoading.value = true
   try {
@@ -1454,9 +1460,7 @@ const openModal = (value: Exclude<ModalKey, null>) => {
   form.priority = value === 'project' ? 'Low' : 'Medium'
   taskFormStatus.value = 'Not Started'
   form.startDate = formatProjectDateInput(new Date())
-  form.dueDate = value === 'event'
-    ? formatProjectDateInput(new Date(calendarYear.value, calendarMonthIndex.value, selectedCalendarDay.value ?? 1))
-    : formatProjectDateInput(new Date())
+  form.dueDate = formatProjectDateInput(new Date())
   form.projectManager = ''
   projectManagerSearch.value = ''
   form.category = ''
@@ -2152,7 +2156,7 @@ const submitModal = async () => {
         .map(teamMemberId)
         .filter(Boolean)
     )
-    if (payload.attendees.some((attendeeId) => !allowedAttendeeIds.has(attendeeId))) {
+    if (payload.attendees.some((attendeeId) => !allowedAttendeeIds.has(String(attendeeId)))) {
       notifyError('Every attendee must belong to your current department')
       eventAttendeePickerOpen.value = true
       return
@@ -3190,7 +3194,7 @@ const iconPath = (name: string) => {
                       @click="selectCalendarDay(cell.day)"
                     >
                       <span class="flex h-6 items-center gap-1.5 text-sm leading-6">
-                        <span :class="[isTodayCell(cell.day) ? 'grid h-6 w-6 place-items-center rounded-full bg-task-blue text-xs font-bold text-white' : 'font-semibold', cell.day && (calendarLeadingBlanks + cell.day) % 7 === 0 ? 'text-task-danger' : '']">{{ cell.day }}</span>
+                        <span :class="[isTodayCell(cell.day) ? 'grid h-6 w-6 place-items-center rounded-full bg-task-danger text-xs font-bold text-white' : 'font-semibold', cell.day && (calendarLeadingBlanks + cell.day) % 7 === 0 ? 'text-task-danger' : '']">{{ cell.day }}</span>
                         <span v-if="isTodayCell(cell.day)" class="rounded-full bg-white px-2 py-0.5 text-[10px] font-bold text-task-blue shadow-sm">Today</span>
                       </span>
                       <div class="mt-1.5 w-full space-y-1">
@@ -3488,7 +3492,7 @@ const iconPath = (name: string) => {
                     </div>
                     <div class="mb-2 grid grid-cols-7 text-center text-[11px] font-semibold text-task-muted"><span>Mo</span><span>Tu</span><span>We</span><span>Th</span><span>Fr</span><span>Sa</span><span>Su</span></div>
                     <div class="grid grid-cols-7 gap-1">
-                      <button v-for="cell in projectDatePickerDays.cells" :key="cell.key" type="button" :class="['h-8 rounded-[8px] text-sm transition', cell.day ? 'hover:bg-task-blueSoft hover:text-task-blue' : 'pointer-events-none']" @click="selectProjectDate(cell.day, cell.month, cell.year)">{{ cell.day || '' }}</button>
+                      <button v-for="cell in projectDatePickerDays.cells" :key="cell.key" type="button" :class="['h-8 rounded-[8px] text-sm transition', cell.day ? 'hover:bg-task-blueSoft hover:text-task-blue' : 'pointer-events-none', isTodayDatePickerCell(cell.day, cell.month, cell.year) ? 'bg-task-danger font-bold text-white hover:bg-task-danger hover:text-white' : '']" @click="selectProjectDate(cell.day, cell.month, cell.year)">{{ cell.day || '' }}</button>
                     </div>
                   </div>
                 </div>
@@ -3522,7 +3526,7 @@ const iconPath = (name: string) => {
                     </div>
                     <div class="mb-2 grid grid-cols-7 text-center text-[11px] font-semibold text-task-muted"><span>Mo</span><span>Tu</span><span>We</span><span>Th</span><span>Fr</span><span>Sa</span><span>Su</span></div>
                     <div class="grid grid-cols-7 gap-1">
-                      <button v-for="cell in projectDatePickerDays.cells" :key="cell.key" type="button" :class="['h-8 rounded-[8px] text-sm transition', cell.day ? 'hover:bg-task-blueSoft hover:text-task-blue' : 'pointer-events-none']" @click="selectProjectDate(cell.day, cell.month, cell.year)">{{ cell.day || '' }}</button>
+                      <button v-for="cell in projectDatePickerDays.cells" :key="cell.key" type="button" :class="['h-8 rounded-[8px] text-sm transition', cell.day ? 'hover:bg-task-blueSoft hover:text-task-blue' : 'pointer-events-none', isTodayDatePickerCell(cell.day, cell.month, cell.year) ? 'bg-task-danger font-bold text-white hover:bg-task-danger hover:text-white' : '']" @click="selectProjectDate(cell.day, cell.month, cell.year)">{{ cell.day || '' }}</button>
                     </div>
                   </div>
                 </div>
@@ -3633,7 +3637,7 @@ const iconPath = (name: string) => {
                     </div>
                     <div class="mb-2 grid grid-cols-7 text-center text-[11px] font-semibold text-task-muted"><span>Mo</span><span>Tu</span><span>We</span><span>Th</span><span>Fr</span><span>Sa</span><span>Su</span></div>
                     <div class="grid grid-cols-7 gap-1">
-                      <button v-for="cell in projectDatePickerDays.cells" :key="cell.key" type="button" :class="['h-8 rounded-[8px] text-sm transition', cell.day ? 'hover:bg-task-blueSoft hover:text-task-blue' : 'pointer-events-none']" @click="selectProjectDate(cell.day, cell.month, cell.year)">{{ cell.day || '' }}</button>
+                      <button v-for="cell in projectDatePickerDays.cells" :key="cell.key" type="button" :class="['h-8 rounded-[8px] text-sm transition', cell.day ? 'hover:bg-task-blueSoft hover:text-task-blue' : 'pointer-events-none', isTodayDatePickerCell(cell.day, cell.month, cell.year) ? 'bg-task-danger font-bold text-white hover:bg-task-danger hover:text-white' : '']" @click="selectProjectDate(cell.day, cell.month, cell.year)">{{ cell.day || '' }}</button>
                     </div>
                   </div>
                 </div>
@@ -3655,7 +3659,7 @@ const iconPath = (name: string) => {
                     </div>
                     <div class="mb-2 grid grid-cols-7 text-center text-[11px] font-semibold text-task-muted"><span>Mo</span><span>Tu</span><span>We</span><span>Th</span><span>Fr</span><span>Sa</span><span>Su</span></div>
                     <div class="grid grid-cols-7 gap-1">
-                      <button v-for="cell in projectDatePickerDays.cells" :key="cell.key" type="button" :class="['h-8 rounded-[8px] text-sm transition', cell.day ? 'hover:bg-task-blueSoft hover:text-task-blue' : 'pointer-events-none']" @click="selectProjectDate(cell.day, cell.month, cell.year)">{{ cell.day || '' }}</button>
+                      <button v-for="cell in projectDatePickerDays.cells" :key="cell.key" type="button" :class="['h-8 rounded-[8px] text-sm transition', cell.day ? 'hover:bg-task-blueSoft hover:text-task-blue' : 'pointer-events-none', isTodayDatePickerCell(cell.day, cell.month, cell.year) ? 'bg-task-danger font-bold text-white hover:bg-task-danger hover:text-white' : '']" @click="selectProjectDate(cell.day, cell.month, cell.year)">{{ cell.day || '' }}</button>
                     </div>
                   </div>
                 </div>
