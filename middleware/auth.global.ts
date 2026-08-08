@@ -3,7 +3,7 @@ export default defineNuxtRouteMiddleware((to) => {
   // baked into index.html and log users out on every hard refresh.
   if (import.meta.server) return
 
-  const publicRoutes = ['/login', '/logout']
+  const publicRoutes = ['/login', '/logout', '/forgot-password', '/reset-password']
   const accessToken = useCookie<string | null>('taskflow-access')
   const hasCookieToken = Boolean(accessToken.value)
   let hasClientToken = false

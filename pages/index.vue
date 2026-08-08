@@ -285,14 +285,20 @@ const memberAvatarPreview = ref('')
 const memberRole = ref('member')
 const memberIsActive = ref(true)
 const memberDepartment = ref('')
+const memberDepartments = ref<Array<{ id: string; name: string }>>([])
+const memberDepartmentsLoading = ref(false)
 const memberRoleOptions = ['member', 'manager', 'admin', 'owner']
 const memberDepartmentOptions = computed(() => {
-  const options = dashboardDepartments.value
+  const options = [...memberDepartments.value]
+  dashboardDepartments.value
     .map((department) => ({
       id: String(department.department_id || department.id || ''),
       name: String(department.department_name || department.name || 'Unnamed department')
     }))
     .filter((department) => department.id)
+    .forEach((department) => {
+      if (!options.some((option) => option.id === department.id)) options.push(department)
+    })
   if (effectiveDepartmentId.value && !options.some((department) => department.id === effectiveDepartmentId.value)) {
     options.unshift({ id: effectiveDepartmentId.value, name: 'Current department' })
   }
@@ -1260,6 +1266,23 @@ const loadMembersFromBackend = async () => {
   }
 }
 
+const loadMemberDepartments = async () => {
+  memberDepartmentsLoading.value = true
+  try {
+    const response = await taskFlowApi.listDepartments()
+    memberDepartments.value = taskFlowApi.listItems(response)
+      .map((department: any) => ({
+        id: String(department?.id || department?.department_id || ''),
+        name: String(department?.name || department?.department_name || department?.title || 'Unnamed department')
+      }))
+      .filter((department: { id: string }) => department.id)
+  } catch (error) {
+    console.warn('Departments load failed; using dashboard departments.', error)
+  } finally {
+    memberDepartmentsLoading.value = false
+  }
+}
+
 watch(teamSearch, () => {
   loadMembersFromBackend()
 })
@@ -1397,6 +1420,7 @@ const openModal = (value: Exclude<ModalKey, null>) => {
     memberRole.value = 'member'
     memberIsActive.value = true
     memberDepartment.value = effectiveDepartmentId.value
+    void loadMemberDepartments()
   }
   if (value === 'event') {
     eventAttendeeIds.value = []
@@ -3257,7 +3281,7 @@ const iconPath = (name: string) => {
             </div>
             <div class="mt-4 grid gap-4 sm:grid-cols-2"><label class="block text-sm font-semibold">Phone<input v-model="memberPhone" type="tel" class="tf-input mt-2 h-12 w-full" placeholder="+998 90 123 45 67" autocomplete="tel" /></label><label class="block text-sm font-semibold">Job Title<input v-model="memberJobTitle" class="tf-input mt-2 h-12 w-full" placeholder="e.g. Designer" autocomplete="organization-title" /></label></div>
             <div class="mt-4 text-sm font-semibold">Avatar <span class="font-normal text-task-muted">(optional)</span><input ref="memberAvatarInput" class="hidden" type="file" accept="image/*" @change="handleMemberAvatar" /><div class="mt-2 flex items-center gap-4 rounded-ui border border-task-line p-3"><button type="button" class="grid h-16 w-16 shrink-0 place-items-center overflow-hidden rounded-full bg-task-blueSoft font-bold text-task-blue" aria-label="Choose avatar" @click="chooseMemberAvatar"><img v-if="memberAvatarPreview" :src="memberAvatarPreview" alt="Member avatar preview" class="h-full w-full object-cover" /><span v-else>Photo</span></button><div class="min-w-0 flex-1"><p class="truncate text-sm font-semibold">{{ memberAvatarFile?.name || 'No image selected' }}</p><p class="mt-1 text-xs font-normal text-task-muted">PNG, JPG, WEBP — maximum 5 MB</p><div class="mt-2 flex gap-3"><button type="button" class="text-xs font-semibold text-task-blue" @click="chooseMemberAvatar">Choose file</button><button v-if="memberAvatarFile" type="button" class="text-xs font-semibold text-task-danger" @click="removeMemberAvatar">Remove</button></div></div></div></div>
-            <div class="mt-4 grid gap-4 sm:grid-cols-2"><label class="block text-sm font-semibold">Department <span class="text-task-danger">*</span><div class="tf-dropdown mt-2"><button type="button" class="tf-dropdown-button h-12" @click="openDropdown = openDropdown === 'memberDepartment' ? null : 'memberDepartment'"><span class="truncate">{{ memberDepartmentOptions.find((department) => department.id === memberDepartment)?.name || 'Select department' }}</span><svg viewBox="0 0 20 20" :class="['h-4 w-4 shrink-0 text-task-muted transition-transform', openDropdown === 'memberDepartment' ? 'rotate-180' : '']" fill="none" stroke="currentColor" stroke-width="2"><path d="m5 7.5 5 5 5-5" /></svg></button><div v-if="openDropdown === 'memberDepartment'" class="tf-dropdown-menu max-h-56 overflow-y-auto"><button v-for="department in memberDepartmentOptions" :key="department.id" type="button" class="tf-dropdown-option" @click="memberDepartment = department.id; openDropdown = null"><span>{{ department.name }}</span><span v-if="memberDepartment === department.id" class="text-task-blue">✓</span></button><p v-if="!memberDepartmentOptions.length" class="px-3 py-3 text-sm font-normal text-task-muted">No departments available</p></div></div></label><label class="block text-sm font-semibold">Role<div class="tf-dropdown mt-2"><button type="button" class="tf-dropdown-button h-12" @click="openDropdown = openDropdown === 'memberRole' ? null : 'memberRole'"><span class="capitalize">{{ memberRole }}</span><svg viewBox="0 0 20 20" :class="['h-4 w-4 text-task-muted transition-transform', openDropdown === 'memberRole' ? 'rotate-180' : '']" fill="none" stroke="currentColor" stroke-width="2"><path d="m5 7.5 5 5 5-5" /></svg></button><div v-if="openDropdown === 'memberRole'" class="tf-dropdown-menu tf-member-role-menu"><button v-for="role in memberRoleOptions" :key="role" type="button" class="tf-dropdown-option capitalize" @click="memberRole = role; openDropdown = null"><span>{{ role }}</span><span v-if="memberRole === role" class="text-task-blue">✓</span></button></div></div></label></div>
+            <div class="mt-4 grid gap-4 sm:grid-cols-2"><label class="block text-sm font-semibold">Department <span class="text-task-danger">*</span><div class="tf-dropdown mt-2"><button type="button" class="tf-dropdown-button h-12" @click="openDropdown = openDropdown === 'memberDepartment' ? null : 'memberDepartment'"><span class="truncate">{{ memberDepartmentsLoading ? 'Loading departments...' : memberDepartmentOptions.find((department) => department.id === memberDepartment)?.name || 'Select department' }}</span><svg viewBox="0 0 20 20" :class="['h-4 w-4 shrink-0 text-task-muted transition-transform', openDropdown === 'memberDepartment' ? 'rotate-180' : '']" fill="none" stroke="currentColor" stroke-width="2"><path d="m5 7.5 5 5 5-5" /></svg></button><div v-if="openDropdown === 'memberDepartment'" class="tf-dropdown-menu max-h-56 overflow-y-auto"><p v-if="memberDepartmentsLoading" class="px-3 py-3 text-sm font-normal text-task-muted">Loading departments...</p><button v-for="department in memberDepartmentOptions" :key="department.id" type="button" class="tf-dropdown-option" @click="memberDepartment = department.id; openDropdown = null"><span>{{ department.name }}</span><span v-if="memberDepartment === department.id" class="text-task-blue">✓</span></button><p v-if="!memberDepartmentsLoading && !memberDepartmentOptions.length" class="px-3 py-3 text-sm font-normal text-task-muted">No departments available</p></div></div></label><label class="block text-sm font-semibold">Role<div class="tf-dropdown mt-2"><button type="button" class="tf-dropdown-button h-12" @click="openDropdown = openDropdown === 'memberRole' ? null : 'memberRole'"><span class="capitalize">{{ memberRole }}</span><svg viewBox="0 0 20 20" :class="['h-4 w-4 text-task-muted transition-transform', openDropdown === 'memberRole' ? 'rotate-180' : '']" fill="none" stroke="currentColor" stroke-width="2"><path d="m5 7.5 5 5 5-5" /></svg></button><div v-if="openDropdown === 'memberRole'" class="tf-dropdown-menu tf-member-role-menu"><button v-for="role in memberRoleOptions" :key="role" type="button" class="tf-dropdown-option capitalize" @click="memberRole = role; openDropdown = null"><span>{{ role }}</span><span v-if="memberRole === role" class="text-task-blue">✓</span></button></div></div></label></div>
             <label class="mb-5 mt-4 flex items-center justify-between gap-4 rounded-ui border border-task-line px-4 py-3 text-sm font-semibold"><span><span class="block">Active member</span><span class="mt-0.5 block text-xs font-normal text-task-muted">Allow this member to sign in immediately.</span></span><input v-model="memberIsActive" type="checkbox" class="h-5 w-5 accent-task-blue" /></label>
           </template>
           <template v-else-if="modal === 'task'">

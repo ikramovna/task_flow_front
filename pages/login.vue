@@ -106,6 +106,9 @@ const submitLogin = async () => {
               <input v-model="rememberMe" class="h-4 w-4 rounded border-task-line text-task-blue focus:ring-task-blueSoft" type="checkbox" />
               Remember me
             </label>
+            <NuxtLink class="font-semibold text-task-blue transition hover:opacity-75" to="/forgot-password">
+              Forgot password?
+            </NuxtLink>
           </div>
 
           <button class="tf-primary h-12 w-full text-base" type="submit" :disabled="isSubmitting">

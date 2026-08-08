@@ -18,6 +18,16 @@ export default defineNuxtConfig({
         'cache-control': 'no-cache, no-store, must-revalidate'
       }
     },
+    '/forgot-password': {
+      headers: {
+        'cache-control': 'no-cache, no-store, must-revalidate'
+      }
+    },
+    '/reset-password': {
+      headers: {
+        'cache-control': 'no-cache, no-store, must-revalidate'
+      }
+    },
     '/logout': {
       headers: {
         'cache-control': 'no-cache, no-store, must-revalidate'

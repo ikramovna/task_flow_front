@@ -144,6 +144,8 @@ type MemberSummary = {
   active_tasks?: number
 }
 
+type ApiDepartment = { id?: string; name?: string; title?: string }
+
 type ApiReport = {
   id?: string
   name: string
@@ -439,6 +441,23 @@ export const useTaskFlowApi = () => {
     return tokens
   }
 
+  const requestPasswordReset = async (email: string) =>
+    await $fetch<{ detail: string }>(`${apiBase}/auth/password-reset/`, {
+      method: 'POST',
+      body: { email }
+    })
+
+  const confirmPasswordReset = async (uid: string, token: string, newPassword: string, confirmPassword: string) =>
+    await $fetch<{ detail: string }>(`${apiBase}/auth/password-reset/confirm/`, {
+      method: 'POST',
+      body: {
+        uid,
+        token,
+        new_password: newPassword,
+        confirm_password: confirmPassword
+      }
+    })
+
   const logout = () => {
     const accessCookie = useCookie<string | null>('taskflow-access')
     const refreshCookie = useCookie<string | null>('taskflow-refresh')
@@ -592,6 +611,9 @@ export const useTaskFlowApi = () => {
 
   const getMembersSummary = async () =>
     await apiFetch<MemberSummary>('/members/summary/')
+
+  const listDepartments = async () =>
+    await apiFetch<ListResponse<ApiDepartment>>('/departments/?page_size=200')
 
   const getProject = async (id: string) => await apiFetch<ApiProject>(`/projects/${id}/`)
 
@@ -877,6 +899,8 @@ export const useTaskFlowApi = () => {
 
   return {
     login,
+    requestPasswordReset,
+    confirmPasswordReset,
     logout,
     refreshToken,
     changePassword,
@@ -898,6 +922,7 @@ export const useTaskFlowApi = () => {
     patchMember,
     deleteMember,
     getMembersSummary,
+    listDepartments,
     listEvents,
     getEvent,
     createEvent,
