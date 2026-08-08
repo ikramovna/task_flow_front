@@ -97,6 +97,51 @@ const profileAvatarInput = ref<HTMLInputElement | null>(null)
 const profileAvatarPreview = ref('')
 const profileAvatarFile = ref<File | null>(null)
 const supportWidgetOpen = ref(false)
+const supportWidgetPosition = ref<{ x: number; y: number } | null>(null)
+const supportWidgetDragging = ref(false)
+let supportDragOrigin = { pointerX: 0, pointerY: 0, x: 0, y: 0 }
+let supportDragMoved = false
+const supportWidgetStyle = computed(() => supportWidgetPosition.value ? {
+  left: `${supportWidgetPosition.value.x}px`,
+  top: `${supportWidgetPosition.value.y}px`,
+  right: 'auto',
+  bottom: 'auto'
+} : undefined)
+const supportPanelPlacement = computed(() => {
+  if (!import.meta.client || !supportWidgetPosition.value) return 'bottom-[68px] right-0'
+  const { x, y } = supportWidgetPosition.value
+  return `${y < window.innerHeight / 2 ? 'top-[68px]' : 'bottom-[68px]'} ${x < window.innerWidth / 2 ? 'left-0' : 'right-0'}`
+})
+const startSupportDrag = (event: PointerEvent) => {
+  const rect = (event.currentTarget as HTMLElement).getBoundingClientRect()
+  supportDragOrigin = { pointerX: event.clientX, pointerY: event.clientY, x: rect.left, y: rect.top }
+  supportDragMoved = false
+  supportWidgetDragging.value = true
+  ;(event.currentTarget as HTMLElement).setPointerCapture(event.pointerId)
+}
+const moveSupportDrag = (event: PointerEvent) => {
+  if (!supportWidgetDragging.value) return
+  const dx = event.clientX - supportDragOrigin.pointerX
+  const dy = event.clientY - supportDragOrigin.pointerY
+  if (Math.abs(dx) + Math.abs(dy) > 4) supportDragMoved = true
+  supportWidgetPosition.value = {
+    x: Math.max(12, Math.min(window.innerWidth - 68, supportDragOrigin.x + dx)),
+    y: Math.max(12, Math.min(window.innerHeight - 68, supportDragOrigin.y + dy))
+  }
+}
+const stopSupportDrag = (event: PointerEvent) => {
+  supportWidgetDragging.value = false
+  const target = event.currentTarget as HTMLElement
+  if (target.hasPointerCapture(event.pointerId)) target.releasePointerCapture(event.pointerId)
+  if (supportWidgetPosition.value) localStorage.setItem('taskflow-support-position', JSON.stringify(supportWidgetPosition.value))
+}
+const toggleSupportWidget = () => {
+  if (supportDragMoved) {
+    supportDragMoved = false
+    return
+  }
+  supportWidgetOpen.value = !supportWidgetOpen.value
+}
 const membersRawResponse = ref<unknown>(null)
 const memberSummary = ref<{ total_members?: number; average_efficiency?: number; active_tasks?: number } | null>(null)
 const activeMessage = ref('')
@@ -1055,6 +1100,17 @@ onMounted(() => {
   systemPrefersDark.value = themeMediaQuery.matches
   themeMediaQuery.addEventListener('change', updateSystemTheme)
   loadProfile()
+  try {
+    const saved = JSON.parse(localStorage.getItem('taskflow-support-position') || 'null')
+    if (saved && Number.isFinite(saved.x) && Number.isFinite(saved.y)) {
+      supportWidgetPosition.value = {
+        x: Math.max(12, Math.min(window.innerWidth - 68, saved.x)),
+        y: Math.max(12, Math.min(window.innerHeight - 68, saved.y))
+      }
+    }
+  } catch {
+    localStorage.removeItem('taskflow-support-position')
+  }
 
   const savedTheme = localStorage.getItem(themeStorageKey)
   if (isThemeOption(savedTheme)) {
@@ -3681,8 +3737,8 @@ const iconPath = (name: string) => {
     </div>
 
     <button v-if="supportWidgetOpen" type="button" class="fixed inset-0 z-[65] bg-slate-950/30 backdrop-blur-[1px]" aria-label="Close help support" @click="!feedbackSending && (supportWidgetOpen = false)" />
-    <div class="fixed bottom-5 right-5 z-[70] flex flex-col items-end gap-3">
-      <div v-if="supportWidgetOpen" class="tf-panel w-[380px] max-w-[calc(100vw-40px)] p-4 shadow-xl">
+    <div class="fixed bottom-5 right-5 z-[70] h-14 w-14" :style="supportWidgetStyle">
+      <div v-if="supportWidgetOpen" :class="['tf-panel absolute w-[380px] max-w-[calc(100vw-40px)] p-4 shadow-xl', supportPanelPlacement]">
         <div class="mb-4 flex items-start justify-between gap-4">
           <div class="flex items-start gap-3">
             <span class="grid h-10 w-10 shrink-0 place-items-center rounded-ui bg-task-blueSoft text-task-blue">
@@ -3732,7 +3788,7 @@ const iconPath = (name: string) => {
           {{ feedbackSending ? 'Sending...' : 'Send to team' }}
         </button>
       </div>
-      <button type="button" class="tf-support-launcher" aria-label="Open Taskly support" title="Taskly" @click="supportWidgetOpen = !supportWidgetOpen">
+      <button type="button" :class="['tf-support-launcher touch-none', supportWidgetDragging ? 'cursor-grabbing' : 'cursor-grab']" aria-label="Open or move Taskly support" title="Drag to move · Click to open" @pointerdown="startSupportDrag" @pointermove="moveSupportDrag" @pointerup="stopSupportDrag" @pointercancel="stopSupportDrag" @click="toggleSupportWidget">
         <svg v-if="!supportWidgetOpen" viewBox="0 0 24 24" class="h-7 w-7" aria-hidden="true">
           <path d="M12 3v3" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" />
           <rect x="5" y="7.5" width="14" height="11.5" rx="4" fill="currentColor" />
