@@ -275,6 +275,8 @@ const memberEmail = ref('')
 const memberUsername = ref('')
 const memberPassword = ref('')
 const memberPasswordConfirm = ref('')
+const showMemberPassword = ref(false)
+const showMemberPasswordConfirm = ref(false)
 const memberPhone = ref('')
 const memberJobTitle = ref('')
 const memberAvatarInput = ref<HTMLInputElement | null>(null)
@@ -282,7 +284,20 @@ const memberAvatarFile = ref<File | null>(null)
 const memberAvatarPreview = ref('')
 const memberRole = ref('member')
 const memberIsActive = ref(true)
+const memberDepartment = ref('')
 const memberRoleOptions = ['member', 'manager', 'admin', 'owner']
+const memberDepartmentOptions = computed(() => {
+  const options = dashboardDepartments.value
+    .map((department) => ({
+      id: String(department.department_id || department.id || ''),
+      name: String(department.department_name || department.name || 'Unnamed department')
+    }))
+    .filter((department) => department.id)
+  if (effectiveDepartmentId.value && !options.some((department) => department.id === effectiveDepartmentId.value)) {
+    options.unshift({ id: effectiveDepartmentId.value, name: 'Current department' })
+  }
+  return options
+})
 const editingProjectId = ref('')
 const editingProjectDepartment = ref('')
 const editingProjectMembers = ref<string[]>([])
@@ -1372,6 +1387,8 @@ const openModal = (value: Exclude<ModalKey, null>) => {
     memberUsername.value = ''
     memberPassword.value = ''
     memberPasswordConfirm.value = ''
+    showMemberPassword.value = false
+    showMemberPasswordConfirm.value = false
     memberPhone.value = ''
     memberJobTitle.value = ''
     memberAvatarFile.value = null
@@ -1379,6 +1396,7 @@ const openModal = (value: Exclude<ModalKey, null>) => {
     if (memberAvatarInput.value) memberAvatarInput.value.value = ''
     memberRole.value = 'member'
     memberIsActive.value = true
+    memberDepartment.value = effectiveDepartmentId.value
   }
   if (value === 'event') {
     eventAttendeeIds.value = []
@@ -1829,7 +1847,7 @@ const submitModal = async () => {
       notifyError('You do not have permission to add members')
       return
     }
-    if (!effectiveDepartmentId.value) {
+    if (!memberDepartment.value) {
       notifyError('Department is required')
       return
     }
@@ -1862,7 +1880,7 @@ const submitModal = async () => {
         password,
         phone: memberPhone.value.trim(),
         job_title: memberJobTitle.value.trim(),
-        department: effectiveDepartmentId.value,
+        department: memberDepartment.value,
         role: memberRole.value,
         is_active: memberIsActive.value
       }, memberAvatarFile.value)
@@ -3216,7 +3234,7 @@ const iconPath = (name: string) => {
     </section>
 
     <div v-if="modal" class="fixed inset-0 z-50 grid place-items-center bg-slate-900/45 p-3 backdrop-blur-[2px] sm:p-6" @click.self="modal = null">
-      <div :class="['tf-app-modal flex max-h-[calc(100vh-24px)] w-full flex-col overflow-hidden rounded-[22px] border border-white/70 bg-[#E3EAF2] shadow-[0_30px_90px_-20px_rgba(15,23,42,0.45)] sm:max-h-[calc(100vh-48px)]', modal === 'project' ? 'tf-project-modal max-w-[600px]' : modal === 'task' ? 'max-w-[620px]' : modal === 'member' ? 'tf-member-modal max-w-[520px]' : modal === 'event' || modal === 'event-detail' || modal === 'report' ? 'max-w-[620px]' : 'max-w-[520px]']">
+      <div :class="['tf-app-modal flex max-h-[calc(100vh-24px)] w-full flex-col overflow-hidden rounded-[22px] border border-white/70 bg-[#E3EAF2] shadow-[0_30px_90px_-20px_rgba(15,23,42,0.45)] sm:max-h-[calc(100vh-48px)]', modal === 'project' ? 'tf-project-modal max-w-[600px]' : modal === 'task' ? 'max-w-[620px]' : modal === 'member' ? 'tf-member-modal max-w-[760px]' : modal === 'event' || modal === 'event-detail' || modal === 'report' ? 'max-w-[620px]' : 'max-w-[520px]']">
         <div class="flex shrink-0 items-center justify-between px-5 py-3.5 sm:px-6 sm:py-4"><h2 class="text-[21px] font-semibold tracking-[-0.025em] sm:text-[22px]">{{ modal === 'task' ? (taskModalMode === 'view' ? 'Task Details' : taskModalMode === 'edit' ? 'Edit Task' : 'Create Task') : modal === 'project' ? 'Create New Project' : modal === 'event' ? 'Add New Event' : modal === 'event-detail' ? 'Event Details' : modal === 'report' ? 'Custom Report Builder' : modal === 'member' ? 'Add Department Member' : 'Filter Staff' }}</h2><button type="button" class="grid h-9 w-9 place-items-center rounded-full text-[28px] font-light leading-none transition hover:bg-white/60 hover:text-task-blue" aria-label="Close modal" @click="modal = null">×</button></div>
         <div :class="['min-h-0 overflow-y-auto bg-white', modal === 'project' || modal === 'task' ? 'mx-3 mb-3 rounded-[18px] p-5' : 'mx-2 mb-2 rounded-[16px] p-4', modal === 'member' ? 'tf-member-modal-body' : '']">
           <template v-if="modal === 'event-detail' && selectedCalendarEvent">
@@ -3229,14 +3247,17 @@ const iconPath = (name: string) => {
             <div class="grid gap-4 md:grid-cols-2"><label v-for="field in [['Department','department'],['Role','role'],['Skills','skills'],['Status','status']]" :key="field[1]">{{ field[0] }}<div class="tf-dropdown mt-2"><button type="button" class="tf-dropdown-button" @click="openDropdown = openDropdown === field[1] ? null : String(field[1])"><span>{{ dropdownValues[String(field[1])] }}</span><svg viewBox="0 0 20 20" class="h-4 w-4 shrink-0 text-task-muted transition" fill="none" stroke="currentColor" stroke-width="2"><path d="m5 7.5 5 5 5-5" /></svg></button><div v-if="openDropdown === field[1]" class="tf-dropdown-menu"><button v-for="option in dropdownOptions[String(field[1])]" :key="option" type="button" class="tf-dropdown-option" @click="setDropdownValue(String(field[1]), option)"><span>{{ option }}</span><span v-if="dropdownValues[String(field[1])] === option">✓</span></button></div></div></label></div><div class="mt-5 rounded-ui bg-slate-100 p-4"><p class="font-bold">Workload</p><input v-model.number="workloadFilter" type="range" min="0" max="100" class="mt-3 w-full accent-task-blue" /><div class="flex justify-between text-sm text-task-muted"><span>0%</span><span>Current: {{ workloadFilter }}%</span><span>100%</span></div></div>
           </template>
           <template v-else-if="modal === 'member'">
-            <div class="rounded-ui bg-task-blueSoft p-4 text-sm text-task-muted">The member will be added to your current department automatically.</div>
-            <div class="mt-4 grid gap-4 sm:grid-cols-2"><label class="block text-sm font-semibold">First Name<input v-model="memberFirstName" class="tf-input mt-2 h-12 w-full" placeholder="Enter first name" autocomplete="given-name" /></label><label class="block text-sm font-semibold">Last Name<input v-model="memberLastName" class="tf-input mt-2 h-12 w-full" placeholder="Enter last name" autocomplete="family-name" /></label></div>
-            <label class="mt-4 block text-sm font-semibold">Email Address <span class="text-task-danger">*</span><input v-model="memberEmail" type="email" class="tf-input mt-2 h-12 w-full" placeholder="ali@example.com" autocomplete="email" required /></label>
-            <label class="mt-4 block text-sm font-semibold">Username <span class="text-task-danger">*</span><input v-model="memberUsername" class="tf-input mt-2 h-12 w-full" placeholder="Enter username" autocomplete="username" required /></label>
-            <div class="mt-4 grid gap-4 sm:grid-cols-2"><label class="block text-sm font-semibold">Password <span class="text-task-danger">*</span><input v-model="memberPassword" type="password" class="tf-input mt-2 h-12 w-full" placeholder="Minimum 8 characters" autocomplete="new-password" required /></label><label class="block text-sm font-semibold">Confirm Password <span class="text-task-danger">*</span><input v-model="memberPasswordConfirm" type="password" class="tf-input mt-2 h-12 w-full" placeholder="Repeat password" autocomplete="new-password" required /></label></div>
+            <div class="grid gap-4 sm:grid-cols-2"><label class="block text-sm font-semibold">First Name<input v-model="memberFirstName" class="tf-input mt-2 h-12 w-full" placeholder="Enter first name" autocomplete="given-name" /></label><label class="block text-sm font-semibold">Last Name<input v-model="memberLastName" class="tf-input mt-2 h-12 w-full" placeholder="Enter last name" autocomplete="family-name" /></label></div>
+            <div class="mt-4 grid gap-4 sm:grid-cols-2"><label class="block text-sm font-semibold">Email Address <span class="text-task-danger">*</span><input v-model="memberEmail" type="email" class="tf-input mt-2 h-12 w-full" placeholder="ali@example.com" autocomplete="email" required /></label>
+            <label class="block text-sm font-semibold">Username <span class="text-task-danger">*</span><input v-model="memberUsername" class="tf-input mt-2 h-12 w-full" placeholder="Enter username" autocomplete="username" required /></label>
+            </div>
+            <div class="mt-4 grid gap-4 sm:grid-cols-2">
+              <label class="block text-sm font-semibold">Password <span class="text-task-danger">*</span><span class="relative mt-2 block"><input v-model="memberPassword" :type="showMemberPassword ? 'text' : 'password'" class="tf-input h-12 w-full pr-12" placeholder="Minimum 8 characters" autocomplete="new-password" required /><button type="button" class="absolute right-3 top-1/2 grid h-8 w-8 -translate-y-1/2 place-items-center rounded-full text-task-muted transition hover:bg-task-blueSoft hover:text-task-blue" :aria-label="showMemberPassword ? 'Hide password' : 'Show password'" @click="showMemberPassword = !showMemberPassword"><svg viewBox="0 0 24 24" class="h-5 w-5" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M2.5 12s3.5-6 9.5-6 9.5 6 9.5 6-3.5 6-9.5 6-9.5-6-9.5-6Z" /><circle cx="12" cy="12" r="2.5" /><path v-if="showMemberPassword" d="m4 4 16 16" /></svg></button></span></label>
+              <label class="block text-sm font-semibold">Confirm Password <span class="text-task-danger">*</span><span class="relative mt-2 block"><input v-model="memberPasswordConfirm" :type="showMemberPasswordConfirm ? 'text' : 'password'" class="tf-input h-12 w-full pr-12" placeholder="Repeat password" autocomplete="new-password" required /><button type="button" class="absolute right-3 top-1/2 grid h-8 w-8 -translate-y-1/2 place-items-center rounded-full text-task-muted transition hover:bg-task-blueSoft hover:text-task-blue" :aria-label="showMemberPasswordConfirm ? 'Hide password' : 'Show password'" @click="showMemberPasswordConfirm = !showMemberPasswordConfirm"><svg viewBox="0 0 24 24" class="h-5 w-5" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M2.5 12s3.5-6 9.5-6 9.5 6 9.5 6-3.5 6-9.5 6-9.5-6-9.5-6Z" /><circle cx="12" cy="12" r="2.5" /><path v-if="showMemberPasswordConfirm" d="m4 4 16 16" /></svg></button></span></label>
+            </div>
             <div class="mt-4 grid gap-4 sm:grid-cols-2"><label class="block text-sm font-semibold">Phone<input v-model="memberPhone" type="tel" class="tf-input mt-2 h-12 w-full" placeholder="+998 90 123 45 67" autocomplete="tel" /></label><label class="block text-sm font-semibold">Job Title<input v-model="memberJobTitle" class="tf-input mt-2 h-12 w-full" placeholder="e.g. Designer" autocomplete="organization-title" /></label></div>
             <div class="mt-4 text-sm font-semibold">Avatar <span class="font-normal text-task-muted">(optional)</span><input ref="memberAvatarInput" class="hidden" type="file" accept="image/*" @change="handleMemberAvatar" /><div class="mt-2 flex items-center gap-4 rounded-ui border border-task-line p-3"><button type="button" class="grid h-16 w-16 shrink-0 place-items-center overflow-hidden rounded-full bg-task-blueSoft font-bold text-task-blue" aria-label="Choose avatar" @click="chooseMemberAvatar"><img v-if="memberAvatarPreview" :src="memberAvatarPreview" alt="Member avatar preview" class="h-full w-full object-cover" /><span v-else>Photo</span></button><div class="min-w-0 flex-1"><p class="truncate text-sm font-semibold">{{ memberAvatarFile?.name || 'No image selected' }}</p><p class="mt-1 text-xs font-normal text-task-muted">PNG, JPG, WEBP — maximum 5 MB</p><div class="mt-2 flex gap-3"><button type="button" class="text-xs font-semibold text-task-blue" @click="chooseMemberAvatar">Choose file</button><button v-if="memberAvatarFile" type="button" class="text-xs font-semibold text-task-danger" @click="removeMemberAvatar">Remove</button></div></div></div></div>
-            <label class="mt-4 block text-sm font-semibold">Role<div class="tf-dropdown mt-2"><button type="button" class="tf-dropdown-button h-12" @click="openDropdown = openDropdown === 'memberRole' ? null : 'memberRole'"><span class="capitalize">{{ memberRole }}</span><svg viewBox="0 0 20 20" :class="['h-4 w-4 text-task-muted transition-transform', openDropdown === 'memberRole' ? 'rotate-180' : '']" fill="none" stroke="currentColor" stroke-width="2"><path d="m5 7.5 5 5 5-5" /></svg></button><div v-if="openDropdown === 'memberRole'" class="tf-dropdown-menu tf-member-role-menu"><button v-for="role in memberRoleOptions" :key="role" type="button" class="tf-dropdown-option capitalize" @click="memberRole = role; openDropdown = null"><span>{{ role }}</span><span v-if="memberRole === role" class="text-task-blue">✓</span></button></div></div></label>
+            <div class="mt-4 grid gap-4 sm:grid-cols-2"><label class="block text-sm font-semibold">Department <span class="text-task-danger">*</span><div class="tf-dropdown mt-2"><button type="button" class="tf-dropdown-button h-12" @click="openDropdown = openDropdown === 'memberDepartment' ? null : 'memberDepartment'"><span class="truncate">{{ memberDepartmentOptions.find((department) => department.id === memberDepartment)?.name || 'Select department' }}</span><svg viewBox="0 0 20 20" :class="['h-4 w-4 shrink-0 text-task-muted transition-transform', openDropdown === 'memberDepartment' ? 'rotate-180' : '']" fill="none" stroke="currentColor" stroke-width="2"><path d="m5 7.5 5 5 5-5" /></svg></button><div v-if="openDropdown === 'memberDepartment'" class="tf-dropdown-menu max-h-56 overflow-y-auto"><button v-for="department in memberDepartmentOptions" :key="department.id" type="button" class="tf-dropdown-option" @click="memberDepartment = department.id; openDropdown = null"><span>{{ department.name }}</span><span v-if="memberDepartment === department.id" class="text-task-blue">✓</span></button><p v-if="!memberDepartmentOptions.length" class="px-3 py-3 text-sm font-normal text-task-muted">No departments available</p></div></div></label><label class="block text-sm font-semibold">Role<div class="tf-dropdown mt-2"><button type="button" class="tf-dropdown-button h-12" @click="openDropdown = openDropdown === 'memberRole' ? null : 'memberRole'"><span class="capitalize">{{ memberRole }}</span><svg viewBox="0 0 20 20" :class="['h-4 w-4 text-task-muted transition-transform', openDropdown === 'memberRole' ? 'rotate-180' : '']" fill="none" stroke="currentColor" stroke-width="2"><path d="m5 7.5 5 5 5-5" /></svg></button><div v-if="openDropdown === 'memberRole'" class="tf-dropdown-menu tf-member-role-menu"><button v-for="role in memberRoleOptions" :key="role" type="button" class="tf-dropdown-option capitalize" @click="memberRole = role; openDropdown = null"><span>{{ role }}</span><span v-if="memberRole === role" class="text-task-blue">✓</span></button></div></div></label></div>
             <label class="mb-5 mt-4 flex items-center justify-between gap-4 rounded-ui border border-task-line px-4 py-3 text-sm font-semibold"><span><span class="block">Active member</span><span class="mt-0.5 block text-xs font-normal text-task-muted">Allow this member to sign in immediately.</span></span><input v-model="memberIsActive" type="checkbox" class="h-5 w-5 accent-task-blue" /></label>
           </template>
           <template v-else-if="modal === 'task'">
