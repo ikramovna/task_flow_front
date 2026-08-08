@@ -11,7 +11,7 @@ watch(tab, () => { page.value = 1; void fetchPage() })
 watch(page, fetchPage)
 const select = async (item: TaskFlowNotification) => {
   try { await markRead(item) } catch { return }
-  if (item.task) await navigateTo(`/tasks/${item.task}`)
+  if (item.task) await navigateTo({ path: '/', query: { task: item.task }, hash: '#tasks' })
   else if (item.message) await navigateTo(`/#messages?message=${encodeURIComponent(item.message)}`)
 }
 const allRead = async () => { try { await markAllRead(); await fetchPage() } catch { /* rolled back */ } }

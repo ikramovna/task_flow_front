@@ -58,6 +58,7 @@ const dropdownOptions: Record<string, string[]> = {
 const taskFlowStore = useTaskFlowStore()
 const taskFlowApi = useTaskFlowApi()
 const runtimeConfig = useRuntimeConfig()
+const route = useRoute()
 
 void taskFlowStore.loadBackendData()
 
@@ -917,7 +918,9 @@ const openNotifications = () => {
 
 const navigateFromNotification = async (target: { kind: 'task' | 'message'; id: string }) => {
   if (target.kind === 'task') {
-    await navigateTo(`/tasks/${target.id}`)
+    await navigateTo({ path: '/', query: { task: target.id }, hash: '#tasks' })
+    setPage('tasks')
+    await openTask([target.id, '', '', '', '', 0, target.id], 'view')
     return
   }
   setPage('messages')
@@ -1013,6 +1016,11 @@ onMounted(() => {
   }
   syncRootThemeClass()
   restoreActivePage()
+  const linkedTaskId = String(route.query.task || '')
+  if (linkedTaskId) {
+    setPage('tasks')
+    void openTask([linkedTaskId, '', '', '', '', 0, linkedTaskId], 'view')
+  }
   tashkentNowMs.value = Date.now()
   dashboardClockTimer = setInterval(() => { tashkentNowMs.value = Date.now() }, 30_000)
   if (activePage.value === 'tasks') void loadTaskScope(taskScope.value)
@@ -3022,7 +3030,7 @@ const iconPath = (name: string) => {
           <div class="tf-panel relative overflow-hidden p-5">
             <div class="mb-5 flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between"><h2 class="text-xl font-bold">All Staff</h2><div class="flex flex-col gap-3 sm:flex-row"><label class="relative w-full sm:w-auto"><svg viewBox="0 0 24 24" class="pointer-events-none absolute left-3.5 top-1/2 h-4 w-4 -translate-y-1/2 text-task-muted" fill="none" stroke="currentColor" stroke-width="1.8"><path :d="iconPath('search')" /></svg><input v-model="teamSearchInput" class="tf-input h-11 w-full pl-10 pr-10 sm:w-72" placeholder="Search staff..." /><button v-if="teamSearchInput && !searchLoading.team" type="button" class="tf-search-clear" aria-label="Clear staff search" @click="clearSearch('team')">×</button><span v-if="searchLoading.team" class="tf-search-spinner" /></label><button class="inline-flex h-11 items-center justify-center gap-2 rounded-[12px] border border-task-line bg-white px-4 text-sm font-semibold text-task-muted transition hover:border-task-blue hover:text-task-blue" @click="openModal('team-filter')"><svg viewBox="0 0 24 24" class="h-4 w-4" fill="none" stroke="currentColor" stroke-width="1.8"><path :d="iconPath('filter')" /></svg>Filter</button><button class="tf-primary h-11 rounded-[12px] px-5" @click="openModal('member')"><svg viewBox="0 0 24 24" class="h-4 w-4" fill="none" stroke="currentColor" stroke-width="1.8"><path :d="iconPath('users')" /><path d="M19 8v6m-3-3h6" /></svg>Add Member</button></div></div>
             <div v-if="searchLoading.team" class="tf-search-overlay"><span class="tf-search-loader" /> Searching staff...</div>
-            <div class="overflow-x-auto"><table class="w-full min-w-[900px] text-left text-sm"><thead class="text-task-muted"><tr><th class="rounded-l-[14px] p-3 font-semibold">Staff</th><th class="p-3 font-semibold">Role</th><th class="p-3 font-semibold">Contact</th><th class="p-3 font-semibold">Efficiency</th><th class="p-3 font-semibold">Completed</th><th class="p-3 font-semibold">In Progress</th><th class="rounded-r-[14px] p-3 text-right font-semibold">Actions</th></tr></thead><tbody class="divide-y divide-task-line"><tr v-for="(member, index) in paginatedTeam" :key="String(member[9] || member[7] || member[0])"><td class="p-3"><div class="flex items-center gap-3"><span :class="['grid h-10 w-10 shrink-0 place-items-center overflow-hidden rounded-full text-xs font-bold', index % 4 === 0 ? 'bg-task-blueSoft text-task-blue' : index % 4 === 1 ? 'bg-[#F0E9FF] text-[#8057D5]' : index % 4 === 2 ? 'bg-task-warningSoft text-task-warning' : 'bg-task-successSoft text-task-success']"><img v-if="member[8]" :src="String(member[8])" :alt="String(member[0])" class="h-full w-full object-cover" /><span v-else>{{ initials(String(member[0])) }}</span></span><div class="min-w-0"><p class="truncate font-bold text-task-ink">{{ member[0] }}</p><p class="truncate text-xs text-task-muted">{{ member[2] }}</p></div></div></td><td class="p-3 text-task-muted">{{ member[1] }}</td><td class="p-3 text-task-muted">{{ member[3] }}</td><td class="p-3"><div class="flex items-center gap-2"><div class="h-2 w-24 overflow-hidden rounded-full bg-slate-200"><div class="h-full rounded-full bg-task-blue" :style="{ width: `${member[4]}%` }" /></div><span class="text-xs font-bold">{{ member[4] }}%</span></div></td><td class="p-3 font-semibold">{{ member[5] }}</td><td class="p-3 font-semibold">{{ member[6] }}</td><td class="relative p-3 text-right"><div class="relative inline-flex"><button type="button" class="tf-icon-button rounded-full" @click="toggleActionMenu(`team-${member[9] || member[7] || member[0]}`)"><svg viewBox="0 0 24 24" class="h-4 w-4" fill="none" stroke="currentColor"><path :d="iconPath('dots')" /></svg></button><div v-if="actionMenu === `team-${member[9] || member[7] || member[0]}`" class="tf-action-menu"><button type="button" class="tf-action-item" @click="actionMenu = null">View profile</button><button type="button" class="tf-action-item" @click="updateMemberStatus(member, String(member[12]) === 'Inactive')">{{ String(member[12]) === 'Inactive' ? 'Activate' : 'Deactivate' }}</button><button type="button" class="tf-action-item tf-action-danger" @click="deleteMember(member)">Remove member</button></div></div></td></tr></tbody></table></div>
+            <div class="overflow-x-auto"><table class="w-full min-w-[900px] text-left text-sm"><thead class="text-task-muted"><tr><th class="rounded-l-[14px] p-3 font-semibold">Staff</th><th class="p-3 font-semibold">Position</th><th class="p-3 font-semibold">Contact</th><th class="p-3 font-semibold">Efficiency</th><th class="p-3 font-semibold">Completed</th><th class="p-3 font-semibold">In Progress</th><th class="rounded-r-[14px] p-3 text-right font-semibold">Actions</th></tr></thead><tbody class="divide-y divide-task-line"><tr v-for="(member, index) in paginatedTeam" :key="String(member[9] || member[7] || member[0])"><td class="p-3"><div class="flex items-center gap-3"><span :class="['grid h-10 w-10 shrink-0 place-items-center overflow-hidden rounded-full text-xs font-bold', index % 4 === 0 ? 'bg-task-blueSoft text-task-blue' : index % 4 === 1 ? 'bg-[#F0E9FF] text-[#8057D5]' : index % 4 === 2 ? 'bg-task-warningSoft text-task-warning' : 'bg-task-successSoft text-task-success']"><img v-if="member[8]" :src="String(member[8])" :alt="String(member[0])" class="h-full w-full object-cover" /><span v-else>{{ initials(String(member[0])) }}</span></span><div class="min-w-0"><p class="truncate font-bold text-task-ink">{{ member[0] }}</p><p class="truncate text-xs text-task-muted">{{ member[2] }}</p></div></div></td><td class="p-3 text-task-muted">{{ member[1] }}</td><td class="p-3 text-task-muted">{{ member[3] }}</td><td class="p-3"><div class="flex items-center gap-2"><div class="h-2 w-24 overflow-hidden rounded-full bg-slate-200"><div class="h-full rounded-full bg-task-blue" :style="{ width: `${member[4]}%` }" /></div><span class="text-xs font-bold">{{ member[4] }}%</span></div></td><td class="p-3 font-semibold">{{ member[5] }}</td><td class="p-3 font-semibold">{{ member[6] }}</td><td class="relative p-3 text-right"><div class="relative inline-flex"><button type="button" class="tf-icon-button rounded-full" @click="toggleActionMenu(`team-${member[9] || member[7] || member[0]}`)"><svg viewBox="0 0 24 24" class="h-4 w-4" fill="none" stroke="currentColor"><path :d="iconPath('dots')" /></svg></button><div v-if="actionMenu === `team-${member[9] || member[7] || member[0]}`" class="tf-action-menu"><button type="button" class="tf-action-item" @click="actionMenu = null">View profile</button><button type="button" class="tf-action-item" @click="updateMemberStatus(member, String(member[12]) === 'Inactive')">{{ String(member[12]) === 'Inactive' ? 'Activate' : 'Deactivate' }}</button><button type="button" class="tf-action-item tf-action-danger" @click="deleteMember(member)">Remove member</button></div></div></td></tr></tbody></table></div>
             <p v-if="!filteredTeam.length" class="py-10 text-center text-sm text-task-muted">No staff found.</p><div v-if="filteredTeam.length > pageSize" class="mt-5 flex justify-end gap-2"><button class="tf-icon-button" @click="setListPage('team', teamPage - 1)">‹</button><button v-for="page in teamPageCount" :key="page" :class="[teamPage === page ? 'tf-primary' : 'tf-icon-button', 'h-9 w-9 p-0']" @click="setListPage('team', page)">{{ page }}</button><button class="tf-icon-button" @click="setListPage('team', teamPage + 1)">›</button></div>
           </div>
         </section>
@@ -3533,7 +3541,7 @@ const iconPath = (name: string) => {
               </svg>
             </span>
             <div>
-              <h2 class="font-bold">Help & Support</h2>
+              <h2 class="font-bold">Taskly</h2>
               <p class="mt-1 text-sm font-medium leading-5 text-task-muted">Found a bug or have feedback? Describe it and attach a screenshot.</p>
             </div>
           </div>
@@ -3570,7 +3578,7 @@ const iconPath = (name: string) => {
           {{ feedbackSending ? 'Sending...' : 'Send to team' }}
         </button>
       </div>
-      <button type="button" class="tf-support-launcher" aria-label="Open help support" title="Help & Support" @click="supportWidgetOpen = !supportWidgetOpen">
+      <button type="button" class="tf-support-launcher" aria-label="Open Taskly support" title="Taskly" @click="supportWidgetOpen = !supportWidgetOpen">
         <svg v-if="!supportWidgetOpen" viewBox="0 0 24 24" class="h-7 w-7" aria-hidden="true">
           <path d="M12 3v3" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" />
           <rect x="5" y="7.5" width="14" height="11.5" rx="4" fill="currentColor" />

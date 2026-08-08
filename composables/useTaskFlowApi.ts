@@ -246,6 +246,8 @@ export const taskFlowApiErrorMessage = (error: unknown, fallback: string) => {
   const message = (error as { message?: unknown })?.message
   const status = (error as { status?: number; statusCode?: number })?.status
     || (error as { statusCode?: number })?.statusCode
+  const isNetworkError = !status && typeof message === 'string'
+    && /failed to fetch|fetch failed|networkerror|load failed/i.test(message)
   const extractMessage = (value: unknown): string => {
     if (typeof value === 'string') return value
     if (Array.isArray(value)) return value.map(extractMessage).filter(Boolean).join(', ')
@@ -287,6 +289,7 @@ export const taskFlowApiErrorMessage = (error: unknown, fallback: string) => {
     if (fieldError) return fieldError
   }
 
+  if (isNetworkError) return 'API bilan bog\u2018lanib bo\u2018lmadi. Internet aloqasini tekshirib, qayta urinib ko\u2018ring.'
   return typeof message === 'string' && message ? message : fallback
 }
 
