@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import type { TaskFlowNotification } from '~/composables/useTaskFlowApi'
 
+const emit = defineEmits<{ navigate: [target: { kind: 'task' | 'message'; id: string }] }>()
 const { state, load, refreshUnreadCount, markRead, markAllRead } = useNotifications()
 const tab = ref<'all' | 'unread'>('all')
 const page = ref(1)
@@ -11,8 +12,10 @@ watch(tab, () => { page.value = 1; void fetchPage() })
 watch(page, fetchPage)
 const select = async (item: TaskFlowNotification) => {
   try { await markRead(item) } catch { return }
-  if (item.task) await navigateTo({ path: '/', query: { task: item.task }, hash: '#tasks' })
-  else if (item.message) await navigateTo(`/#messages?message=${encodeURIComponent(item.message)}`)
+  const taskId = notificationRelationId(item.task)
+  const messageId = notificationRelationId(item.message)
+  if (taskId) emit('navigate', { kind: 'task', id: taskId })
+  else if (messageId) emit('navigate', { kind: 'message', id: messageId })
 }
 const allRead = async () => { try { await markAllRead(); await fetchPage() } catch { /* rolled back */ } }
 onMounted(() => { void refreshUnreadCount(); void fetchPage() })

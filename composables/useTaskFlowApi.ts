@@ -203,11 +203,19 @@ export type TaskFlowNotification = {
   title: string
   body: string
   actor_detail?: UserBrief | null
-  task?: string | null
-  message?: string | null
+  task?: string | number | { id?: string | number; pk?: string | number; url?: string } | null
+  message?: string | number | { id?: string | number; pk?: string | number; url?: string } | null
   is_read: boolean
   read_at?: string | null
   created_at: string
+}
+
+export const notificationRelationId = (value: TaskFlowNotification['task'] | TaskFlowNotification['message']) => {
+  if (value === null || value === undefined) return ''
+  if (typeof value === 'object') return notificationRelationId(value.id ?? value.pk ?? value.url ?? '')
+  const raw = String(value).trim().replace(/[?#].*$/, '').replace(/\/+$/, '')
+  if (!raw) return ''
+  return raw.includes('/') ? raw.split('/').pop() || '' : raw
 }
 
 export type NotificationPreferences = {

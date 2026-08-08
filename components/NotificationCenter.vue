@@ -21,8 +21,10 @@ const toggle = async () => {
 const select = async (notification: TaskFlowNotification) => {
   try { await markRead(notification) } catch { return }
   open.value = false
-  if (notification.task) emit('navigate', { kind: 'task', id: notification.task })
-  else if (notification.message) emit('navigate', { kind: 'message', id: notification.message })
+  const taskId = notificationRelationId(notification.task)
+  const messageId = notificationRelationId(notification.message)
+  if (taskId) emit('navigate', { kind: 'task', id: taskId })
+  else if (messageId) emit('navigate', { kind: 'message', id: messageId })
 }
 const allRead = async () => { try { await markAllRead() } catch { /* rolled back */ } }
 const retry = async () => { try { await load({ pageSize: 10 }) } catch { /* rendered */ } }

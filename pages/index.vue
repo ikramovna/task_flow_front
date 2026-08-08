@@ -948,9 +948,10 @@ const openNotifications = () => {
 
 const navigateFromNotification = async (target: { kind: 'task' | 'message'; id: string }) => {
   if (target.kind === 'task') {
-    await navigateTo({ path: '/', query: { task: target.id }, hash: '#tasks' })
     setPage('tasks')
-    await openTask([target.id, '', '', '', '', 0, target.id], 'view')
+    await loadTaskScope(taskScope.value)
+    const task = state.value.tasks.find((item) => String(item[6] || '') === target.id)
+    await openTask(task || [target.id, '', '', '', '', 0, target.id], 'view', true)
     return
   }
   setPage('messages')
@@ -1697,7 +1698,7 @@ const replaceTaskRow = (id: string, task: Array<string | number>) => {
   else state.value.tasks.splice(index, 1, task)
 }
 
-const openTask = async (task: Array<string | number>, mode: 'view' | 'edit') => {
+const openTask = async (task: Array<string | number>, mode: 'view' | 'edit', fromNotification = false) => {
   actionMenu.value = null
   const id = String(task[6] || '')
   if (!id) return notifyError('Task backend bilan hali sinxronlanmagan')
@@ -1730,7 +1731,7 @@ const openTask = async (task: Array<string | number>, mode: 'view' | 'edit') => 
     void loadTaskAssignees()
     modal.value = 'task'
   } catch (error) {
-    notifyError(taskFlowApiErrorMessage(error, 'Could not load task details'))
+    notifyError(fromNotification ? 'This task is no longer available or you do not have access to it.' : taskFlowApiErrorMessage(error, 'Could not load task details'))
   } finally {
     taskSaving.value = false
   }
@@ -3167,7 +3168,7 @@ const iconPath = (name: string) => {
         </section>
 
         <section v-else-if="activePage === 'notifications'" class="py-1">
-          <NotificationsView />
+          <NotificationsView @navigate="navigateFromNotification" />
         </section>
 
         <section v-else-if="activePage === 'messages'" class="tf-panel grid h-[650px] overflow-hidden p-0 lg:grid-cols-[290px_1fr]">
