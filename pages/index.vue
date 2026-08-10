@@ -288,6 +288,7 @@ const taskFormStatus = ref('Not Started')
 const taskIsHidden = ref(false)
 const taskAssigneeIds = ref<string[]>([])
 const taskAssigneeLabels = ref<string[]>([])
+const taskMainAssigneeId = ref('')
 const taskAssigneeSearch = ref('')
 const taskAssigneeOptions = ref<Array<Array<string | number>>>([])
 const taskAssigneesLoading = ref(false)
@@ -1476,6 +1477,7 @@ const openModal = (value: Exclude<ModalKey, null>) => {
     taskIsHidden.value = false
     taskAssigneeIds.value = []
     taskAssigneeLabels.value = []
+    taskMainAssigneeId.value = ''
     taskAssigneeSearch.value = ''
     taskAssigneeOptions.value = [...departmentTeam.value]
     void loadTaskAssignees()
@@ -1533,6 +1535,7 @@ const assignTaskTo = (member: string) => {
   const memberId = projectMemberIdFromLabel(member)
   taskAssigneeIds.value = memberId ? [memberId] : []
   taskAssigneeLabels.value = memberId ? [member] : []
+  taskMainAssigneeId.value = memberId
   taskAssigneeSearch.value = member
 }
 
@@ -1600,12 +1603,25 @@ const selectTaskAssignee = (member: Array<string | number>) => {
   }
   taskAssigneeIds.value.push(id)
   taskAssigneeLabels.value.push(name)
+  if (!taskMainAssigneeId.value) taskMainAssigneeId.value = id
   form.assignee = taskAssigneeLabels.value.join(', ')
 }
 
 const removeTaskAssignee = (index: number) => {
+  const removedId = taskAssigneeIds.value[index]
   taskAssigneeIds.value.splice(index, 1)
   taskAssigneeLabels.value.splice(index, 1)
+  if (removedId === taskMainAssigneeId.value) taskMainAssigneeId.value = taskAssigneeIds.value[0] || ''
+  form.assignee = taskAssigneeLabels.value.join(', ')
+}
+
+const setTaskMainAssignee = (index: number) => {
+  if (index <= 0 || index >= taskAssigneeIds.value.length) return
+  const [id] = taskAssigneeIds.value.splice(index, 1)
+  const [label] = taskAssigneeLabels.value.splice(index, 1)
+  taskAssigneeIds.value.unshift(id)
+  taskAssigneeLabels.value.unshift(label)
+  taskMainAssigneeId.value = id
   form.assignee = taskAssigneeLabels.value.join(', ')
 }
 
@@ -1802,6 +1818,12 @@ const openTask = async (task: Array<string | number>, mode: 'view' | 'edit', fro
     const rawAssignees = JSON.parse(String(mapped[13] || '[]')) as Array<string | number>
     taskAssigneeIds.value = rawAssignees.map(String)
     if (!taskAssigneeIds.value.length) taskAssigneeIds.value = assigneeDetails.map((member) => String(member.id || '')).filter(Boolean)
+    taskMainAssigneeId.value = taskMainAssigneeIdOf(mapped) || taskAssigneeIds.value[0] || ''
+    const mainAssigneeIndex = taskAssigneeIds.value.indexOf(taskMainAssigneeId.value)
+    if (mainAssigneeIndex > 0) {
+      const [mainAssigneeId] = taskAssigneeIds.value.splice(mainAssigneeIndex, 1)
+      taskAssigneeIds.value.unshift(mainAssigneeId)
+    }
     taskAssigneeLabels.value = taskAssigneeIds.value.map((id) => {
       const detail = assigneeDetails.find((member) => String(member.id || '') === id)
       const teamMember = team.value.find((member) => teamMemberId(member) === id)
@@ -2045,7 +2067,10 @@ const submitModal = async () => {
       status,
       priority: projectEnum(form.priority),
       category: form.category.trim(),
-      assignees: taskAssigneeIds.value.map(payloadMemberId),
+      assignees: [
+        taskMainAssigneeId.value,
+        ...taskAssigneeIds.value.filter((id) => id !== taskMainAssigneeId.value)
+      ].filter(Boolean).map(payloadMemberId),
       due_date: parseProjectDate(form.dueDate) || todayIsoDate(),
       progress: status === 'completed' ? 100 : 0,
       is_hidden: taskIsHidden.value
@@ -3431,7 +3456,8 @@ const iconPath = (name: string) => {
                 <span v-for="(member, index) in taskAssigneeLabels" :key="`${member}-${taskAssigneeIds[index]}`" class="inline-flex h-10 items-center gap-2 rounded-full border border-[#B9C8D8] bg-task-blueSoft pl-2 pr-3 text-sm font-semibold text-task-ink">
                   <span class="grid h-7 w-7 place-items-center rounded-full bg-white text-[9px] font-bold text-task-blue">{{ initials(member) }}</span>
                   {{ member }}
-                  <span v-if="index === 0" class="rounded-full bg-task-blue px-2 py-0.5 text-[9px] font-bold uppercase tracking-wide text-white">Main</span>
+                  <span v-if="taskAssigneeIds[index] === taskMainAssigneeId" class="rounded-full bg-task-blue px-2 py-0.5 text-[9px] font-bold uppercase tracking-wide text-white">Main</span>
+                  <button v-else type="button" class="rounded-full px-2 py-0.5 text-[9px] font-bold uppercase tracking-wide text-task-blue transition hover:bg-white" :aria-label="`Make ${member} main assignee`" @click="setTaskMainAssignee(index)">Make main</button>
                   <button type="button" class="grid h-5 w-5 place-items-center rounded-full text-lg leading-none text-task-muted transition hover:bg-white hover:text-task-danger" :aria-label="`Remove ${member}`" @click="removeTaskAssignee(index)">×</button>
                 </span>
               </div>
