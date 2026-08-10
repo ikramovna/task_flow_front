@@ -547,6 +547,11 @@ const quickInsights = computed(() => {
 })
 const menuPages = computed(() => pages.value.filter((page) => page.group === 'menu'))
 const generalPages = computed(() => pages.value.filter((page) => page.group === 'general'))
+const sidebarGroups = computed(() => [
+  { label: 'MAIN', items: menuPages.value.filter((page) => ['dashboard', 'tasks', 'projects', 'analytics', 'calendar'].includes(page.key)) },
+  { label: 'TEAM', items: menuPages.value.filter((page) => page.key === 'team') },
+  { label: 'REPORTS', items: menuPages.value.filter((page) => page.key === 'reports') }
+].filter((group) => group.items.length))
 const comingSoonPages = new Set<PageKey>(['projects', 'analytics', 'reports'])
 const isComingSoonPage = (key: PageKey) => comingSoonPages.has(key)
 const profileName = computed(() => `${savedProfile.firstName} ${savedProfile.lastName}`.trim())
@@ -1067,6 +1072,26 @@ const handleModalKeydown = (event: KeyboardEvent) => {
   }
 }
 
+const handleGlobalKeydown = (event: KeyboardEvent) => {
+  if (event.key !== 'Escape') return
+  const hasOpenLayer = Boolean(
+    modal.value || supportWidgetOpen.value || mobileSidebarOpen.value || actionMenu.value || openDropdown.value ||
+    openProjectDatePicker.value || projectMemberPickerOpen.value || eventAttendeePickerOpen.value
+  )
+  if (!hasOpenLayer) return
+
+  event.preventDefault()
+  actionMenu.value = null
+  openDropdown.value = null
+  openProjectDatePicker.value = null
+  projectMemberPickerOpen.value = false
+  projectMemberSearch.value = ''
+  eventAttendeePickerOpen.value = false
+  mobileSidebarOpen.value = false
+  supportWidgetOpen.value = false
+  modal.value = null
+}
+
 const closeModalFromBackdrop = () => {
   if (import.meta.client) {
     const activeElement = document.activeElement
@@ -1096,6 +1121,7 @@ watch(isDarkTheme, syncRootThemeClass)
 
 onMounted(() => {
   document.addEventListener('pointerdown', closeFloatingMenus, true)
+  document.addEventListener('keydown', handleGlobalKeydown)
   window.addEventListener('hashchange', restoreActivePage)
   themeMediaQuery = window.matchMedia('(prefers-color-scheme: dark)')
   systemPrefersDark.value = themeMediaQuery.matches
@@ -1133,6 +1159,7 @@ onMounted(() => {
 
 onBeforeUnmount(() => {
   document.removeEventListener('pointerdown', closeFloatingMenus, true)
+  document.removeEventListener('keydown', handleGlobalKeydown)
   window.removeEventListener('hashchange', restoreActivePage)
   document.body.style.overflow = previousBodyOverflow
   clearFeedbackScreenshot()
@@ -1384,6 +1411,12 @@ const toLocalIsoDateTime = (dateValue: string, timeValue: string, addMinutes = 0
 }
 
 const normalizeTimeValue = (value: string) => {
+  const colonMatch = value.trim().match(/^(\d{1,2}):(\d{0,2})$/)
+  if (colonMatch) {
+    const hour = Math.min(Number(colonMatch[1] || 0), 23)
+    const minute = Math.min(Number((colonMatch[2] || '0').padEnd(2, '0')), 59)
+    return `${String(hour).padStart(2, '0')}:${String(minute).padStart(2, '0')}`
+  }
   const digits = value.replace(/\D/g, '').slice(0, 4)
   if (!digits) return ''
 
@@ -1393,6 +1426,36 @@ const normalizeTimeValue = (value: string) => {
   const minute = Math.min(Number(rawMinute.padEnd(2, '0') || 0), 59)
 
   return `${String(hour).padStart(2, '0')}:${String(minute).padStart(2, '0')}`
+}
+
+const eventTimeMinutes = (value: string) => {
+  const [hour, minute] = (normalizeTimeValue(value) || '09:00').split(':').map(Number)
+  return hour * 60 + minute
+}
+const formatEventTimeMinutes = (value: number) => {
+  const normalized = ((value % 1440) + 1440) % 1440
+  return `${String(Math.floor(normalized / 60)).padStart(2, '0')}:${String(normalized % 60).padStart(2, '0')}`
+}
+const normalizeEventTimeField = (field: 'eventTime' | 'eventEndTime') => {
+  form[field] = normalizeTimeValue(form[field]) || (field === 'eventTime' ? '09:00' : '10:00')
+}
+const handleEventTimeInput = (event: Event, field: 'eventTime' | 'eventEndTime') => {
+  const input = event.target as HTMLInputElement
+  const raw = input.value.replace(/[^\d:]/g, '')
+  let masked = ''
+  if (raw.includes(':')) {
+    const [rawHour = '', rawMinute = ''] = raw.split(':')
+    masked = `${rawHour.replace(/\D/g, '').slice(0, 2)}:${rawMinute.replace(/\D/g, '').slice(0, 2)}`
+  } else {
+    const digits = raw.replace(/\D/g, '').slice(0, 4)
+    masked = digits.length > 2 ? `${digits.slice(0, 2)}:${digits.slice(2)}` : digits
+  }
+  input.value = masked
+  form[field] = masked
+}
+const setEventDuration = (minutes: number) => {
+  normalizeEventTimeField('eventTime')
+  form.eventEndTime = formatEventTimeMinutes(eventTimeMinutes(form.eventTime) + minutes)
 }
 
 const projectPayloadFromForm = (status = 'in_progress') => {
@@ -2624,57 +2687,35 @@ const iconPath = (name: string) => {
     </Transition>
     <section class="tf-window">
       <div v-if="mobileSidebarOpen" class="tf-mobile-overlay" @click="mobileSidebarOpen = false" />
-      <aside :class="['tf-sidebar relative flex shrink-0 flex-col gap-4 border-r border-task-line bg-white py-5 transition-[width,padding] duration-300 ease-out', sidebarCollapsed ? 'w-[82px] px-3' : 'w-[230px] px-4', mobileSidebarOpen ? 'is-open' : '']">
+      <aside :class="['tf-sidebar tf-sidebar-modern relative flex shrink-0 flex-col border-r border-task-line bg-white transition-[width,padding] duration-300 ease-out', sidebarCollapsed ? 'w-[82px] px-3 py-4' : 'w-[250px] px-4 py-4', mobileSidebarOpen ? 'is-open' : '']">
         <button type="button" class="tf-icon-button absolute right-3 top-3 md:hidden" aria-label="Close menu" @click="mobileSidebarOpen = false">
           <svg viewBox="0 0 24 24" class="h-4 w-4" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M18 6 6 18M6 6l12 12" /></svg>
         </button>
-        <div :class="['tf-panel flex h-12 items-center shadow-none', sidebarCollapsed ? 'justify-center px-2' : 'gap-2 px-3']">
+        <div :class="['tf-sidebar-brand flex h-[64px] items-center', sidebarCollapsed ? 'justify-center px-1' : 'gap-2 px-3']">
           <button class="flex min-w-0 flex-1 items-center gap-3" type="button" :title="sidebarCollapsed ? 'Open menu' : 'TaskFlow'" :aria-label="sidebarCollapsed ? 'Open menu' : 'Go to dashboard'" @click="sidebarCollapsed ? (sidebarCollapsed = false) : setPage('dashboard')">
-          <div :class="['grid h-8 w-8 shrink-0 place-items-center transition', sidebarCollapsed ? 'rounded-[10px] bg-task-blueSoft text-task-blue hover:bg-task-blue hover:text-white' : 'rounded-full bg-task-blue text-white']">
+          <div :class="['grid shrink-0 place-items-center transition', sidebarCollapsed ? 'h-10 w-10 rounded-[12px] bg-task-blueSoft text-task-blue hover:bg-task-blue hover:text-white' : 'h-11 w-11 rounded-[13px] bg-gradient-to-br from-[#4c8cff] to-[#2358df] text-white shadow-[0_8px_20px_-10px_rgba(37,88,223,.7)]']">
             <svg v-if="sidebarCollapsed" viewBox="0 0 24 24" class="h-5 w-5" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M5 7h14M5 12h14M5 17h14" /></svg>
-            <svg v-else viewBox="0 0 24 24" class="h-4 w-4" fill="none" stroke="currentColor" stroke-width="2.7"><path d="m7 12 3 3 7-7" /></svg>
+            <svg v-else viewBox="0 0 24 24" class="h-6 w-6" fill="currentColor"><rect x="4" y="4" width="7" height="7" rx="2" /><rect x="13" y="4" width="7" height="7" rx="2" /><rect x="4" y="13" width="7" height="7" rx="2" /><path d="M14 13h6v3a4 4 0 0 1-4 4h-3v-6a1 1 0 0 1 1-1Z" /></svg>
           </div>
-          <span v-if="!sidebarCollapsed" class="truncate text-lg font-bold">TaskFlow</span>
+          <span v-if="!sidebarCollapsed" class="truncate text-[21px] font-extrabold tracking-[-0.03em]">TaskFlow</span>
           </button>
-          <button v-if="!sidebarCollapsed" type="button" class="group hidden h-10 w-10 shrink-0 place-items-center rounded-[12px] border border-task-line bg-slate-50 text-task-muted shadow-sm transition duration-200 hover:-translate-x-0.5 hover:border-task-blue hover:bg-task-blueSoft hover:text-task-blue md:grid" aria-label="Collapse menu" title="Close sidebar" @click="sidebarCollapsed = true">
-            <svg viewBox="0 0 24 24" class="h-5 w-5 transition group-hover:scale-110" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M15 6 9 12l6 6" /><path d="M20 6v12" /></svg>
+          <button v-if="!sidebarCollapsed" type="button" class="group hidden h-10 w-10 shrink-0 place-items-center rounded-[12px] bg-slate-50 text-slate-500 transition duration-200 hover:-translate-x-0.5 hover:bg-task-blueSoft hover:text-task-blue md:grid" aria-label="Collapse menu" title="Close sidebar" @click="sidebarCollapsed = true">
+            <svg viewBox="0 0 24 24" class="h-5 w-5 transition group-hover:scale-110" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m13 7-5 5 5 5M19 7l-5 5 5 5" /></svg>
           </button>
         </div>
 
-        <nav :class="['tf-panel flex min-h-0 flex-1 flex-col overflow-hidden py-4 shadow-none', sidebarCollapsed ? 'px-2' : 'px-3']">
-          <p v-if="!sidebarCollapsed" class="mb-3 text-xs font-medium text-task-muted">Menu</p>
-          <div :key="`menu-${activePage}`" class="space-y-1">
-            <button
-              v-for="item in menuPages"
-              :key="item.key"
-              type="button"
-              :disabled="isComingSoonPage(item.key)"
-              :class="['tf-nav-item relative flex h-10 w-full items-center rounded-[12px] text-left text-sm transition', sidebarCollapsed ? 'justify-center px-2' : 'gap-3 px-3', isComingSoonPage(item.key) ? 'cursor-not-allowed opacity-40 grayscale' : activePage === item.key ? 'is-active bg-task-blueSoft font-semibold text-task-blue' : 'text-task-muted hover:bg-slate-50 hover:text-task-ink']"
-              :title="isComingSoonPage(item.key) ? `${item.label} — Coming soon` : sidebarCollapsed ? item.label : undefined"
-              @click="setPage(item.key)"
-            >
-              <span :class="['grid h-7 w-7 shrink-0 place-items-center rounded-[9px] transition', !isComingSoonPage(item.key) && activePage === item.key ? 'bg-white text-task-blue shadow-sm' : '']"><svg viewBox="0 0 24 24" class="h-[17px] w-[17px]" fill="none" stroke="currentColor" stroke-width="1.7"><path :d="iconPath(item.icon)" /></svg></span>
-              <span v-if="!sidebarCollapsed" class="min-w-0 flex-1 truncate">{{ item.label }}</span>
-              <span v-if="isComingSoonPage(item.key) && !sidebarCollapsed" class="rounded-full bg-slate-100 px-2 py-0.5 text-[9px] font-semibold uppercase tracking-wide text-task-muted">Soon</span>
-              <span v-if="item.badge && !sidebarCollapsed" class="grid h-5 min-w-5 place-items-center rounded-full bg-task-danger px-1 text-[10px] font-bold text-white">{{ item.badge }}</span>
-              <span v-else-if="item.badge" class="absolute right-1.5 top-1.5 h-2 w-2 rounded-full border border-white bg-task-danger" />
-            </button>
-          </div>
-
-          <p v-if="generalPages.length && !sidebarCollapsed" class="mb-3 mt-8 text-xs font-medium text-task-muted">General</p>
-          <div v-if="generalPages.length" :class="['space-y-1', sidebarCollapsed ? 'mt-5 border-t border-task-line pt-5' : '']">
-            <button
-              v-for="item in generalPages"
-              :key="item.key"
-              type="button"
-              :class="['flex h-9 w-full items-center rounded-ui text-left text-sm transition', sidebarCollapsed ? 'justify-center px-2' : 'gap-3 px-3', activePage === item.key ? 'bg-task-blueSoft font-semibold text-task-blue' : 'text-task-muted hover:bg-slate-50 hover:text-task-ink']"
-              :title="sidebarCollapsed ? item.label : undefined"
-              @click="setPage(item.key)"
-            >
-              <svg viewBox="0 0 24 24" class="h-[18px] w-[18px] shrink-0" fill="none" stroke="currentColor" stroke-width="1.7"><path :d="iconPath(item.icon)" /></svg>
-              <span v-if="!sidebarCollapsed">{{ item.label }}</span>
-            </button>
-          </div>
+        <nav :class="['flex min-h-0 flex-1 flex-col overflow-hidden pt-5', sidebarCollapsed ? 'px-1' : 'px-2']">
+          <section v-for="(group, groupIndex) in sidebarGroups" :key="group.label" :class="['tf-sidebar-group', groupIndex ? 'mt-5 border-t border-task-line pt-5' : '']">
+            <p v-if="!sidebarCollapsed" class="tf-sidebar-group-label">{{ group.label }}</p>
+            <div :key="`${group.label}-${activePage}`" class="mt-2 space-y-1.5">
+              <button v-for="item in group.items" :key="item.key" type="button" :disabled="isComingSoonPage(item.key)" :class="['tf-nav-item relative flex h-11 w-full items-center rounded-[12px] text-left text-sm transition', sidebarCollapsed ? 'justify-center px-2' : 'gap-3 px-3', isComingSoonPage(item.key) ? 'cursor-not-allowed text-slate-400' : activePage === item.key ? 'is-active font-semibold text-task-blue' : 'text-task-muted hover:bg-slate-50 hover:text-task-ink']" :title="isComingSoonPage(item.key) ? `${item.label} — Coming soon` : sidebarCollapsed ? item.label : undefined" @click="setPage(item.key)">
+                <span class="grid h-7 w-7 shrink-0 place-items-center"><svg viewBox="0 0 24 24" class="h-[19px] w-[19px]" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path :d="iconPath(item.icon)" /></svg></span>
+                <span v-if="!sidebarCollapsed" class="min-w-0 flex-1 truncate">{{ item.label }}</span>
+                <span v-if="isComingSoonPage(item.key) && !sidebarCollapsed" class="rounded-full bg-slate-100 px-2 py-1 text-[9px] font-bold uppercase tracking-wide text-slate-400">Soon</span>
+                <span v-if="item.badge && !sidebarCollapsed" class="grid h-5 min-w-5 place-items-center rounded-full bg-task-danger px-1 text-[10px] font-bold text-white">{{ item.badge }}</span>
+              </button>
+            </div>
+          </section>
           <div :class="['tf-sidebar-user mt-auto', sidebarCollapsed ? 'flex-col justify-center p-1.5' : '']">
           <button type="button" :class="['flex min-w-0 items-center gap-2 text-left', sidebarCollapsed ? 'justify-center' : 'flex-1']" :title="sidebarCollapsed ? profileName : undefined" @click="setPage('settings')">
             <span class="tf-sidebar-avatar">
@@ -3534,7 +3575,7 @@ const iconPath = (name: string) => {
               Event Title
               <input v-model="form.title" class="tf-input mt-2 h-12 w-full" placeholder="Sprint Planning, Design Review" />
             </label>
-            <div class="mt-3 grid gap-3 md:grid-cols-[1fr_1fr]">
+            <div class="mt-3 flex flex-col gap-3">
               <label class="text-sm font-semibold">
                 Date
                 <div class="tf-date-picker relative mt-2">
@@ -3559,15 +3600,18 @@ const iconPath = (name: string) => {
               </label>
               <div class="text-sm font-semibold">
                 Time
-                <div class="mt-2 grid grid-cols-[1fr_auto_1fr] items-center gap-3">
-                  <label class="relative">
-                    <input v-model="form.eventTime" type="time" class="tf-input h-11 w-full cursor-text" step="60" aria-label="Event start time" />
+                <div class="tf-event-time-range mt-2">
+                  <label class="tf-event-time-field">
+                    <span>Start time</span>
+                    <div><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><circle cx="12" cy="12" r="9" /><path d="M12 7v5l3 2" /></svg><input :value="form.eventTime" inputmode="numeric" maxlength="5" placeholder="09:00" aria-label="Event start time" @input="handleEventTimeInput($event, 'eventTime')" @blur="normalizeEventTimeField('eventTime')" /></div>
                   </label>
-                  <span class="text-task-muted">to</span>
-                  <label class="relative">
-                    <input v-model="form.eventEndTime" type="time" class="tf-input h-11 w-full cursor-text" step="60" aria-label="Event end time" />
+                  <span class="tf-event-time-arrow" aria-hidden="true">→</span>
+                  <label class="tf-event-time-field">
+                    <span>End time</span>
+                    <div><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><circle cx="12" cy="12" r="9" /><path d="M12 7v5l3 2" /></svg><input :value="form.eventEndTime" inputmode="numeric" maxlength="5" placeholder="10:00" aria-label="Event end time" @input="handleEventTimeInput($event, 'eventEndTime')" @blur="normalizeEventTimeField('eventEndTime')" /></div>
                   </label>
                 </div>
+                <div class="mt-2 flex flex-wrap items-center gap-1.5"><span class="mr-1 text-[11px] font-medium text-task-muted">Quick duration:</span><button v-for="duration in [{ label: '30 min', value: 30 }, { label: '1 hour', value: 60 }, { label: '1.5 hours', value: 90 }, { label: '2 hours', value: 120 }]" :key="duration.value" type="button" class="tf-duration-chip" @click="setEventDuration(duration.value)">{{ duration.label }}</button></div>
               </div>
             </div>
             <div class="mt-3">
