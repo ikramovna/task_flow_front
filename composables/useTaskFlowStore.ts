@@ -33,6 +33,7 @@ export interface TaskFlowState {
   currentDepartmentId: string
   currentRole: string
   currentUserActive: boolean
+  currentUserHasAllDepartmentsAccess: boolean
   loaded: boolean
 }
 
@@ -69,7 +70,8 @@ const createEmptyState = (): TaskFlowState => ({
   currentUserId: '',
   currentDepartmentId: '',
   currentRole: '',
-  currentUserActive: false
+  currentUserActive: false,
+  currentUserHasAllDepartmentsAccess: false
 })
 
 export const useTaskFlowStore = () => {
@@ -118,7 +120,8 @@ export const useTaskFlowStore = () => {
           currentUserId: String(profile.id ?? ''),
           currentDepartmentId: String(profile.department || membership?.department || ''),
           currentRole: String(profile.role || membership?.role || '').trim().toLowerCase(),
-          currentUserActive: profile.is_active !== false && membership?.is_active !== false
+          currentUserActive: profile.is_active !== false && membership?.is_active !== false,
+          currentUserHasAllDepartmentsAccess: profile.has_all_departments_access === true || membership?.has_all_departments_access === true
         }
       })
 
@@ -187,7 +190,8 @@ export const useTaskFlowStore = () => {
         currentUserId: backend.currentUserId,
         currentDepartmentId: backend.currentDepartmentId,
         currentRole: backend.currentRole,
-        currentUserActive: backend.currentUserActive
+        currentUserActive: backend.currentUserActive,
+        currentUserHasAllDepartmentsAccess: backend.currentUserHasAllDepartmentsAccess
       }
     } catch (error) {
       console.warn('TaskFlow API load failed.', error)
@@ -204,7 +208,8 @@ export const useTaskFlowStore = () => {
           currentUserId: String(profile.id ?? ''),
           currentDepartmentId: String(profile.department || membership?.department || ''),
           currentRole: String(profile.role || membership?.role || '').trim().toLowerCase(),
-          currentUserActive: profile.is_active !== false && membership?.is_active !== false
+          currentUserActive: profile.is_active !== false && membership?.is_active !== false,
+          currentUserHasAllDepartmentsAccess: profile.has_all_departments_access === true || membership?.has_all_departments_access === true
         }
       } catch (profileError) {
         console.warn('TaskFlow profile load failed.', profileError)
@@ -244,6 +249,7 @@ export const useTaskFlowStore = () => {
     currentDepartmentId: computed(() => state.value.currentDepartmentId),
     currentRole: computed(() => state.value.currentRole),
     currentUserActive: computed(() => state.value.currentUserActive),
+    currentUserHasAllDepartmentsAccess: computed(() => state.value.currentUserHasAllDepartmentsAccess),
     apiError: computed(() => apiError.value)
   }
 }

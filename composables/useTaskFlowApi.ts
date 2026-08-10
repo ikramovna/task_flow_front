@@ -36,9 +36,10 @@ type MeProfile = {
   department?: string | null
   role?: string
   is_active?: boolean
-  membership?: { role?: string; department?: string; is_active?: boolean }
-  department_membership?: { role?: string; department?: string; is_active?: boolean }
-  memberships?: Array<{ role?: string; department?: string; is_active?: boolean }>
+  has_all_departments_access?: boolean
+  membership?: { role?: string; department?: string; is_active?: boolean; has_all_departments_access?: boolean }
+  department_membership?: { role?: string; department?: string; is_active?: boolean; has_all_departments_access?: boolean }
+  memberships?: Array<{ role?: string; department?: string; is_active?: boolean; has_all_departments_access?: boolean }>
 }
 
 type ApiTask = {
@@ -773,6 +774,7 @@ export const useTaskFlowApi = () => {
       currentDepartmentId: profileDepartment,
       currentRole: profileRole,
       currentUserActive: profileIsActive,
+      currentUserHasAllDepartmentsAccess: profile.has_all_departments_access === true || profileMembership?.has_all_departments_access === true,
       dashboard,
       analytics,
       tasks,

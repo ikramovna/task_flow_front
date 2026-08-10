@@ -62,11 +62,14 @@ const route = useRoute()
 
 void taskFlowStore.loadBackendData()
 
-const { state, pages, stats, projectStats, analyticsStats, monthlyProgress, tasksByCategory, tasks, projects, team, workload, reports, events, messages, heatmap, currentUserId, currentDepartmentId, currentRole, currentUserActive, apiError, dashboardTodayEvents, dashboardUpcomingEvents, dashboardDeadlines, dashboardDepartments, dashboardRecentTasks, dashboardGeneratedAt } = taskFlowStore
+const { state, pages, stats, projectStats, analyticsStats, monthlyProgress, tasksByCategory, tasks, projects, team, workload, reports, events, messages, heatmap, currentUserId, currentDepartmentId, currentRole, currentUserActive, currentUserHasAllDepartmentsAccess, apiError, dashboardTodayEvents, dashboardUpcomingEvents, dashboardDeadlines, dashboardDepartments, dashboardRecentTasks, dashboardGeneratedAt } = taskFlowStore
 const normalizedRole = computed(() => currentRole.value.trim().toLowerCase())
 const canManageDepartment = computed(() => ['owner', 'admin', 'manager'].includes(normalizedRole.value))
 const canAddTask = computed(() => currentUserActive.value && ['owner', 'admin', 'manager'].includes(normalizedRole.value))
 const canCreateEvent = computed(() => canAddTask.value)
+const canChooseDepartment = computed(() =>
+  currentUserHasAllDepartmentsAccess.value && ['owner', 'manager'].includes(normalizedRole.value)
+)
 const effectiveDepartmentId = computed(() => {
   if (currentDepartmentId.value) return currentDepartmentId.value
   const ownMembership = team.value.find((member) => String(member[2] || '').trim().toLowerCase() === savedProfile.email.trim().toLowerCase())
@@ -333,6 +336,7 @@ const memberIsActive = ref(true)
 const memberDepartment = ref('')
 const memberDepartments = ref<Array<{ id: string; name: string }>>([])
 const memberDepartmentsLoading = ref(false)
+const modalDepartment = ref('')
 const memberRoleOptions = ['member', 'manager', 'admin', 'owner']
 const memberDepartmentOptions = computed(() => {
   const options = [...memberDepartments.value]
@@ -1480,7 +1484,7 @@ const projectPayloadFromForm = (status = 'in_progress') => {
 }
 
 const eventPayloadFromForm = () => ({
-  department: effectiveDepartmentId.value,
+  department: modalDepartment.value || effectiveDepartmentId.value,
   title: form.title.trim(),
   event_type: form.eventType.trim() || 'Meeting',
   description: form.description.trim(),
@@ -1534,6 +1538,8 @@ const openModal = (value: Exclude<ModalKey, null>) => {
   form.eventColor = 'bg-task-blue'
   form.meetingLink = ''
   form.description = ''
+  modalDepartment.value = effectiveDepartmentId.value
+  if ((value === 'task' || value === 'event') && canChooseDepartment.value) void loadModalDepartments()
   if (value === 'task') {
     editingTaskId.value = ''
     taskModalMode.value = 'create'
@@ -1627,12 +1633,29 @@ const taskMainAssigneeOf = (task: Array<string | number>): ProjectCardMember | n
     return null
   }
 }
+
+const loadModalDepartments = async () => {
+  if (!canChooseDepartment.value) return
+  await loadMemberDepartments()
+  if (!modalDepartment.value && memberDepartmentOptions.value.length === 1) {
+    modalDepartment.value = memberDepartmentOptions.value[0].id
+  }
+}
+
+const selectModalDepartment = (departmentId: string) => {
+  modalDepartment.value = departmentId
+  openDropdown.value = null
+  if (modal.value === 'event') void loadEventAttendees()
+}
 const currentMemberId = computed(() => {
   const email = savedProfile.email.trim().toLowerCase()
   if (!email) return ''
   const member = team.value.find((item) => String(item[2] || '').trim().toLowerCase() === email)
   return member ? teamMemberId(member) : ''
 })
+const modalDepartmentName = computed(() =>
+  memberDepartmentOptions.value.find((department) => department.id === modalDepartment.value)?.name || 'Select department'
+)
 const canChangeTaskStatus = (task: Array<string | number>) => {
   const mainAssigneeId = taskMainAssigneeIdOf(task)
   const mainAssignee = taskMainAssigneeOf(task)
@@ -1763,21 +1786,21 @@ const availableEventAttendees = computed(() => {
 const loadEventAttendees = async () => {
   eventAttendeesLoading.value = true
   try {
-    const department = effectiveDepartmentId.value
-    if (!department) {
+    const department = modalDepartment.value || effectiveDepartmentId.value
+    if (!department && !canChooseDepartment.value) {
       eventAttendeeOptions.value = []
       notifyError('Your account must belong to a department before selecting attendees')
       return
     }
 
     const response = await taskFlowApi.listMembers({
-      department,
+      department: canChooseDepartment.value ? undefined : department,
       is_active: true,
       page_size: 200
     })
     eventAttendeeOptions.value = taskFlowApi.listItems(response)
       .map(taskFlowApi.mapMember)
-      .filter((member) => String(member[11] || '') === department)
+      .filter((member) => canChooseDepartment.value || String(member[11] || '') === department)
 
     const allowedIds = new Set(eventAttendeeOptions.value.map(teamMemberId).filter(Boolean))
     for (let index = eventAttendeeIds.value.length - 1; index >= 0; index -= 1) {
@@ -2135,9 +2158,9 @@ const submitModal = async () => {
       return
     }
 
-    const department = String(effectiveDepartmentId.value || '')
+    const department = String(modalDepartment.value || effectiveDepartmentId.value || '')
     if (!department) {
-      notifyError('Your user must belong to a department before creating tasks')
+      notifyError(canChooseDepartment.value ? 'Select a department for this task' : 'Your user must belong to a department before creating tasks')
       return
     }
     if (!canAddTask.value && !editingTaskId.value) {
@@ -2256,18 +2279,18 @@ const submitModal = async () => {
 
     const payload = eventPayloadFromForm()
     if (!payload.department) {
-      notifyError('Your account must belong to a department before creating events')
+      notifyError(canChooseDepartment.value ? 'Select a department for this event' : 'Your account must belong to a department before creating events')
       return
     }
 
     const allowedAttendeeIds = new Set(
       eventAttendeeOptions.value
-        .filter((member) => String(member[11] || '') === payload.department)
+        .filter((member) => canChooseDepartment.value || String(member[11] || '') === payload.department)
         .map(teamMemberId)
         .filter(Boolean)
     )
     if (payload.attendees.some((attendeeId) => !allowedAttendeeIds.has(String(attendeeId)))) {
-      notifyError('Every attendee must belong to your current department')
+      notifyError('Every attendee must belong to the selected department')
       eventAttendeePickerOpen.value = true
       return
     }
@@ -3476,7 +3499,20 @@ const iconPath = (name: string) => {
             <label class="mb-5 mt-4 flex items-center justify-between gap-4 rounded-ui border border-task-line px-4 py-3 text-sm font-semibold"><span><span class="block">Active member</span><span class="mt-0.5 block text-xs font-normal text-task-muted">Allow this member to sign in immediately.</span></span><input v-model="memberIsActive" type="checkbox" class="h-5 w-5 accent-task-blue" /></label>
           </template>
           <template v-else-if="modal === 'task'">
-            <div class="mb-4 flex items-center gap-3 rounded-[14px] border border-task-line bg-task-blueSoft px-4 py-3 text-sm">
+            <label v-if="canChooseDepartment" class="mb-4 block text-sm font-semibold">
+              Department <span class="text-task-danger">*</span>
+              <div class="tf-dropdown mt-2">
+                <button type="button" class="tf-dropdown-button h-12" @click="openDropdown = openDropdown === 'modalDepartment' ? null : 'modalDepartment'">
+                  <span class="truncate">{{ memberDepartmentsLoading ? 'Loading departments...' : modalDepartmentName }}</span>
+                  <svg viewBox="0 0 20 20" :class="['h-4 w-4 shrink-0 text-task-muted transition-transform', openDropdown === 'modalDepartment' ? 'rotate-180' : '']" fill="none" stroke="currentColor" stroke-width="2"><path d="m5 7.5 5 5 5-5" /></svg>
+                </button>
+                <div v-if="openDropdown === 'modalDepartment'" class="tf-dropdown-menu max-h-56 overflow-y-auto">
+                  <button v-for="department in memberDepartmentOptions" :key="department.id" type="button" class="tf-dropdown-option" @click="selectModalDepartment(department.id)"><span>{{ department.name }}</span><span v-if="modalDepartment === department.id" class="text-task-blue">✓</span></button>
+                  <p v-if="!memberDepartmentsLoading && !memberDepartmentOptions.length" class="px-3 py-3 text-sm font-normal text-task-muted">No departments available</p>
+                </div>
+              </div>
+            </label>
+            <div v-else class="mb-4 flex items-center gap-3 rounded-[14px] border border-task-line bg-task-blueSoft px-4 py-3 text-sm">
               <span class="grid h-9 w-9 shrink-0 place-items-center rounded-full bg-white text-task-blue"><svg viewBox="0 0 24 24" class="h-4 w-4" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M4 21V7l8-4 8 4v14M9 21v-5h6v5M8 9h1m6 0h1m-8 3h1m6 0h1" /></svg></span>
               <div class="min-w-0 flex-1"><div class="flex flex-wrap items-center gap-2"><p class="font-semibold text-task-ink">Current department</p><span v-if="editingTaskId && taskIsHidden" class="tf-hidden-badge"><svg viewBox="0 0 24 24" class="h-3 w-3" fill="none" stroke="currentColor" stroke-width="2"><rect x="5" y="10" width="14" height="11" rx="2" /><path d="M8 10V7a4 4 0 0 1 8 0v3" /></svg>Hidden</span></div><p class="mt-0.5 text-xs text-task-muted">Task automatically belongs to your department.</p></div>
             </div>
@@ -3593,6 +3629,13 @@ const iconPath = (name: string) => {
             </label>
           </template>
           <template v-else-if="modal === 'event'">
+            <label v-if="canChooseDepartment" class="mb-4 block text-sm font-semibold">
+              Department <span class="text-task-danger">*</span>
+              <div class="tf-dropdown mt-2">
+                <button type="button" class="tf-dropdown-button h-12" @click="openDropdown = openDropdown === 'modalDepartment' ? null : 'modalDepartment'"><span class="truncate">{{ memberDepartmentsLoading ? 'Loading departments...' : modalDepartmentName }}</span><svg viewBox="0 0 20 20" :class="['h-4 w-4 shrink-0 text-task-muted transition-transform', openDropdown === 'modalDepartment' ? 'rotate-180' : '']" fill="none" stroke="currentColor" stroke-width="2"><path d="m5 7.5 5 5 5-5" /></svg></button>
+                <div v-if="openDropdown === 'modalDepartment'" class="tf-dropdown-menu max-h-56 overflow-y-auto"><button v-for="department in memberDepartmentOptions" :key="department.id" type="button" class="tf-dropdown-option" @click="selectModalDepartment(department.id)"><span>{{ department.name }}</span><span v-if="modalDepartment === department.id" class="text-task-blue">✓</span></button><p v-if="!memberDepartmentsLoading && !memberDepartmentOptions.length" class="px-3 py-3 text-sm font-normal text-task-muted">No departments available</p></div>
+              </div>
+            </label>
             <label class="block text-sm font-semibold">
               Event Title
               <input v-model="form.title" class="tf-input mt-2 h-12 w-full" placeholder="Sprint Planning, Design Review" />
