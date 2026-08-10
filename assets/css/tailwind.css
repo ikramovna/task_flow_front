@@ -1123,6 +1123,13 @@ body {
   box-shadow: inset 0 1px 0 rgb(255 255 255 / 0.035);
 }
 
+.tf-dark .tf-kanban-count {
+  background: color-mix(in srgb, var(--column-accent) 24%, #172033);
+  border: 1px solid color-mix(in srgb, var(--column-accent) 42%, #334155);
+  color: #f8fafc;
+  box-shadow: none;
+}
+
 .tf-dark .tf-kanban-card,
 .tf-dark .tf-kanban-empty {
   background-color: #172033;

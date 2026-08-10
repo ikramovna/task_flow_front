@@ -841,6 +841,7 @@ export const useTaskFlowApi = () => {
     const fullName = member.full_name || `${member.first_name || ''} ${member.last_name || ''}`.trim() || member.email || ''
     const memberId = member.id ?? ''
     const departmentId = typeof member.department === 'string' ? member.department : member.department?.id || ''
+    const departmentName = typeof member.department === 'string' ? '' : member.department?.name || ''
 
     return [
       fullName,
@@ -853,10 +854,11 @@ export const useTaskFlowApi = () => {
       memberId,
       member.avatar || '',
       memberId,
-      '',
+      departmentName,
       departmentId,
       member.is_active === false ? 'Inactive' : 'Active',
-      member.date_joined || member.joined_at || ''
+      member.date_joined || member.joined_at || '',
+      member.role || 'member'
     ]
   }
 

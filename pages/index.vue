@@ -8,7 +8,7 @@ import GreetingEveningLight from '~/components/GreetingEveningLight.vue'
 import GreetingEveningDark from '~/components/GreetingEveningDark.vue'
 
 type PageKey = 'dashboard' | 'tasks' | 'projects' | 'analytics' | 'calendar' | 'team' | 'reports' | 'messages' | 'notifications' | 'settings' | 'help'
-type ModalKey = 'task' | 'project' | 'event' | 'event-detail' | 'report' | 'member' | 'team-filter' | null
+type ModalKey = 'task' | 'project' | 'event' | 'event-detail' | 'report' | 'member' | 'member-profile' | 'member-remove' | 'team-filter' | null
 type ProjectCardMember = {
   id?: string | number
   email?: string
@@ -148,6 +148,8 @@ const toggleSupportWidget = () => {
 }
 const membersRawResponse = ref<unknown>(null)
 const memberSummary = ref<{ total_members?: number; average_efficiency?: number; active_tasks?: number } | null>(null)
+const selectedTeamMember = ref<Array<string | number> | null>(null)
+const memberDeleting = ref(false)
 const activeMessage = ref('')
 const chatDraft = ref('')
 const toast = ref('')
@@ -171,6 +173,9 @@ const teamPage = ref(1)
 const pageSize = 10
 const projectPriorityFilter = ref('All Priorities')
 const workloadFilter = ref(70)
+const teamDepartmentFilter = ref('all')
+const teamRoleFilter = ref('all')
+const teamSort = ref<'name_asc' | 'name_desc' | 'department_asc' | 'role_asc' | 'efficiency_desc'>('name_asc')
 const today = new Date()
 const calendarYear = ref(today.getFullYear())
 const currentMonthIndex = today.getMonth()
@@ -451,7 +456,21 @@ const kanbanColumns = computed(() => [
 ])
 const backlogTasks = computed(() => filteredTasks.value.filter((task) => String(task[3]).toLowerCase() === 'backlog'))
 const filteredProjects = computed(() => projects.value.filter((project) => includesQuery(project, projectSearch.value) && (projectPriorityFilter.value === 'All Priorities' || String(project[2]) === projectPriorityFilter.value)))
-const filteredTeam = computed(() => team.value.filter((member) => Number(member[4] || 0) <= workloadFilter.value))
+const filteredTeam = computed(() => {
+  const rows = team.value.filter((member) =>
+    Number(member[4] || 0) <= workloadFilter.value &&
+    (teamDepartmentFilter.value === 'all' || String(member[11] || '') === teamDepartmentFilter.value) &&
+    (teamRoleFilter.value === 'all' || String(member[14] || '').toLowerCase() === teamRoleFilter.value)
+  )
+  const collator = new Intl.Collator('en', { sensitivity: 'base' })
+  return [...rows].sort((a, b) => {
+    if (teamSort.value === 'name_desc') return collator.compare(String(b[0] || ''), String(a[0] || ''))
+    if (teamSort.value === 'department_asc') return collator.compare(String(a[10] || a[11] || ''), String(b[10] || b[11] || ''))
+    if (teamSort.value === 'role_asc') return collator.compare(String(a[14] || a[1] || ''), String(b[14] || b[1] || ''))
+    if (teamSort.value === 'efficiency_desc') return Number(b[4] || 0) - Number(a[4] || 0)
+    return collator.compare(String(a[0] || ''), String(b[0] || ''))
+  })
+})
 const filteredReports = computed(() => reports.value.filter((report) => includesQuery(report, reportSearch.value)))
 const reportStats = computed(() => [
   { value: reports.value.length, label: 'Total Reports', icon: 'file' },
@@ -1132,6 +1151,7 @@ onMounted(() => {
   systemPrefersDark.value = themeMediaQuery.matches
   themeMediaQuery.addEventListener('change', updateSystemTheme)
   loadProfile()
+  void loadMemberDepartments()
   try {
     const saved = JSON.parse(localStorage.getItem('taskflow-support-position') || 'null')
     if (saved && Number.isFinite(saved.x) && Number.isFinite(saved.y)) {
@@ -1248,6 +1268,14 @@ const projectMemberIdFromLabel = (label: string) => {
   return member ? teamMemberId(member) : ''
 }
 const membershipIdOf = (member: Array<string | number>) => String(member[7] || member[9] || '')
+const memberDepartmentNameOf = (member: Array<string | number>) => String(member[10] || memberDepartmentOptions.value.find((department) => department.id === String(member[11] || ''))?.name || 'No department')
+const toggleTeamSort = (column: 'name' | 'department' | 'role' | 'efficiency') => {
+  if (column === 'name') teamSort.value = teamSort.value === 'name_asc' ? 'name_desc' : 'name_asc'
+  if (column === 'department') teamSort.value = 'department_asc'
+  if (column === 'role') teamSort.value = 'role_asc'
+  if (column === 'efficiency') teamSort.value = 'efficiency_desc'
+  teamPage.value = 1
+}
 const payloadMemberId = (id: string) => (/^\d+$/.test(id) ? Number(id) : id)
 const projectEnum = (value: string) => value.toLowerCase().replace(/\s+/g, '_')
 const projectDisplayStatus = (value: string) => value.split('_').map((part) => part.charAt(0).toUpperCase() + part.slice(1)).join(' ')
@@ -2057,7 +2085,7 @@ const updateMemberStatus = async (member: Array<string | number>, isActive: bool
 
   if (!id) {
     notifyError('Membership id is required from backend')
-    return
+    return false
   }
 
   try {
@@ -2070,6 +2098,25 @@ const updateMemberStatus = async (member: Array<string | number>, isActive: bool
   }
 }
 
+const viewMemberProfile = async (member: Array<string | number>) => {
+  actionMenu.value = null
+  selectedTeamMember.value = member
+  modal.value = 'member-profile'
+  const id = membershipIdOf(member)
+  if (!id) return
+  try {
+    selectedTeamMember.value = taskFlowApi.mapMember(await taskFlowApi.getMember(id))
+  } catch (error) {
+    console.error('Member profile load failed.', error)
+  }
+}
+
+const requestMemberRemoval = (member: Array<string | number>) => {
+  actionMenu.value = null
+  selectedTeamMember.value = member
+  modal.value = 'member-remove'
+}
+
 const deleteMember = async (member: Array<string | number>) => {
   actionMenu.value = null
   const id = membershipIdOf(member)
@@ -2077,7 +2124,7 @@ const deleteMember = async (member: Array<string | number>) => {
 
   if (!id) {
     notifyError('Membership id is required from backend')
-    return
+    return false
   }
 
   try {
@@ -2085,9 +2132,24 @@ const deleteMember = async (member: Array<string | number>) => {
     state.value.team = state.value.team.filter((item) => membershipIdOf(item) !== id)
     await loadMembersFromBackend()
     notify(`${label || 'Member'} removed`, 'success')
+    return true
   } catch (error) {
     console.error('Member delete failed.', error)
     notifyError(taskFlowApiErrorMessage(error, 'Member delete failed'))
+    return false
+  }
+}
+
+const confirmMemberRemoval = async () => {
+  if (!selectedTeamMember.value || memberDeleting.value) return
+  memberDeleting.value = true
+  try {
+    if (await deleteMember(selectedTeamMember.value)) {
+      modal.value = null
+      selectedTeamMember.value = null
+    }
+  } finally {
+    memberDeleting.value = false
   }
 }
 
@@ -2835,7 +2897,7 @@ const iconPath = (name: string) => {
             <section v-for="panel in [{ title: 'Today’s Events', items: dashboardTodayEvents, upcoming: false }, { title: 'Upcoming Events', items: dashboardUpcomingEvents, upcoming: true }]" :key="panel.title" class="tf-panel tf-dashboard-list overflow-hidden p-0"><header class="tf-dashboard-list-header"><h2 class="flex items-center gap-2 font-bold"><span class="tf-section-icon">▣</span>{{ panel.title }}</h2><span class="tf-pill bg-task-blueSoft text-task-blue">{{ panel.items.length }}</span></header><div class="tf-dashboard-list-body divide-y divide-task-line"><button v-for="event in panel.items" :key="String(event.id)" type="button" class="tf-dashboard-list-row w-full text-left transition hover:bg-task-blueSoft focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-task-blue" @click="openDashboardEvent(event)"><time class="tf-event-date grid h-11 min-w-14 place-items-center rounded-[9px] bg-task-blueSoft px-2 text-xs font-bold text-task-blue">{{ panel.upcoming ? dashboardDateTime(event.starts_at).split(' ').slice(0, 2).join(' ') : dashboardDateTime(event.starts_at, 'time') }}</time><div class="min-w-0 flex-1"><p class="truncate text-sm font-bold">{{ event.title }}</p><p class="mt-1 truncate text-xs text-task-muted">{{ event.department?.name || 'No department' }} · {{ event.location || 'Online' }}</p></div><span class="text-xs text-task-muted">{{ panel.upcoming ? dashboardDateTime(event.starts_at, 'time') : '' }} ›</span></button><div v-if="!panel.items.length" class="tf-empty-events"><EmptyCalendarArt /><p>No events scheduled for today.</p><small>Enjoy your free time! 🎉</small></div></div></section>
             <section class="tf-panel tf-dashboard-list overflow-hidden p-0"><header class="tf-dashboard-list-header"><h2 class="font-bold">Upcoming Deadlines</h2><div class="flex items-center gap-3"><span class="tf-pill bg-task-blueSoft text-task-blue">{{ dashboardDeadlines.length }}</span><button type="button" class="text-xs font-bold text-task-blue" @click="setPage('tasks')">View all</button></div></header><div class="tf-dashboard-list-body divide-y divide-task-line"><button v-for="task in dashboardDeadlines" :key="String(task.id)" type="button" class="tf-dashboard-list-row w-full text-left transition hover:bg-task-blueSoft focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-task-blue" @click="openDashboardTask(task)"><span :class="['h-2.5 w-2.5 shrink-0 rounded-full', task.priority === 'high' ? 'bg-task-danger' : task.priority === 'medium' ? 'bg-task-warning' : 'bg-task-success']" /><div class="min-w-0 flex-1"><p class="truncate text-sm font-bold">{{ task.title }}</p><p class="mt-1 truncate text-xs text-task-muted">{{ task.department?.name || 'No department' }}</p></div><div class="text-right"><p class="text-xs font-bold">{{ dashboardDateTime(task.due_date) }}</p><p class="mt-1 text-[10px] font-semibold text-task-warning">{{ task.days_remaining }} days left</p></div></button><div v-if="!dashboardDeadlines.length" class="tf-empty-events"><p>No upcoming deadlines.</p><small>You are all caught up.</small></div></div></section>
           </div>
-          <div class="grid gap-4 xl:grid-cols-[0.8fr_1.2fr]">
+          <div class="grid items-start gap-4 xl:grid-cols-[0.8fr_1.2fr]">
             <section class="tf-panel p-5">
               <h2 class="flex items-center gap-2 font-bold"><span class="tf-section-icon">◴</span>Tasks by Department</h2>
               <p class="mt-1 text-xs text-task-muted">Role-filtered task distribution</p>
@@ -3339,9 +3401,15 @@ const iconPath = (name: string) => {
           </div>
 
           <div class="tf-panel relative overflow-hidden p-5">
-            <div class="mb-5 flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between"><h2 class="text-xl font-bold">All Staff</h2><div class="flex flex-col gap-3 sm:flex-row"><label class="relative w-full sm:w-auto"><svg viewBox="0 0 24 24" class="pointer-events-none absolute left-3.5 top-1/2 h-4 w-4 -translate-y-1/2 text-task-muted" fill="none" stroke="currentColor" stroke-width="1.8"><path :d="iconPath('search')" /></svg><input v-model="teamSearchInput" class="tf-input h-11 w-full pl-10 pr-10 sm:w-72" placeholder="Search staff..." /><button v-if="teamSearchInput && !searchLoading.team" type="button" class="tf-search-clear" aria-label="Clear staff search" @click="clearSearch('team')">×</button><span v-if="searchLoading.team" class="tf-search-spinner" /></label><button class="inline-flex h-11 items-center justify-center gap-2 rounded-[12px] border border-task-line bg-white px-4 text-sm font-semibold text-task-muted transition hover:border-task-blue hover:text-task-blue" @click="openModal('team-filter')"><svg viewBox="0 0 24 24" class="h-4 w-4" fill="none" stroke="currentColor" stroke-width="1.8"><path :d="iconPath('filter')" /></svg>Filter</button><button class="tf-primary h-11 rounded-[12px] px-5" @click="openModal('member')"><svg viewBox="0 0 24 24" class="h-4 w-4" fill="none" stroke="currentColor" stroke-width="1.8"><path :d="iconPath('users')" /><path d="M19 8v6m-3-3h6" /></svg>Add Member</button></div></div>
+            <div class="mb-4 flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between"><h2 class="text-xl font-bold">All Staff</h2><div class="flex flex-col gap-3 sm:flex-row"><label class="relative w-full sm:w-auto"><svg viewBox="0 0 24 24" class="pointer-events-none absolute left-3.5 top-1/2 h-4 w-4 -translate-y-1/2 text-task-muted" fill="none" stroke="currentColor" stroke-width="1.8"><path :d="iconPath('search')" /></svg><input v-model="teamSearchInput" class="tf-input h-11 w-full pl-10 pr-10 sm:w-72" placeholder="Search staff..." /><button v-if="teamSearchInput && !searchLoading.team" type="button" class="tf-search-clear" aria-label="Clear staff search" @click="clearSearch('team')">×</button><span v-if="searchLoading.team" class="tf-search-spinner" /></label><button class="tf-primary h-11 rounded-[12px] px-5" @click="openModal('member')"><svg viewBox="0 0 24 24" class="h-4 w-4" fill="none" stroke="currentColor" stroke-width="1.8"><path :d="iconPath('users')" /><path d="M19 8v6m-3-3h6" /></svg>Add Member</button></div></div>
+            <div class="mb-4 flex flex-wrap items-end gap-3 rounded-[14px] border border-task-line bg-slate-50 p-3">
+              <label class="min-w-[180px] flex-1 text-[11px] font-bold text-task-muted">Department<div class="tf-dropdown mt-1.5"><button type="button" class="tf-dropdown-button h-10 bg-white" @click="openDropdown = openDropdown === 'staffDepartment' ? null : 'staffDepartment'"><span>{{ teamDepartmentFilter === 'all' ? 'All departments' : memberDepartmentOptions.find((department) => department.id === teamDepartmentFilter)?.name || 'Department' }}</span><svg viewBox="0 0 20 20" class="h-4 w-4" fill="none" stroke="currentColor" stroke-width="2"><path d="m5 7.5 5 5 5-5" /></svg></button><div v-if="openDropdown === 'staffDepartment'" class="tf-dropdown-menu max-h-56 overflow-y-auto"><button type="button" class="tf-dropdown-option" @click="teamDepartmentFilter = 'all'; teamPage = 1; openDropdown = null">All departments</button><button v-for="department in memberDepartmentOptions" :key="department.id" type="button" class="tf-dropdown-option" @click="teamDepartmentFilter = department.id; teamPage = 1; openDropdown = null"><span>{{ department.name }}</span><span v-if="teamDepartmentFilter === department.id">✓</span></button></div></div></label>
+              <label class="min-w-[160px] flex-1 text-[11px] font-bold text-task-muted">Role<div class="tf-dropdown mt-1.5"><button type="button" class="tf-dropdown-button h-10 bg-white capitalize" @click="openDropdown = openDropdown === 'staffRole' ? null : 'staffRole'"><span>{{ teamRoleFilter === 'all' ? 'All roles' : teamRoleFilter }}</span><svg viewBox="0 0 20 20" class="h-4 w-4" fill="none" stroke="currentColor" stroke-width="2"><path d="m5 7.5 5 5 5-5" /></svg></button><div v-if="openDropdown === 'staffRole'" class="tf-dropdown-menu"><button type="button" class="tf-dropdown-option" @click="teamRoleFilter = 'all'; teamPage = 1; openDropdown = null">All roles</button><button v-for="role in memberRoleOptions" :key="role" type="button" class="tf-dropdown-option capitalize" @click="teamRoleFilter = role; teamPage = 1; openDropdown = null"><span>{{ role }}</span><span v-if="teamRoleFilter === role">✓</span></button></div></div></label>
+              <label class="min-w-[190px] flex-1 text-[11px] font-bold text-task-muted">Sort by<div class="tf-dropdown mt-1.5"><button type="button" class="tf-dropdown-button h-10 bg-white" @click="openDropdown = openDropdown === 'staffSort' ? null : 'staffSort'"><span>{{ teamSort === 'name_asc' ? 'Name A–Z' : teamSort === 'name_desc' ? 'Name Z–A' : teamSort === 'department_asc' ? 'Department' : teamSort === 'role_asc' ? 'Role' : 'Highest efficiency' }}</span><svg viewBox="0 0 20 20" class="h-4 w-4" fill="none" stroke="currentColor" stroke-width="2"><path d="m5 7.5 5 5 5-5" /></svg></button><div v-if="openDropdown === 'staffSort'" class="tf-dropdown-menu"><button v-for="option in [{ label: 'Name A–Z', value: 'name_asc' }, { label: 'Name Z–A', value: 'name_desc' }, { label: 'Department', value: 'department_asc' }, { label: 'Role', value: 'role_asc' }, { label: 'Highest efficiency', value: 'efficiency_desc' }]" :key="option.value" type="button" class="tf-dropdown-option" @click="teamSort = option.value as typeof teamSort; teamPage = 1; openDropdown = null"><span>{{ option.label }}</span><span v-if="teamSort === option.value">✓</span></button></div></div></label>
+              <button v-if="teamDepartmentFilter !== 'all' || teamRoleFilter !== 'all' || teamSort !== 'name_asc'" type="button" class="h-10 rounded-[10px] px-3 text-xs font-bold text-task-blue transition hover:bg-task-blueSoft" @click="teamDepartmentFilter = 'all'; teamRoleFilter = 'all'; teamSort = 'name_asc'; teamPage = 1">Reset</button>
+            </div>
             <div v-if="searchLoading.team" class="tf-search-overlay"><span class="tf-search-loader" /> Searching staff...</div>
-            <div class="overflow-x-auto"><table class="w-full min-w-[900px] text-left text-sm"><thead class="text-task-muted"><tr><th class="rounded-l-[14px] p-3 font-semibold">Staff</th><th class="p-3 font-semibold">Position</th><th class="p-3 font-semibold">Contact</th><th class="p-3 font-semibold">Efficiency</th><th class="p-3 font-semibold">Completed</th><th class="p-3 font-semibold">In Progress</th><th class="rounded-r-[14px] p-3 text-right font-semibold">Actions</th></tr></thead><tbody class="divide-y divide-task-line"><tr v-for="(member, index) in paginatedTeam" :key="String(member[9] || member[7] || member[0])"><td class="p-3"><div class="flex items-center gap-3"><span :class="['grid h-10 w-10 shrink-0 place-items-center overflow-hidden rounded-full text-xs font-bold', index % 4 === 0 ? 'bg-task-blueSoft text-task-blue' : index % 4 === 1 ? 'bg-[#F0E9FF] text-[#8057D5]' : index % 4 === 2 ? 'bg-task-warningSoft text-task-warning' : 'bg-task-successSoft text-task-success']"><img v-if="member[8]" :src="String(member[8])" :alt="String(member[0])" class="h-full w-full object-cover" /><span v-else>{{ initials(String(member[0])) }}</span></span><div class="min-w-0"><p class="truncate font-bold text-task-ink">{{ member[0] }}</p><p class="truncate text-xs text-task-muted">{{ member[2] }}</p></div></div></td><td class="p-3 text-task-muted">{{ member[1] }}</td><td class="p-3 text-task-muted">{{ member[3] }}</td><td class="p-3"><div class="flex items-center gap-2"><div class="h-2 w-24 overflow-hidden rounded-full bg-slate-200"><div class="h-full rounded-full bg-task-blue" :style="{ width: `${member[4]}%` }" /></div><span class="text-xs font-bold">{{ member[4] }}%</span></div></td><td class="p-3 font-semibold">{{ member[5] }}</td><td class="p-3 font-semibold">{{ member[6] }}</td><td class="relative p-3 text-right"><div class="relative inline-flex"><button type="button" class="tf-icon-button rounded-full" @click="toggleActionMenu(`team-${member[9] || member[7] || member[0]}`)"><svg viewBox="0 0 24 24" class="h-4 w-4" fill="none" stroke="currentColor"><path :d="iconPath('dots')" /></svg></button><div v-if="actionMenu === `team-${member[9] || member[7] || member[0]}`" class="tf-action-menu"><button type="button" class="tf-action-item" @click="actionMenu = null">View profile</button><button type="button" class="tf-action-item" @click="updateMemberStatus(member, String(member[12]) === 'Inactive')">{{ String(member[12]) === 'Inactive' ? 'Activate' : 'Deactivate' }}</button><button type="button" class="tf-action-item tf-action-danger" @click="deleteMember(member)">Remove member</button></div></div></td></tr></tbody></table></div>
+            <div class="overflow-x-auto"><table class="w-full min-w-[1040px] text-left text-sm"><thead class="text-task-muted"><tr><th class="rounded-l-[14px] p-3 font-semibold">Staff</th><th class="p-3 font-semibold">Department</th><th class="p-3 font-semibold">Position</th><th class="p-3 font-semibold">Contact</th><th class="p-3 font-semibold">Efficiency</th><th class="p-3 font-semibold">Completed</th><th class="p-3 font-semibold">In Progress</th><th class="rounded-r-[14px] p-3 text-right font-semibold">Actions</th></tr></thead><tbody class="divide-y divide-task-line"><tr v-for="(member, index) in paginatedTeam" :key="String(member[9] || member[7] || member[0])"><td class="p-3"><div class="flex items-center gap-3"><span :class="['grid h-10 w-10 shrink-0 place-items-center overflow-hidden rounded-full text-xs font-bold', index % 4 === 0 ? 'bg-task-blueSoft text-task-blue' : index % 4 === 1 ? 'bg-[#F0E9FF] text-[#8057D5]' : index % 4 === 2 ? 'bg-task-warningSoft text-task-warning' : 'bg-task-successSoft text-task-success']"><img v-if="member[8]" :src="String(member[8])" :alt="String(member[0])" class="h-full w-full object-cover" /><span v-else>{{ initials(String(member[0])) }}</span></span><div class="min-w-0"><p class="truncate font-bold text-task-ink">{{ member[0] }}</p><p class="truncate text-xs text-task-muted">{{ member[2] }}</p></div></div></td><td class="p-3"><span class="inline-flex rounded-full bg-task-blueSoft px-2.5 py-1 text-xs font-semibold text-task-blue">{{ memberDepartmentNameOf(member) }}</span></td><td class="p-3 text-task-muted">{{ member[1] }}</td><td class="p-3 text-task-muted">{{ member[3] }}</td><td class="p-3"><div class="flex items-center gap-2"><div class="h-2 w-24 overflow-hidden rounded-full bg-slate-200"><div class="h-full rounded-full bg-task-blue" :style="{ width: `${member[4]}%` }" /></div><span class="text-xs font-bold">{{ member[4] }}%</span></div></td><td class="p-3 font-semibold">{{ member[5] }}</td><td class="p-3 font-semibold">{{ member[6] }}</td><td class="relative p-3 text-right"><div class="relative inline-flex"><button type="button" class="tf-icon-button rounded-full" @click="toggleActionMenu(`team-${member[9] || member[7] || member[0]}`)"><svg viewBox="0 0 24 24" class="h-4 w-4" fill="none" stroke="currentColor"><path :d="iconPath('dots')" /></svg></button><div v-if="actionMenu === `team-${member[9] || member[7] || member[0]}`" class="tf-action-menu"><button type="button" class="tf-action-item" @click="viewMemberProfile(member)">View profile</button><button type="button" class="tf-action-item" @click="updateMemberStatus(member, String(member[12]) === 'Inactive')">{{ String(member[12]) === 'Inactive' ? 'Activate' : 'Deactivate' }}</button><button type="button" class="tf-action-item tf-action-danger" @click="requestMemberRemoval(member)">Remove member</button></div></div></td></tr></tbody></table></div>
             <p v-if="!filteredTeam.length" class="py-10 text-center text-sm text-task-muted">No staff found.</p><div v-if="filteredTeam.length > pageSize" class="mt-5 flex justify-end gap-2"><button class="tf-icon-button" @click="setListPage('team', teamPage - 1)">‹</button><button v-for="page in teamPageCount" :key="page" :class="[teamPage === page ? 'tf-primary' : 'tf-icon-button', 'h-9 w-9 p-0']" @click="setListPage('team', page)">{{ page }}</button><button class="tf-icon-button" @click="setListPage('team', teamPage + 1)">›</button></div>
           </div>
         </section>
@@ -3468,9 +3536,17 @@ const iconPath = (name: string) => {
 
     <div v-if="modal" class="fixed inset-0 z-50 grid place-items-center bg-slate-900/45 p-3 backdrop-blur-[2px] sm:p-6" @click.self="closeModalFromBackdrop">
       <div :class="['tf-app-modal flex max-h-[calc(100vh-24px)] w-full flex-col overflow-hidden rounded-[22px] border border-white/70 bg-[#E3EAF2] shadow-[0_30px_90px_-20px_rgba(15,23,42,0.45)] sm:max-h-[calc(100vh-48px)]', modal === 'project' ? 'tf-project-modal max-w-[600px]' : modal === 'task' ? 'max-w-[620px]' : modal === 'member' ? 'tf-member-modal max-w-[760px]' : modal === 'event' || modal === 'event-detail' || modal === 'report' ? 'max-w-[620px]' : 'max-w-[520px]']" @keydown="handleModalKeydown">
-        <div class="flex shrink-0 items-center justify-between px-5 py-3.5 sm:px-6 sm:py-4"><h2 class="text-[21px] font-semibold tracking-[-0.025em] sm:text-[22px]">{{ modal === 'task' ? (taskModalMode === 'view' ? 'Task Details' : taskModalMode === 'edit' ? 'Edit Task' : 'Create Task') : modal === 'project' ? 'Create New Project' : modal === 'event' ? 'Add New Event' : modal === 'event-detail' ? 'Event Details' : modal === 'report' ? 'Custom Report Builder' : modal === 'member' ? 'Add Department Member' : 'Filter Staff' }}</h2><button type="button" class="grid h-9 w-9 place-items-center rounded-full text-[28px] font-light leading-none transition hover:bg-white/60 hover:text-task-blue" aria-label="Close modal" @click="modal = null">×</button></div>
+        <div class="flex shrink-0 items-center justify-between px-5 py-3.5 sm:px-6 sm:py-4"><h2 class="text-[21px] font-semibold tracking-[-0.025em] sm:text-[22px]">{{ modal === 'task' ? (taskModalMode === 'view' ? 'Task Details' : taskModalMode === 'edit' ? 'Edit Task' : 'Create Task') : modal === 'project' ? 'Create New Project' : modal === 'event' ? 'Add New Event' : modal === 'event-detail' ? 'Event Details' : modal === 'report' ? 'Custom Report Builder' : modal === 'member' ? 'Add Department Member' : modal === 'member-profile' ? 'Staff Profile' : modal === 'member-remove' ? 'Remove Member' : 'Filter Staff' }}</h2><button type="button" class="grid h-9 w-9 place-items-center rounded-full text-[28px] font-light leading-none transition hover:bg-white/60 hover:text-task-blue" aria-label="Close modal" @click="modal = null">×</button></div>
         <div :class="['min-h-0 overflow-y-auto bg-white', modal === 'project' || modal === 'task' ? 'mx-3 mb-3 rounded-[18px] p-5' : 'mx-2 mb-2 rounded-[16px] p-4', modal === 'member' ? 'tf-member-modal-body' : '']">
-          <template v-if="modal === 'event-detail' && selectedCalendarEvent">
+          <template v-if="modal === 'member-profile' && selectedTeamMember">
+            <div class="flex flex-col items-center text-center"><span class="grid h-20 w-20 place-items-center overflow-hidden rounded-full bg-task-blueSoft text-xl font-bold text-task-blue"><img v-if="selectedTeamMember[8]" :src="String(selectedTeamMember[8])" :alt="teamMemberName(selectedTeamMember)" class="h-full w-full object-cover" /><span v-else>{{ initials(teamMemberName(selectedTeamMember)) }}</span></span><h3 class="mt-3 text-xl font-bold text-task-ink">{{ teamMemberName(selectedTeamMember) }}</h3><p class="mt-1 text-sm text-task-muted">{{ selectedTeamMember[1] || 'Team member' }}</p><span :class="['mt-2 rounded-full px-3 py-1 text-xs font-bold', String(selectedTeamMember[12]) === 'Inactive' ? 'bg-slate-100 text-slate-500' : 'bg-task-successSoft text-task-success']">{{ selectedTeamMember[12] || 'Active' }}</span></div>
+            <div class="mt-5 grid gap-3 sm:grid-cols-2"><div class="rounded-[12px] bg-slate-50 p-3"><p class="text-[10px] font-bold uppercase tracking-wide text-task-muted">Department</p><p class="mt-1.5 text-sm font-semibold text-task-ink">{{ memberDepartmentNameOf(selectedTeamMember) }}</p></div><div class="rounded-[12px] bg-slate-50 p-3"><p class="text-[10px] font-bold uppercase tracking-wide text-task-muted">Email</p><p class="mt-1.5 truncate text-sm font-semibold text-task-ink">{{ selectedTeamMember[2] }}</p></div><div class="rounded-[12px] bg-slate-50 p-3"><p class="text-[10px] font-bold uppercase tracking-wide text-task-muted">Phone</p><p class="mt-1.5 text-sm font-semibold text-task-ink">{{ selectedTeamMember[3] }}</p></div><div class="rounded-[12px] bg-slate-50 p-3"><p class="text-[10px] font-bold uppercase tracking-wide text-task-muted">Efficiency</p><p class="mt-1.5 text-sm font-semibold text-task-ink">{{ selectedTeamMember[4] }}%</p></div></div>
+            <div class="mt-3 grid grid-cols-2 gap-3"><div class="rounded-[12px] border border-task-line p-3 text-center"><p class="text-xl font-bold text-task-success">{{ selectedTeamMember[5] }}</p><p class="mt-1 text-xs text-task-muted">Completed tasks</p></div><div class="rounded-[12px] border border-task-line p-3 text-center"><p class="text-xl font-bold text-task-blue">{{ selectedTeamMember[6] }}</p><p class="mt-1 text-xs text-task-muted">In progress</p></div></div>
+          </template>
+          <template v-else-if="modal === 'member-remove' && selectedTeamMember">
+            <div class="py-4 text-center"><span class="mx-auto grid h-16 w-16 place-items-center rounded-full bg-task-dangerSoft text-task-danger"><svg viewBox="0 0 24 24" class="h-7 w-7" fill="none" stroke="currentColor" stroke-width="1.9"><path d="M4 7h16M9 7V4h6v3m-9 0 1 13h10l1-13M10 11v5m4-5v5" /></svg></span><h3 class="mt-4 text-lg font-bold text-task-ink">Are you sure?</h3><p class="mx-auto mt-2 max-w-sm text-sm leading-6 text-task-muted"><b class="text-task-ink">{{ teamMemberName(selectedTeamMember) }}</b> will be removed from the department. This action cannot be undone.</p></div>
+          </template>
+          <template v-else-if="modal === 'event-detail' && selectedCalendarEvent">
             <div class="flex items-start gap-3 border-b border-task-line pb-3"><span :class="['grid h-12 w-12 shrink-0 place-items-center rounded-full text-center text-[11px] font-bold text-white', selectedCalendarEvent.color]">{{ String(selectedCalendarEvent.day).padStart(2, '0') }}<br />{{ selectedCalendarEvent.meridiem }}</span><div><h3 class="text-lg font-bold text-task-ink">{{ selectedCalendarEvent.title }}</h3><span class="mt-1.5 inline-flex rounded-full bg-task-blueSoft px-3 py-1 text-xs font-semibold text-task-blue">{{ selectedCalendarEvent.eventType }}</span></div></div>
             <div class="mt-4 grid gap-3 sm:grid-cols-2"><div class="rounded-ui bg-slate-100 p-3"><p class="text-xs font-semibold uppercase tracking-wide text-task-muted">Date</p><p class="mt-1.5 text-sm font-semibold text-task-ink">{{ eventFullDate(selectedCalendarEvent) }}</p></div><div class="rounded-ui bg-slate-100 p-3"><p class="text-xs font-semibold uppercase tracking-wide text-task-muted">Time</p><p class="mt-1.5 text-sm font-semibold text-task-ink">{{ selectedCalendarEvent.time }}</p></div></div>
             <div class="mt-4 rounded-ui border border-task-line p-4"><div class="flex items-center justify-between gap-3"><p class="font-bold text-task-ink">Assigned attendees</p><span class="shrink-0 rounded-full bg-task-blue px-3 py-1 text-xs font-bold text-white">{{ selectedCalendarEvent.attendees }} people</span></div><div v-if="selectedCalendarEvent.attendeeNames.length" class="mt-3 flex flex-wrap gap-2"><span v-for="name in selectedCalendarEvent.attendeeNames" :key="name" class="inline-flex items-center gap-2 rounded-full border border-task-line bg-task-blueSoft px-3 py-2 text-sm font-semibold text-task-ink"><span class="grid h-7 w-7 place-items-center rounded-full bg-task-blue text-[10px] font-bold text-white">{{ initials(name) }}</span>{{ name }}</span></div><p v-else class="mt-3 text-sm text-task-muted">No attendees assigned.</p></div>
@@ -3846,8 +3922,9 @@ const iconPath = (name: string) => {
           <div :class="['sticky bottom-0 flex justify-end gap-2.5 bg-white', modal === 'project' || modal === 'task' ? '-mx-5 -mb-5 mt-5 px-5 py-3' : '-mx-4 -mb-4 mt-4 border-t border-task-line px-4 py-3']">
             <button v-if="modal === 'task' && editingTaskId && canDeleteOpenedTask" class="mr-auto h-10 rounded-full border border-task-danger bg-white px-5 text-sm font-semibold text-task-danger transition hover:bg-task-dangerSoft" @click="deleteOpenedTask">Delete Task</button>
             <button v-if="modal === 'task' && editingTaskId && taskFormStatus === 'Completed' && canManageDepartment" class="mr-auto h-10 rounded-full border border-slate-300 bg-slate-50 px-5 text-sm font-semibold text-slate-600 transition hover:border-task-blue hover:bg-task-blueSoft hover:text-task-blue" @click="archiveOpenedTask">Archive</button>
-            <button class="h-10 rounded-full border border-task-line bg-white px-5 text-sm font-semibold shadow-button transition hover:border-task-blue hover:text-task-blue" @click="modal = null">Cancel</button>
-            <button v-if="modal !== 'event-detail' && !(modal === 'task' && taskModalMode === 'view')" :disabled="taskSaving" class="h-10 rounded-full bg-gradient-to-b from-[#72A4D7] to-[#2567AD] px-6 text-sm font-semibold text-white shadow-button transition hover:-translate-y-0.5 disabled:cursor-not-allowed disabled:opacity-60" @click="submitModal">{{ taskSaving ? 'Saving...' : modal === 'report' ? 'Generate Report' : modal === 'event' ? 'Create Event' : modal === 'project' ? (editingProjectId ? 'Update Project' : 'Create Project') : modal === 'member' ? 'Add Member' : modal === 'team-filter' ? 'Apply' : taskModalMode === 'edit' ? 'Save Changes' : 'Create Task' }}</button>
+            <button class="h-10 rounded-full border border-task-line bg-white px-5 text-sm font-semibold shadow-button transition hover:border-task-blue hover:text-task-blue" @click="modal = null">{{ modal === 'member-profile' ? 'Close' : 'Cancel' }}</button>
+            <button v-if="modal === 'member-remove'" type="button" :disabled="memberDeleting" class="h-10 rounded-full bg-task-danger px-6 text-sm font-semibold text-white transition hover:bg-rose-600 disabled:cursor-not-allowed disabled:opacity-60" @click="confirmMemberRemoval">{{ memberDeleting ? 'Removing...' : 'Yes, remove member' }}</button>
+            <button v-else-if="modal !== 'event-detail' && modal !== 'member-profile' && !(modal === 'task' && taskModalMode === 'view')" :disabled="taskSaving" class="h-10 rounded-full bg-gradient-to-b from-[#72A4D7] to-[#2567AD] px-6 text-sm font-semibold text-white shadow-button transition hover:-translate-y-0.5 disabled:cursor-not-allowed disabled:opacity-60" @click="submitModal">{{ taskSaving ? 'Saving...' : modal === 'report' ? 'Generate Report' : modal === 'event' ? 'Create Event' : modal === 'project' ? (editingProjectId ? 'Update Project' : 'Create Project') : modal === 'member' ? 'Add Member' : modal === 'team-filter' ? 'Apply' : taskModalMode === 'edit' ? 'Save Changes' : 'Create Task' }}</button>
           </div>
         </div>
       </div>
