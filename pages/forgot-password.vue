@@ -36,6 +36,9 @@ const submitRequest = async () => {
   <main class="grid min-h-screen place-items-center bg-task-page px-4 py-8 text-task-ink sm:px-6">
     <section class="w-full max-w-[520px]">
       <form class="rounded-ui border border-task-line bg-white p-6 shadow-card sm:p-8" @submit.prevent="submitRequest">
+        <NuxtLink to="/login" class="mx-auto mb-5 block w-fit" aria-label="TaskFlow sign in">
+          <img src="/taskflow-logo.png?v=2" alt="TaskFlow" class="h-auto w-[230px]" />
+        </NuxtLink>
         <NuxtLink class="mb-7 inline-flex items-center gap-2 text-sm font-semibold text-task-blue transition hover:opacity-75" to="/login">
           <span aria-hidden="true">←</span> Back to sign in
         </NuxtLink>

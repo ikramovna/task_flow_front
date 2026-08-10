@@ -2808,12 +2808,9 @@ const iconPath = (name: string) => {
           <svg viewBox="0 0 24 24" class="h-4 w-4" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M18 6 6 18M6 6l12 12" /></svg>
         </button>
         <div :class="['tf-sidebar-brand flex h-[64px] items-center', sidebarCollapsed ? 'justify-center px-1' : 'gap-2 px-3']">
-          <button class="flex min-w-0 flex-1 items-center gap-3" type="button" :title="sidebarCollapsed ? 'Open menu' : 'TaskFlow'" :aria-label="sidebarCollapsed ? 'Open menu' : 'Go to dashboard'" @click="sidebarCollapsed ? (sidebarCollapsed = false) : setPage('dashboard')">
-          <div :class="['grid shrink-0 place-items-center transition', sidebarCollapsed ? 'h-10 w-10 rounded-[12px] bg-task-blueSoft text-task-blue hover:bg-task-blue hover:text-white' : 'h-11 w-11 rounded-[13px] bg-gradient-to-br from-[#4c8cff] to-[#2358df] text-white shadow-[0_8px_20px_-10px_rgba(37,88,223,.7)]']">
-            <svg v-if="sidebarCollapsed" viewBox="0 0 24 24" class="h-5 w-5" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M5 7h14M5 12h14M5 17h14" /></svg>
-            <svg v-else viewBox="0 0 24 24" class="h-6 w-6" fill="currentColor"><rect x="4" y="4" width="7" height="7" rx="2" /><rect x="13" y="4" width="7" height="7" rx="2" /><rect x="4" y="13" width="7" height="7" rx="2" /><path d="M14 13h6v3a4 4 0 0 1-4 4h-3v-6a1 1 0 0 1 1-1Z" /></svg>
-          </div>
-          <span v-if="!sidebarCollapsed" class="truncate text-[21px] font-extrabold tracking-[-0.03em]">TaskFlow</span>
+          <button class="flex min-w-0 flex-1 items-center" type="button" :title="sidebarCollapsed ? 'Open menu' : 'TaskFlow'" :aria-label="sidebarCollapsed ? 'Open menu' : 'Go to dashboard'" @click="sidebarCollapsed ? (sidebarCollapsed = false) : setPage('dashboard')">
+            <img v-if="sidebarCollapsed" src="/taskflow-logo-mark.png?v=2" alt="TaskFlow" class="h-11 w-11 rounded-[12px] object-contain" />
+            <img v-else src="/taskflow-logo.png?v=2" alt="TaskFlow" class="h-[58px] w-[158px] object-contain" />
           </button>
           <button v-if="!sidebarCollapsed" type="button" class="group hidden h-10 w-10 shrink-0 place-items-center rounded-[12px] bg-slate-50 text-slate-500 transition duration-200 hover:-translate-x-0.5 hover:bg-task-blueSoft hover:text-task-blue md:grid" aria-label="Collapse menu" title="Close sidebar" @click="sidebarCollapsed = true">
             <svg viewBox="0 0 24 24" class="h-5 w-5 transition group-hover:scale-110" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m13 7-5 5 5 5M19 7l-5 5 5 5" /></svg>
@@ -3946,7 +3943,7 @@ const iconPath = (name: string) => {
               <label class="text-sm font-semibold">Status<div class="tf-dropdown mt-2"><button type="button" class="tf-dropdown-button h-12" @click="openDropdown = openDropdown === 'reportStatus' ? null : 'reportStatus'"><span>{{ reportStatus }}</span><svg viewBox="0 0 20 20" class="h-4 w-4" fill="none" stroke="currentColor" stroke-width="2"><path d="m5 7.5 5 5 5-5" /></svg></button><div v-if="openDropdown === 'reportStatus'" class="tf-dropdown-menu"><button v-for="option in ['All Statuses', 'Completed', 'In Progress', 'Not Started']" :key="option" type="button" class="tf-dropdown-option" @click="reportStatus = option; openDropdown = null">{{ option }}</button></div></div></label>
             </div>
           </template>
-          <div :class="['sticky bottom-0 flex justify-end gap-2.5 bg-white', modal === 'project' || modal === 'task' ? '-mx-5 -mb-5 mt-5 px-5 py-3' : '-mx-4 -mb-4 mt-4 border-t border-task-line px-4 py-3']">
+          <div :class="['sticky bottom-0 flex justify-end gap-2.5 bg-white', modal === 'project' || modal === 'task' ? '-mx-5 -mb-5 mt-5 px-5 py-3' : modal === 'event-detail' ? '-mx-4 -mb-4 mt-7 border-t border-task-line px-4 py-3' : '-mx-4 -mb-4 mt-4 border-t border-task-line px-4 py-3']">
             <button v-if="modal === 'task' && editingTaskId && canDeleteOpenedTask" class="mr-auto h-10 rounded-full border border-task-danger bg-white px-5 text-sm font-semibold text-task-danger transition hover:bg-task-dangerSoft" @click="deleteOpenedTask">Delete Task</button>
             <button v-if="modal === 'task' && editingTaskId && taskFormStatus === 'Completed' && canManageDepartment" class="mr-auto h-10 rounded-full border border-slate-300 bg-slate-50 px-5 text-sm font-semibold text-slate-600 transition hover:border-task-blue hover:bg-task-blueSoft hover:text-task-blue" @click="archiveOpenedTask">Archive</button>
             <button class="h-10 rounded-full border border-task-line bg-white px-5 text-sm font-semibold shadow-button transition hover:border-task-blue hover:text-task-blue" @click="modal = null">{{ modal === 'member-profile' ? 'Close' : 'Cancel' }}</button>

@@ -73,6 +73,9 @@ const submitLogin = async () => {
   <main :class="['grid min-h-screen place-items-center bg-task-page px-4 py-8 text-task-ink sm:px-6', isDarkTheme ? 'tf-dark' : '']">
     <section class="w-full max-w-[520px]">
       <form class="rounded-ui border border-task-line bg-white p-6 shadow-card sm:p-8" @submit.prevent="submitLogin">
+        <NuxtLink to="/" class="mx-auto mb-6 block w-fit" aria-label="TaskFlow home">
+          <img src="/taskflow-logo.png?v=2" alt="TaskFlow" class="h-auto w-[230px]" />
+        </NuxtLink>
         <div class="mb-8 text-center">
           <h1 class="text-3xl font-bold">Welcome back</h1>
           <p class="mt-2 text-task-muted">Sign in to continue to your dashboard.</p>

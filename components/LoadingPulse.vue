@@ -5,12 +5,7 @@
       <span class="tf-loading-ring tf-loading-ring--outer" />
       <span class="tf-loading-ring tf-loading-ring--middle" />
       <span class="tf-loading-core">
-        <svg viewBox="0 0 64 64" class="h-12 w-12" aria-hidden="true">
-          <path d="m32 7 22 13-22 13L10 20 32 7Z" fill="#77d6ff" />
-          <path d="m10 20 22 13v25L10 45V20Z" fill="#3478f6" />
-          <path d="m54 20-22 13v25l22-13V20Z" fill="#7047f5" />
-          <path d="m32 7 11 6.5L21 27l-11-7L32 7Z" fill="#a6e8ff" opacity=".72" />
-        </svg>
+        <img src="/taskflow-logo-mark.png?v=2" alt="" class="h-14 w-14 rounded-[14px] object-contain" aria-hidden="true" />
       </span>
     </div>
     <p class="tf-loading-title">Loading<span class="tf-loading-dots" aria-hidden="true">...</span></p>
