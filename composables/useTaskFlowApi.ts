@@ -67,7 +67,7 @@ type ApiTask = {
 }
 
 type TaskPayload = {
-  department: string
+  department?: string
   title: string
   description: string
   status: string

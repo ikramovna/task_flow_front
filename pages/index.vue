@@ -1540,7 +1540,7 @@ const openModal = (value: Exclude<ModalKey, null>) => {
   form.meetingLink = ''
   form.description = ''
   modalDepartment.value = effectiveDepartmentId.value
-  if ((value === 'task' || value === 'event') && canChooseDepartment.value) void loadModalDepartments()
+  if (value === 'event' && canChooseDepartment.value) void loadModalDepartments()
   if (value === 'task') {
     editingTaskId.value = ''
     taskModalMode.value = 'create'
@@ -2159,18 +2159,12 @@ const submitModal = async () => {
       return
     }
 
-    const department = String(modalDepartment.value || effectiveDepartmentId.value || '')
-    if (!department) {
-      notifyError(canChooseDepartment.value ? 'Select a department for this task' : 'Your user must belong to a department before creating tasks')
-      return
-    }
     if (!canAddTask.value && !editingTaskId.value) {
       notifyError('Only active owners, admins, and managers can add tasks')
       return
     }
     const status = projectEnum(taskFormStatus.value)
     const payload = {
-      department,
       title,
       description: form.description.trim(),
       status,
@@ -3500,23 +3494,6 @@ const iconPath = (name: string) => {
             <label class="mb-5 mt-4 flex items-center justify-between gap-4 rounded-ui border border-task-line px-4 py-3 text-sm font-semibold"><span><span class="block">Active member</span><span class="mt-0.5 block text-xs font-normal text-task-muted">Allow this member to sign in immediately.</span></span><input v-model="memberIsActive" type="checkbox" class="h-5 w-5 accent-task-blue" /></label>
           </template>
           <template v-else-if="modal === 'task'">
-            <label v-if="canChooseDepartment" class="mb-4 block text-sm font-semibold">
-              Department <span class="text-task-danger">*</span>
-              <div class="tf-dropdown mt-2">
-                <button type="button" class="tf-dropdown-button h-12" @click="openDropdown = openDropdown === 'modalDepartment' ? null : 'modalDepartment'">
-                  <span class="truncate">{{ memberDepartmentsLoading ? 'Loading departments...' : modalDepartmentName }}</span>
-                  <svg viewBox="0 0 20 20" :class="['h-4 w-4 shrink-0 text-task-muted transition-transform', openDropdown === 'modalDepartment' ? 'rotate-180' : '']" fill="none" stroke="currentColor" stroke-width="2"><path d="m5 7.5 5 5 5-5" /></svg>
-                </button>
-                <div v-if="openDropdown === 'modalDepartment'" class="tf-dropdown-menu max-h-56 overflow-y-auto">
-                  <button v-for="department in memberDepartmentOptions" :key="department.id" type="button" class="tf-dropdown-option" @click="selectModalDepartment(department.id)"><span>{{ department.name }}</span><span v-if="modalDepartment === department.id" class="text-task-blue">✓</span></button>
-                  <p v-if="!memberDepartmentsLoading && !memberDepartmentOptions.length" class="px-3 py-3 text-sm font-normal text-task-muted">No departments available</p>
-                </div>
-              </div>
-            </label>
-            <div v-else class="mb-4 flex items-center gap-3 rounded-[14px] border border-task-line bg-task-blueSoft px-4 py-3 text-sm">
-              <span class="grid h-9 w-9 shrink-0 place-items-center rounded-full bg-white text-task-blue"><svg viewBox="0 0 24 24" class="h-4 w-4" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M4 21V7l8-4 8 4v14M9 21v-5h6v5M8 9h1m6 0h1m-8 3h1m6 0h1" /></svg></span>
-              <div class="min-w-0 flex-1"><div class="flex flex-wrap items-center gap-2"><p class="font-semibold text-task-ink">Current department</p><span v-if="editingTaskId && taskIsHidden" class="tf-hidden-badge"><svg viewBox="0 0 24 24" class="h-3 w-3" fill="none" stroke="currentColor" stroke-width="2"><rect x="5" y="10" width="14" height="11" rx="2" /><path d="M8 10V7a4 4 0 0 1 8 0v3" /></svg>Hidden</span></div><p class="mt-0.5 text-xs text-task-muted">Task automatically belongs to your department.</p></div>
-            </div>
             <label class="block text-sm font-semibold">
               Task Title
               <input v-model="form.title" class="tf-input mt-2 h-12 w-full" placeholder="Enter task title" />
