@@ -1620,8 +1620,30 @@ const loadTaskAssignees = async () => {
 }
 const taskIsHiddenOf = (task: Array<string | number>) => String(task[17] || '') === 'true'
 const taskMainAssigneeIdOf = (task: Array<string | number>) => String(task[18] || '')
-const canChangeTaskStatus = (task: Array<string | number>) =>
-  Boolean(currentUserId.value) && taskMainAssigneeIdOf(task) === String(currentUserId.value)
+const taskMainAssigneeOf = (task: Array<string | number>): ProjectCardMember | null => {
+  try {
+    return JSON.parse(String(task[19] || 'null')) as ProjectCardMember | null
+  } catch {
+    return null
+  }
+}
+const currentMemberId = computed(() => {
+  const email = savedProfile.email.trim().toLowerCase()
+  if (!email) return ''
+  const member = team.value.find((item) => String(item[2] || '').trim().toLowerCase() === email)
+  return member ? teamMemberId(member) : ''
+})
+const canChangeTaskStatus = (task: Array<string | number>) => {
+  const mainAssigneeId = taskMainAssigneeIdOf(task)
+  const mainAssignee = taskMainAssigneeOf(task)
+  const currentEmail = savedProfile.email.trim().toLowerCase()
+  const mainAssigneeEmail = String(mainAssignee?.email || '').trim().toLowerCase()
+
+  return Boolean(
+    (mainAssigneeId && [String(currentUserId.value), currentMemberId.value].includes(mainAssigneeId)) ||
+    (currentEmail && mainAssigneeEmail === currentEmail)
+  )
+}
 const taskCreatorOf = (task: Array<string | number>): ProjectCardMember | null => {
   try {
     return JSON.parse(String(task[20] || 'null')) as ProjectCardMember | null
