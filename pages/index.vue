@@ -68,7 +68,8 @@ const canManageDepartment = computed(() => ['owner', 'admin', 'manager'].include
 const canAddTask = computed(() => currentUserActive.value && ['owner', 'admin', 'manager'].includes(normalizedRole.value))
 const canCreateEvent = computed(() => canAddTask.value)
 const canChooseDepartment = computed(() =>
-  currentUserHasAllDepartmentsAccess.value && ['owner', 'manager'].includes(normalizedRole.value)
+  ['owner', 'manager'].includes(normalizedRole.value) &&
+  (currentUserHasAllDepartmentsAccess.value || !currentDepartmentId.value)
 )
 const effectiveDepartmentId = computed(() => {
   if (currentDepartmentId.value) return currentDepartmentId.value
