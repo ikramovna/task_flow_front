@@ -71,10 +71,11 @@
   width: 86px;
   height: 86px;
   place-items: center;
-  border: 1px solid rgb(96 165 250 / .55);
+  border: 1px solid rgb(255 255 255 / .92);
   border-radius: 999px;
-  background: linear-gradient(145deg, #1f6fff, #2433dc);
-  box-shadow: 0 0 34px rgb(37 99 235 / .52), inset 0 1px 0 rgb(255 255 255 / .25);
+  background: linear-gradient(145deg, rgb(255 255 255 / .98), rgb(239 246 255 / .94));
+  box-shadow: 0 0 34px rgb(37 99 235 / .34), 0 10px 30px rgb(30 64 175 / .18), inset 0 1px 0 #fff;
+  backdrop-filter: blur(12px);
   animation: core 1.8s ease-in-out infinite;
 }
 
@@ -135,8 +136,8 @@ html.tf-dark .tf-loading-subtitle,
 }
 
 @keyframes core {
-  0%, 100% { transform: scale(1); box-shadow: 0 0 28px rgb(37 99 235 / .42), inset 0 1px 0 rgb(255 255 255 / .25); }
-  50% { transform: scale(1.06); box-shadow: 0 0 48px rgb(37 99 235 / .68), inset 0 1px 0 rgb(255 255 255 / .32); }
+  0%, 100% { transform: scale(1); box-shadow: 0 0 28px rgb(37 99 235 / .3), 0 10px 30px rgb(30 64 175 / .16), inset 0 1px 0 #fff; }
+  50% { transform: scale(1.06); box-shadow: 0 0 48px rgb(37 99 235 / .5), 0 12px 34px rgb(30 64 175 / .2), inset 0 1px 0 #fff; }
 }
 
 @keyframes ambient {

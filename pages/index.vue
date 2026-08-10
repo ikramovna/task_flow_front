@@ -2807,10 +2807,10 @@ const iconPath = (name: string) => {
         <button type="button" class="tf-icon-button absolute right-3 top-3 md:hidden" aria-label="Close menu" @click="mobileSidebarOpen = false">
           <svg viewBox="0 0 24 24" class="h-4 w-4" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M18 6 6 18M6 6l12 12" /></svg>
         </button>
-        <div :class="['tf-sidebar-brand flex h-[64px] items-center', sidebarCollapsed ? 'justify-center px-1' : 'gap-2 px-3']">
-          <button class="flex min-w-0 flex-1 items-center" type="button" :title="sidebarCollapsed ? 'Open menu' : 'TaskFlow'" :aria-label="sidebarCollapsed ? 'Open menu' : 'Go to dashboard'" @click="sidebarCollapsed ? (sidebarCollapsed = false) : setPage('dashboard')">
+        <div :class="['tf-sidebar-brand flex h-[64px] items-center', sidebarCollapsed ? 'justify-center px-1' : 'gap-1 px-0']">
+          <button class="flex min-w-0 flex-1 items-center justify-start" type="button" :title="sidebarCollapsed ? 'Open menu' : 'TaskFlow'" :aria-label="sidebarCollapsed ? 'Open menu' : 'Go to dashboard'" @click="sidebarCollapsed ? (sidebarCollapsed = false) : setPage('dashboard')">
             <img v-if="sidebarCollapsed" src="/taskflow-logo-mark.png?v=2" alt="TaskFlow" class="h-11 w-11 rounded-[12px] object-contain" />
-            <img v-else src="/taskflow-logo.png?v=2" alt="TaskFlow" class="h-[58px] w-[158px] object-contain" />
+            <img v-else :src="isDarkTheme ? '/taskflow-logo-compact-dark.png?v=1' : '/taskflow-logo-compact.png?v=1'" alt="TaskFlow" class="h-[54px] w-[145px] object-contain object-left" />
           </button>
           <button v-if="!sidebarCollapsed" type="button" class="group hidden h-10 w-10 shrink-0 place-items-center rounded-[12px] bg-slate-50 text-slate-500 transition duration-200 hover:-translate-x-0.5 hover:bg-task-blueSoft hover:text-task-blue md:grid" aria-label="Collapse menu" title="Close sidebar" @click="sidebarCollapsed = true">
             <svg viewBox="0 0 24 24" class="h-5 w-5 transition group-hover:scale-110" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m13 7-5 5 5 5M19 7l-5 5 5 5" /></svg>
