@@ -37,7 +37,7 @@ const submitRequest = async () => {
     <section class="w-full max-w-[520px]">
       <form class="rounded-ui border border-task-line bg-white p-6 shadow-card sm:p-8" @submit.prevent="submitRequest">
         <NuxtLink to="/login" class="mx-auto mb-5 block w-fit" aria-label="TaskFlow sign in">
-          <img src="/taskflow-logo.png?v=2" alt="TaskFlow" class="h-auto w-[230px]" />
+          <img src="/taskflow-logo.png?v=3" alt="TaskFlow" class="h-auto w-[230px]" />
         </NuxtLink>
         <NuxtLink class="mb-7 inline-flex items-center gap-2 text-sm font-semibold text-task-blue transition hover:opacity-75" to="/login">
           <span aria-hidden="true">←</span> Back to sign in

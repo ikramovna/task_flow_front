@@ -53,7 +53,7 @@ const submitReset = async () => {
   <main class="grid min-h-screen place-items-center bg-task-page px-4 py-8 text-task-ink sm:px-6">
     <section class="w-full max-w-[520px]">
       <div v-if="isComplete" class="rounded-ui border border-task-line bg-white p-6 text-center shadow-card sm:p-8">
-        <img src="/taskflow-logo.png?v=2" alt="TaskFlow" class="mx-auto mb-6 h-auto w-[230px]" />
+        <img src="/taskflow-logo.png?v=3" alt="TaskFlow" class="mx-auto mb-6 h-auto w-[230px]" />
         <div class="mx-auto mb-5 grid h-14 w-14 place-items-center rounded-full bg-emerald-50 text-emerald-600">
           <svg viewBox="0 0 24 24" class="h-7 w-7" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="9" /><path d="m8 12 2.5 2.5L16.5 9" /></svg>
         </div>
@@ -64,7 +64,7 @@ const submitReset = async () => {
 
       <form v-else class="rounded-ui border border-task-line bg-white p-6 shadow-card sm:p-8" @submit.prevent="submitReset">
         <NuxtLink to="/login" class="mx-auto mb-6 block w-fit" aria-label="TaskFlow sign in">
-          <img src="/taskflow-logo.png?v=2" alt="TaskFlow" class="h-auto w-[230px]" />
+          <img src="/taskflow-logo.png?v=3" alt="TaskFlow" class="h-auto w-[230px]" />
         </NuxtLink>
         <div class="mb-8 text-center">
           <div class="mx-auto mb-5 grid h-14 w-14 place-items-center rounded-full bg-task-blueSoft text-task-blue">

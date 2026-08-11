@@ -62,19 +62,12 @@ export default defineNuxtConfig({
           content: 'Tasks, people and deadlines — beautifully organized in one workspace.'
         },
         { property: 'og:url', content: 'https://taskflow.websteredu.uz/' },
-        { property: 'og:image', content: 'https://taskflow.websteredu.uz/greeting-cards/morning-light-panorama-v4.png?v=6' },
-        { property: 'og:image:secure_url', content: 'https://taskflow.websteredu.uz/greeting-cards/morning-light-panorama-v4.png?v=6' },
-        { property: 'og:image:type', content: 'image/png' },
-        { property: 'og:image:width', content: '1983' },
-        { property: 'og:image:height', content: '813' },
-        { property: 'og:image:alt', content: 'TaskFlow workspace with a bright morning city view' },
-        { name: 'twitter:card', content: 'summary_large_image' },
+        { name: 'twitter:card', content: 'summary' },
         { name: 'twitter:title', content: 'TaskFlow — Work in flow' },
         {
           name: 'twitter:description',
           content: 'Tasks, people and deadlines — beautifully organized in one workspace.'
-        },
-        { name: 'twitter:image', content: 'https://taskflow.websteredu.uz/greeting-cards/morning-light-panorama-v4.png?v=6' }
+        }
       ],
       script: [
         {

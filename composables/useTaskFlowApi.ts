@@ -607,11 +607,24 @@ export const useTaskFlowApi = () => {
     })
   }
 
-  const patchMember = async (id: string, member: Partial<MemberPayload>) =>
-    await apiFetch<ApiMember>(`/members/${id}/`, {
+  const patchMember = async (id: string, member: Partial<MemberPayload>, avatarFile?: File | null) => {
+    if (avatarFile) {
+      const form = new FormData()
+      Object.entries(member).forEach(([key, value]) => {
+        if (value !== undefined) form.append(key, String(value))
+      })
+      form.append('avatar', avatarFile)
+      return await apiFetch<ApiMember>(`/members/${id}/`, {
+        method: 'PATCH',
+        body: form
+      })
+    }
+
+    return await apiFetch<ApiMember>(`/members/${id}/`, {
       method: 'PATCH',
       body: member
     })
+  }
 
   const deleteMember = async (id: string) =>
     await apiFetch(`/members/${id}/`, {

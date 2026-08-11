@@ -1,4 +1,6 @@
 <script setup lang="ts">
+const props = withDefaults(defineProps<{ dark?: boolean }>(), { dark: false })
+
 const stations = [
   { name: 'Lo-Fi Focus', description: 'Warm chords and soft focused beats', color: '#3b82f6', tempo: 72, wave: 'triangle' as OscillatorType, notes: [261.63, 329.63, 392, 493.88, 392, 329.63] },
   { name: 'Deep Focus', description: 'Slow minimal concentration tones', color: '#8b5cf6', tempo: 54, wave: 'sine' as OscillatorType, notes: [174.61, 220, 261.63, 220, 196, 146.83] },
@@ -15,14 +17,27 @@ const selectedIndex = ref(0)
 const isPlaying = ref(false)
 const isLoading = ref(false)
 const volume = ref(42)
+const elapsedSeconds = ref(0)
 const errorMessage = ref('')
 const panelStyle = ref<Record<string, string>>({})
 const selectedStation = computed(() => stations[selectedIndex.value]!)
+const formattedElapsed = computed(() => `${String(Math.floor(elapsedSeconds.value / 60)).padStart(2, '0')}:${String(elapsedSeconds.value % 60).padStart(2, '0')}`)
 let audioContext: AudioContext | null = null
 let masterGain: GainNode | null = null
 let scheduler: ReturnType<typeof setInterval> | null = null
+let elapsedTimer: ReturnType<typeof setInterval> | null = null
 let nextNoteTime = 0
 let noteStep = 0
+
+const amplifiedVolume = () => Math.min(1.55, (volume.value / 100) * 1.55)
+const startElapsedTimer = () => {
+  if (elapsedTimer) clearInterval(elapsedTimer)
+  elapsedTimer = setInterval(() => { elapsedSeconds.value += 1 }, 1000)
+}
+const stopElapsedTimer = () => {
+  if (elapsedTimer) clearInterval(elapsedTimer)
+  elapsedTimer = null
+}
 
 const updatePanelPosition = () => {
   if (!trigger.value || !import.meta.client) return
@@ -73,6 +88,7 @@ onMounted(() => {
 
 onBeforeUnmount(() => {
   if (scheduler) clearInterval(scheduler)
+  stopElapsedTimer()
   void audioContext?.close()
   window.removeEventListener('resize', updatePanelPosition)
   window.removeEventListener('scroll', updatePanelPosition, true)
@@ -117,7 +133,7 @@ const startPlayback = async () => {
     if (!audioContext) {
       audioContext = new AudioContext()
       masterGain = audioContext.createGain()
-      masterGain.gain.value = volume.value / 100
+      masterGain.gain.value = amplifiedVolume()
       masterGain.connect(audioContext.destination)
     }
     await audioContext.resume()
@@ -126,6 +142,7 @@ const startPlayback = async () => {
     scheduler = setInterval(fillSchedule, 80)
     fillSchedule()
     isPlaying.value = true
+    startElapsedTimer()
   } catch {
     errorMessage.value = 'Audio could not start. Please allow sound in your browser.'
   } finally {
@@ -139,6 +156,7 @@ const togglePlayback = async () => {
     scheduler = null
     await audioContext?.suspend()
     isPlaying.value = false
+    stopElapsedTimer()
   } else await startPlayback()
 }
 
@@ -148,6 +166,7 @@ const selectStation = async (index: number) => {
     return
   }
   selectedIndex.value = index
+  elapsedSeconds.value = 0
   localStorage.setItem('taskflow-radio-station', String(index))
   errorMessage.value = ''
   noteStep = 0
@@ -163,16 +182,16 @@ const changeStation = (direction: number) => {
 }
 
 const updateVolume = () => {
-  if (masterGain && audioContext) masterGain.gain.setTargetAtTime(volume.value / 100, audioContext.currentTime, 0.04)
+  if (masterGain && audioContext) masterGain.gain.setTargetAtTime(amplifiedVolume(), audioContext.currentTime, 0.04)
   localStorage.setItem('taskflow-radio-volume', String(volume.value))
 }
 </script>
 
 <template>
-  <div ref="root" class="focus-radio">
+  <div ref="root" :class="['focus-radio', props.dark ? 'is-dark-mode' : '']">
     <button ref="trigger" type="button" :class="['focus-radio__trigger', isPlaying ? 'is-playing' : '']" :aria-expanded="isOpen" aria-label="Open Focus Radio" @click="togglePanel">
-      <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 14v-2a8 8 0 0 1 16 0v2M4 14h3v6H5a2 2 0 0 1-2-2v-2a2 2 0 0 1 1-2Zm16 0h-3v6h2a2 2 0 0 0 2-2v-2a2 2 0 0 0-1-2Z" /></svg>
-      <span class="focus-radio__trigger-copy"><b>{{ selectedStation.name }}</b><small>{{ isLoading ? 'Connecting…' : isPlaying ? 'Playing' : 'Focus Radio' }}</small></span>
+      <span class="focus-radio__trigger-icon"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 14v-2a8 8 0 0 1 16 0v2M4 14h3v6H5a2 2 0 0 1-2-2v-2a2 2 0 0 1 1-2Zm16 0h-3v6h2a2 2 0 0 0 2-2v-2a2 2 0 0 0-1-2Z" /></svg><i v-if="isPlaying" /></span>
+      <span class="focus-radio__trigger-copy"><b>{{ selectedStation.name }}</b><small>{{ isLoading ? 'Connecting…' : isPlaying ? formattedElapsed : 'Focus Radio' }}</small></span>
       <span v-if="isPlaying" class="focus-radio__mini-bars" aria-hidden="true"><i /><i /><i /></span>
     </button>
 
@@ -194,6 +213,7 @@ const updateVolume = () => {
 
         <p v-if="errorMessage" class="focus-radio__error">{{ errorMessage }}</p>
         <footer>
+          <div class="focus-radio__session-time"><span>{{ formattedElapsed }}</span><small>{{ isPlaying ? 'Focus session' : 'Ready to focus' }}</small></div>
           <div class="focus-radio__transport">
             <button type="button" aria-label="Previous station" @click="changeStation(-1)"><svg viewBox="0 0 24 24"><path d="M6 6v12m12-11-8 5 8 5V7Z" /></svg></button>
             <button type="button" class="focus-radio__main-play" :aria-label="isPlaying ? 'Pause radio' : 'Play radio'" @click="togglePlayback"><span v-if="isLoading" class="focus-radio__spinner" /><svg v-else-if="isPlaying" viewBox="0 0 24 24"><path d="M9 7v10M15 7v10" /></svg><svg v-else viewBox="0 0 24 24"><path d="m9 7 8 5-8 5V7Z" /></svg></button>
@@ -213,4 +233,25 @@ const updateVolume = () => {
 .focus-radio__trigger{display:flex!important;width:auto!important;height:42px!important;padding:0 10px!important;border-radius:12px!important}
 .focus-radio__panel{position:fixed;z-index:9999;right:auto;overflow-x:hidden;overflow-y:auto}
 @media(max-width:640px){.focus-radio__trigger{width:42px!important;padding:0!important}}
+.focus-radio__trigger{min-width:146px!important;height:44px!important;gap:9px!important;border-color:rgba(148,163,184,.3)!important;border-radius:13px!important;background:linear-gradient(135deg,rgba(255,255,255,.94),rgba(244,248,253,.82))!important;padding:0 9px 0 7px!important;color:#334155!important;box-shadow:0 8px 22px -12px rgba(15,23,42,.45),inset 0 1px 0 rgba(255,255,255,.95)!important;backdrop-filter:blur(16px) saturate(145%)}
+.focus-radio__trigger:hover,.focus-radio__trigger.is-playing{border-color:rgba(37,103,173,.38)!important;background:linear-gradient(135deg,#fff,#eef6ff)!important;color:#1d5fa8!important;box-shadow:0 10px 25px -12px rgba(37,103,173,.55),inset 0 1px 0 #fff!important}
+.focus-radio__trigger-icon{position:relative;display:grid;width:31px;height:31px;flex:none;place-items:center;border:1px solid rgba(59,130,246,.17);border-radius:10px;background:linear-gradient(145deg,#eaf4ff,#dbeafe);color:#2567ad;box-shadow:inset 0 1px 0 #fff}
+.focus-radio__trigger-icon svg{width:17px;height:17px;fill:none;stroke:currentColor;stroke-width:1.8;stroke-linecap:round;stroke-linejoin:round}
+.focus-radio__trigger-icon i{position:absolute;right:-2px;top:-2px;width:7px;height:7px;border:2px solid #fff;border-radius:50%;background:#22c55e;box-shadow:0 0 0 2px rgba(34,197,94,.14)}
+.focus-radio__trigger-copy{line-height:1.1}.focus-radio__trigger-copy b{font-size:11px;letter-spacing:-.01em}.focus-radio__trigger-copy small{margin-top:3px;font-size:8px;font-weight:600}.focus-radio__mini-bars{margin-left:auto}
+:global(.tf-dark) .focus-radio__trigger{border-color:rgba(96,165,250,.22)!important;background:linear-gradient(135deg,rgba(15,36,64,.93),rgba(7,24,45,.86))!important;color:#eaf3ff!important;box-shadow:0 10px 28px -13px rgba(0,0,0,.9),inset 0 1px 0 rgba(255,255,255,.08)!important}
+:global(.tf-dark) .focus-radio__trigger:hover,:global(.tf-dark) .focus-radio__trigger.is-playing{border-color:rgba(56,189,248,.48)!important;background:linear-gradient(135deg,#153759,#0c2949)!important;color:#7dd3fc!important;box-shadow:0 12px 30px -13px rgba(14,165,233,.65),inset 0 1px 0 rgba(255,255,255,.1)!important}
+:global(.tf-dark) .focus-radio__trigger-icon{border-color:rgba(125,211,252,.2);background:linear-gradient(145deg,rgba(37,99,235,.25),rgba(14,165,233,.12));color:#7dd3fc;box-shadow:inset 0 1px 0 rgba(255,255,255,.08)}
+:global(.tf-dark) .focus-radio__trigger-icon i{border-color:#0c2949}
+.focus-radio__session-time{display:flex;align-items:baseline;justify-content:center;gap:7px;margin-bottom:7px}.focus-radio__session-time span{font-variant-numeric:tabular-nums;color:#2567ad;font-size:15px;font-weight:800;letter-spacing:.04em}.focus-radio__session-time small{color:#94a3b8;font-size:8px;font-weight:600}:global(.tf-dark) .focus-radio__session-time span{color:#7dd3fc}
+@media(max-width:640px){.focus-radio__trigger{min-width:44px!important;width:44px!important;padding:0!important}.focus-radio__trigger-icon{width:32px;height:32px}.focus-radio__trigger-copy,.focus-radio__mini-bars{display:none}}
+:global(.is-dark) .focus-radio__trigger{border-color:rgba(96,165,250,.22)!important;background:linear-gradient(135deg,rgba(15,36,64,.93),rgba(7,24,45,.86))!important;color:#eaf3ff!important;box-shadow:0 10px 28px -13px rgba(0,0,0,.9),inset 0 1px 0 rgba(255,255,255,.08)!important}
+:global(.is-dark) .focus-radio__trigger:hover,:global(.is-dark) .focus-radio__trigger.is-playing{border-color:rgba(56,189,248,.48)!important;background:linear-gradient(135deg,#153759,#0c2949)!important;color:#7dd3fc!important}
+:global(.is-dark) .focus-radio__trigger-icon{border-color:rgba(125,211,252,.2);background:linear-gradient(145deg,rgba(37,99,235,.25),rgba(14,165,233,.12));color:#7dd3fc;box-shadow:inset 0 1px 0 rgba(255,255,255,.08)}
+:global(.is-dark) .focus-radio__trigger-icon i{border-color:#0c2949}
+.focus-radio.is-dark-mode .focus-radio__trigger{border-color:rgba(96,165,250,.22)!important;background:linear-gradient(135deg,rgba(15,36,64,.96),rgba(7,24,45,.92))!important;color:#eaf3ff!important;box-shadow:0 10px 28px -13px rgba(0,0,0,.9),inset 0 1px 0 rgba(255,255,255,.08)!important}
+.focus-radio.is-dark-mode .focus-radio__trigger:hover,.focus-radio.is-dark-mode .focus-radio__trigger.is-playing{border-color:rgba(56,189,248,.48)!important;background:linear-gradient(135deg,#153759,#0c2949)!important;color:#7dd3fc!important}
+.focus-radio.is-dark-mode .focus-radio__trigger-icon{border-color:rgba(125,211,252,.2);background:linear-gradient(145deg,rgba(37,99,235,.25),rgba(14,165,233,.12));color:#7dd3fc;box-shadow:inset 0 1px 0 rgba(255,255,255,.08)}
+.focus-radio.is-dark-mode .focus-radio__trigger-copy small{color:#9fb1c8}
+.focus-radio.is-dark-mode .focus-radio__trigger-icon i{border-color:#0c2949}
 </style>
