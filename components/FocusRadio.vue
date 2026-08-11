@@ -197,7 +197,7 @@ const updateVolume = () => {
 
     <Teleport to="body">
     <Transition name="radio-popover">
-      <section v-if="isOpen" ref="panel" class="focus-radio__panel" :style="panelStyle" aria-label="Focus Radio player">
+      <section v-if="isOpen" ref="panel" :class="['focus-radio__panel', props.dark ? 'is-dark-mode' : '']" :style="panelStyle" aria-label="Focus Radio player">
         <header><div><h2>Focus Radio</h2><p>Music for your work session</p></div><button type="button" aria-label="Close Focus Radio" @click="isOpen = false">×</button></header>
 
         <div class="focus-radio__stations">
@@ -254,4 +254,15 @@ const updateVolume = () => {
 .focus-radio.is-dark-mode .focus-radio__trigger-icon{border-color:rgba(125,211,252,.2);background:linear-gradient(145deg,rgba(37,99,235,.25),rgba(14,165,233,.12));color:#7dd3fc;box-shadow:inset 0 1px 0 rgba(255,255,255,.08)}
 .focus-radio.is-dark-mode .focus-radio__trigger-copy small{color:#9fb1c8}
 .focus-radio.is-dark-mode .focus-radio__trigger-icon i{border-color:#0c2949}
+.focus-radio__panel.is-dark-mode{border-color:#2b405d;background:rgba(10,24,43,.985);color:#f8fafc;box-shadow:0 28px 75px rgba(0,0,0,.55)}
+.focus-radio__panel.is-dark-mode header{background:#0c1b30;border-color:#253b58}
+.focus-radio__panel.is-dark-mode header p,.focus-radio__panel.is-dark-mode .focus-radio__station-copy small{color:#91a4bc}
+.focus-radio__panel.is-dark-mode header button:hover{background:#17304f;color:#7dd3fc}
+.focus-radio__panel.is-dark-mode .focus-radio__station:hover{background:#102640}
+.focus-radio__panel.is-dark-mode .focus-radio__station.is-active{border-color:#275a92;background:#102d50}
+.focus-radio__panel.is-dark-mode .focus-radio__play-icon{background:rgba(59,130,246,.14)}
+.focus-radio__panel.is-dark-mode footer{border-color:#243a56;background:#0a182b}
+.focus-radio__panel.is-dark-mode .focus-radio__session-time span{color:#7dd3fc}
+.focus-radio__panel.is-dark-mode .focus-radio__transport button{color:#a9b9cc}
+.focus-radio__panel.is-dark-mode .focus-radio__volume{color:#a9b9cc}
 </style>

@@ -1866,6 +1866,85 @@ body {
   transform: translateY(-4px);
 }
 
+/* Taskly keeps clear contrast in dark mode instead of inheriting generic grays. */
+.tf-dark .tf-support-panel {
+  border-color: #2b405d;
+  background: #111d30;
+}
+
+.tf-dark .tf-support-type-tabs {
+  border-color: #2b405d;
+  background: #0c1728;
+}
+
+.tf-dark .tf-support-type {
+  background: transparent;
+  color: #9fb0c7;
+}
+
+.tf-dark .tf-support-type:hover {
+  background: #182a43;
+  color: #dbeafe;
+}
+
+.tf-dark .tf-support-type.is-active {
+  background: linear-gradient(180deg, #4b91eb, #2768c7);
+  color: #fff;
+  box-shadow: 0 8px 18px -10px rgb(37 103 173 / 0.9);
+}
+
+.tf-dark .tf-support-panel textarea {
+  border-color: #405675;
+  background: #0d192b;
+  color: #f1f5f9;
+}
+
+.tf-dark .tf-support-send:disabled {
+  opacity: 1;
+  border: 1px solid #2d4666;
+  background: #1b304d;
+  color: #7890ad;
+  box-shadow: none;
+}
+
+/* Dark surfaces that use Tailwind opacity modifiers. */
+.tf-dark .bg-slate-50\/70,
+.tf-dark .bg-slate-50\/80 {
+  background-color: rgb(23 32 51 / 0.92);
+}
+
+.tf-dark .bg-task-blueSoft\/40 {
+  background-color: rgb(23 55 93 / 0.55);
+}
+
+.tf-dark .bg-task-dangerSoft\/50,
+.tf-dark .bg-task-dangerSoft\/60 {
+  background-color: rgb(74 29 42 / 0.72);
+}
+
+.tf-dark .bg-task-warningSoft\/50 {
+  background-color: rgb(74 52 20 / 0.72);
+}
+
+.tf-dark .tf-member-remove-card {
+  border-color: #31445f;
+  background: #17243a;
+}
+
+.tf-dark .tf-member-remove-card > span:first-child {
+  background: #17375d;
+  color: #8fc3ff;
+}
+
+.tf-dark .tf-member-remove-warning {
+  border-color: rgb(244 63 94 / 0.42);
+  background: rgb(74 29 42 / 0.72);
+}
+
+.tf-dark .tf-member-remove-warning .text-task-muted {
+  color: #cbd5e1;
+}
+
 .tf-department-donut {
   display: grid;
   height: 112px;
@@ -2062,6 +2141,28 @@ body {
 .tf-dark .tf-notification-item.is-unread:hover {
   background: #1b3452;
 }
+
+/* Teleported notifications carry their own theme state. */
+.tf-notification-dropdown.is-dark-mode {
+  border-color: #2c3b52;
+  background: #111c2e;
+  color: #f1f5f9;
+  box-shadow: 0 28px 70px -24px rgb(0 0 0 / 0.8), 0 12px 28px -18px rgb(0 0 0 / 0.65);
+}
+
+.tf-notification-dropdown.is-dark-mode .tf-notification-header,
+.tf-notification-dropdown.is-dark-mode .tf-notification-footer {
+  border-color: #2c3b52;
+  background: #111c2e;
+}
+
+.tf-notification-dropdown.is-dark-mode .tf-notification-footer:hover,
+.tf-notification-dropdown.is-dark-mode .tf-notification-item:hover { background: #18263b; }
+.tf-notification-dropdown.is-dark-mode .tf-notification-item.is-read { background: #111c2e; }
+.tf-notification-dropdown.is-dark-mode .tf-notification-item.is-unread { background: #172b45; box-shadow: inset 3px 0 0 #5ea7ff; }
+.tf-notification-dropdown.is-dark-mode .tf-notification-item.is-unread:hover { background: #1b3452; }
+.tf-notification-dropdown.is-dark-mode .text-task-ink { color: #f8fafc; }
+.tf-notification-dropdown.is-dark-mode .text-task-muted { color: #9ca3af; }
 
 .tf-hidden-badge {
   display: inline-flex;

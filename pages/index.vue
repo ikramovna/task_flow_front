@@ -535,7 +535,9 @@ const filteredMessages = computed(() => messages.value.filter((name) => includes
 const filteredFaqs = computed<string[]>(() => [])
 const pageCount = (length: number) => Math.max(1, Math.ceil(length / pageSize))
 const paginate = <T>(items: T[], page: number) => items.slice((page - 1) * pageSize, page * pageSize)
-const paginatedTasks = computed(() => paginate(filteredTasks.value, taskPage.value))
+// Tasks stay in one continuous list/board; backend responses must not be split
+// into a second client-side pagination layer.
+const paginatedTasks = computed(() => filteredTasks.value)
 const kanbanColumns = computed(() => [
   { key: 'not_started', label: 'To Do', description: 'Ready to start', color: '#8B96A7', softColor: '#F3F5F7', tasks: paginatedTasks.value.filter((task) => String(task[3]).toLowerCase() === 'not started') },
   { key: 'in_progress', label: 'In Progress', description: 'Being worked on', color: '#3B82F6', softColor: '#EEF5FF', tasks: paginatedTasks.value.filter((task) => String(task[3]).toLowerCase() === 'in progress') },
@@ -3006,7 +3008,7 @@ const iconPath = (name: string) => {
           <GreetingCard :config="dashboardGreetingConfig" :name="savedProfile.firstName || profileName || 'there'">
             <template #actions>
               <FocusRadio :dark="isDarkTheme" />
-              <NotificationCenter :active-page="activePage" @navigate="navigateFromNotification" @view-all="setPage('notifications')" />
+              <NotificationCenter :active-page="activePage" :dark="isDarkTheme" @navigate="navigateFromNotification" @view-all="setPage('notifications')" />
               <button type="button" class="tf-theme-button" :aria-label="isDarkTheme ? 'Switch to light theme' : 'Switch to dark theme'" :aria-pressed="isDarkTheme" :title="isDarkTheme ? 'Light theme' : 'Dark theme'" @click="toggleTheme">
                 <svg viewBox="0 0 24 24" class="h-[17px] w-[17px]" fill="none" stroke="currentColor" stroke-width="1.8"><path :d="iconPath(isDarkTheme ? 'sun' : 'moon')" /></svg>
               </button>
@@ -3045,7 +3047,7 @@ const iconPath = (name: string) => {
               <button v-if="taskSearchInput && !searchLoading.task" type="button" class="tf-search-clear" aria-label="Clear search" @click="clearSearch('task')">×</button>
               <span v-if="searchLoading.task" class="tf-search-spinner" />
             </label>
-            <NotificationCenter :active-page="activePage" @navigate="navigateFromNotification" @view-all="setPage('notifications')" />
+            <NotificationCenter :active-page="activePage" :dark="isDarkTheme" @navigate="navigateFromNotification" @view-all="setPage('notifications')" />
             <button type="button" class="tf-theme-button" :aria-label="isDarkTheme ? 'Switch to light theme' : 'Switch to dark theme'" :aria-pressed="isDarkTheme" :title="isDarkTheme ? 'Light theme' : 'Dark theme'" @click="toggleTheme">
               <svg viewBox="0 0 24 24" class="h-[17px] w-[17px]" fill="none" stroke="currentColor" stroke-width="1.8"><path :d="iconPath(isDarkTheme ? 'sun' : 'moon')" /></svg>
             </button>
@@ -3323,7 +3325,6 @@ const iconPath = (name: string) => {
             </button>
           </div>
           <p v-if="!filteredTasks.length" class="py-8 text-center text-sm text-task-muted">No tasks matched your filters.</p>
-          <div v-if="filteredTasks.length > pageSize" class="mt-5 flex items-center justify-between text-xs text-task-muted"><span>Showing {{ (taskPage - 1) * pageSize + 1 }}–{{ Math.min(taskPage * pageSize, filteredTasks.length) }} of {{ filteredTasks.length }} Tasks</span><div class="flex gap-2"><button class="tf-icon-button disabled:cursor-not-allowed disabled:opacity-40" type="button" :disabled="taskPage === 1" aria-label="Previous task page" @click="setTaskPage(taskPage - 1)">‹</button><button v-for="page in taskPageCount" :key="page" :class="[taskPage === page ? 'tf-primary' : 'tf-icon-button', 'h-9 w-9 p-0']" type="button" :aria-current="taskPage === page ? 'page' : undefined" @click="setTaskPage(page)">{{ page }}</button><button class="tf-icon-button disabled:cursor-not-allowed disabled:opacity-40" type="button" :disabled="taskPage === taskPageCount" aria-label="Next task page" @click="setTaskPage(taskPage + 1)">›</button></div></div>
           </div>
         </section>
 
@@ -3727,11 +3728,11 @@ const iconPath = (name: string) => {
           </template>
           <template v-else-if="modal === 'member-remove' && selectedTeamMember">
             <p class="text-lg font-bold leading-7 text-task-ink sm:text-xl">Are you sure you want to remove this member<br class="hidden sm:block" /> from the <span class="text-task-blue">{{ memberDepartmentNameOf(selectedTeamMember) }}</span> department?</p>
-            <div class="mt-5 flex items-center gap-4 rounded-[14px] border border-task-line bg-slate-50/70 p-4">
+            <div class="tf-member-remove-card mt-5 flex items-center gap-4 rounded-[14px] border border-task-line bg-slate-50/70 p-4">
               <span class="grid h-16 w-16 shrink-0 place-items-center overflow-hidden rounded-full bg-task-blueSoft text-base font-bold text-task-blue"><img v-if="selectedTeamMember[8]" :src="String(selectedTeamMember[8])" :alt="teamMemberName(selectedTeamMember)" class="h-full w-full object-cover" /><span v-else>{{ initials(teamMemberName(selectedTeamMember)) }}</span></span>
               <div class="min-w-0"><h3 class="truncate text-lg font-bold text-task-ink">{{ teamMemberName(selectedTeamMember) }}</h3><p class="mt-0.5 truncate text-sm text-task-muted">{{ selectedTeamMember[1] || 'Team member' }}</p><p class="mt-2 flex items-center gap-2 truncate text-sm font-medium text-task-blue"><svg viewBox="0 0 24 24" class="h-4 w-4 shrink-0" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M3 6h18v12H3V6Zm0 1 9 7 9-7" /></svg>{{ selectedTeamMember[2] }}</p></div>
             </div>
-            <div class="mt-4 flex gap-3 rounded-[14px] border border-task-danger/25 bg-task-dangerSoft/60 p-4"><svg viewBox="0 0 24 24" class="mt-0.5 h-5 w-5 shrink-0 text-task-danger" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><path d="M12 9v4m0 4h.01M4.5 19h15L12 4 4.5 19Z" /></svg><p class="text-sm leading-6 text-task-muted">This will remove <b class="text-task-ink">{{ teamMemberName(selectedTeamMember) }}</b> from the {{ memberDepartmentNameOf(selectedTeamMember) }} department.<br />Their TaskFlow account and task history will not be deleted.</p></div>
+            <div class="tf-member-remove-warning mt-4 flex gap-3 rounded-[14px] border border-task-danger/25 bg-task-dangerSoft/60 p-4"><svg viewBox="0 0 24 24" class="mt-0.5 h-5 w-5 shrink-0 text-task-danger" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><path d="M12 9v4m0 4h.01M4.5 19h15L12 4 4.5 19Z" /></svg><p class="text-sm leading-6 text-task-muted">This will remove <b class="text-task-ink">{{ teamMemberName(selectedTeamMember) }}</b> from the {{ memberDepartmentNameOf(selectedTeamMember) }} department.<br />Their TaskFlow account and task history will not be deleted.</p></div>
             <div class="mt-4 flex items-center gap-3 rounded-[14px] border border-task-line px-4 py-3.5"><svg viewBox="0 0 24 24" class="h-5 w-5 shrink-0 text-task-blue" fill="none" stroke="currentColor" stroke-width="1.9"><circle cx="12" cy="12" r="9" /><path d="M12 11v5m0-8h.01" /></svg><p class="min-w-0 flex-1 text-sm text-task-muted"><b class="text-task-ink">{{ Number(selectedTeamMember[6] || 0) }}</b> active tasks are currently assigned to this member.</p><button type="button" class="inline-flex shrink-0 items-center gap-2 text-sm font-semibold text-task-blue transition hover:translate-x-0.5" @click="viewSelectedMemberTasks">View tasks <span aria-hidden="true">→</span></button></div>
           </template>
           <template v-else-if="modal === 'event-detail' && selectedCalendarEvent">
@@ -4130,7 +4131,7 @@ const iconPath = (name: string) => {
 
     <button v-if="supportWidgetOpen" type="button" class="fixed inset-0 z-[65] bg-slate-950/30 backdrop-blur-[1px]" aria-label="Close help support" @click="!feedbackSending && (supportWidgetOpen = false)" />
     <div ref="supportWidgetRoot" class="fixed bottom-5 right-5 z-[70] h-14 w-14" :style="supportWidgetStyle" @paste="handleFeedbackPaste">
-      <div v-if="supportWidgetOpen" :class="['tf-panel absolute w-[390px] max-w-[calc(100vw-40px)] overflow-hidden p-5 shadow-2xl', supportPanelPlacement]">
+      <div v-if="supportWidgetOpen" :class="['tf-panel tf-support-panel absolute w-[390px] max-w-[calc(100vw-40px)] overflow-hidden p-5 shadow-2xl', supportPanelPlacement]">
         <div class="flex touch-none items-start justify-between gap-4" :class="supportWidgetDragging ? 'cursor-grabbing' : 'cursor-move'" @pointerdown="startSupportDrag">
           <div class="flex select-none items-center gap-3">
             <span class="grid h-14 w-14 shrink-0 place-items-center rounded-[16px] bg-gradient-to-br from-task-blueSoft to-white p-1 shadow-sm ring-1 ring-task-blue/15"><img src="/images/taskly-assistant.png" alt="Taskly feedback assistant" class="h-full w-full object-contain" /></span>
@@ -4141,8 +4142,8 @@ const iconPath = (name: string) => {
           </button>
         </div>
         <div class="mt-4"><p class="text-sm font-bold text-task-ink">Something not working as expected?</p><p class="mt-1 text-xs leading-5 text-task-muted">Report an issue or share an idea with us.</p></div>
-        <div class="mt-4 grid grid-cols-3 overflow-hidden rounded-[12px] border border-task-line bg-slate-50/70 p-1">
-          <button v-for="type in ['Bug', 'Suggestion', 'Feedback']" :key="type" type="button" :class="['flex h-10 items-center justify-center gap-2 rounded-[9px] text-xs font-semibold transition', feedbackType === type ? 'bg-gradient-to-b from-[#4B91EB] to-[#2768C7] text-white shadow-button' : 'text-task-muted hover:bg-white hover:text-task-blue']" @click="feedbackType = type as typeof feedbackType"><svg v-if="type === 'Bug'" viewBox="0 0 24 24" class="h-4 w-4" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M8 9h8v9a4 4 0 0 1-8 0V9Zm-2 4H3m18 0h-3M8 7 6 5m10 2 2-2M9 3h6v4H9V3Z" /></svg><svg v-else-if="type === 'Suggestion'" viewBox="0 0 24 24" class="h-4 w-4" fill="none" stroke="currentColor" stroke-width="1.8"><path d="m12 3 1.2 3.8L17 8l-3.8 1.2L12 13l-1.2-3.8L7 8l3.8-1.2L12 3Zm6 10 .8 2.2L21 16l-2.2.8L18 19l-.8-2.2L15 16l2.2-.8L18 13Z" /></svg><svg v-else viewBox="0 0 24 24" class="h-4 w-4" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M5 4h14a2 2 0 0 1 2 2v9a2 2 0 0 1-2 2H9l-5 4v-4H5a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2Z" /></svg>{{ type }}</button>
+        <div class="tf-support-type-tabs mt-4 grid grid-cols-3 overflow-hidden rounded-[12px] border border-task-line bg-slate-50/70 p-1">
+          <button v-for="type in ['Bug', 'Suggestion', 'Feedback']" :key="type" type="button" :class="['tf-support-type flex h-10 items-center justify-center gap-2 rounded-[9px] text-xs font-semibold transition', feedbackType === type ? 'is-active bg-gradient-to-b from-[#4B91EB] to-[#2768C7] text-white shadow-button' : 'text-task-muted hover:bg-white hover:text-task-blue']" @click="feedbackType = type as typeof feedbackType"><svg v-if="type === 'Bug'" viewBox="0 0 24 24" class="h-4 w-4" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M8 9h8v9a4 4 0 0 1-8 0V9Zm-2 4H3m18 0h-3M8 7 6 5m10 2 2-2M9 3h6v4H9V3Z" /></svg><svg v-else-if="type === 'Suggestion'" viewBox="0 0 24 24" class="h-4 w-4" fill="none" stroke="currentColor" stroke-width="1.8"><path d="m12 3 1.2 3.8L17 8l-3.8 1.2L12 13l-1.2-3.8L7 8l3.8-1.2L12 3Zm6 10 .8 2.2L21 16l-2.2.8L18 19l-.8-2.2L15 16l2.2-.8L18 13Z" /></svg><svg v-else viewBox="0 0 24 24" class="h-4 w-4" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M5 4h14a2 2 0 0 1 2 2v9a2 2 0 0 1-2 2H9l-5 4v-4H5a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2Z" /></svg>{{ type }}</button>
         </div>
         <label class="mt-4 block text-xs font-semibold text-task-ink">Tell us more</label>
         <div class="relative mt-2">
@@ -4167,7 +4168,7 @@ const iconPath = (name: string) => {
             <svg viewBox="0 0 24 24" class="h-4 w-4" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M18 6 6 18M6 6l12 12" /></svg>
           </button>
         </div>
-        <button type="button" class="tf-primary mt-5 h-12 w-full rounded-[12px] bg-gradient-to-b from-[#4D95F3] to-[#205FCD] text-sm shadow-[0_14px_28px_-14px_rgba(37,103,173,.8)] disabled:cursor-not-allowed disabled:opacity-60" :disabled="!feedbackDraft.trim() || feedbackSending" @click="sendFeedbackToTeam">
+        <button type="button" class="tf-primary tf-support-send mt-5 h-12 w-full rounded-[12px] bg-gradient-to-b from-[#4D95F3] to-[#205FCD] text-sm shadow-[0_14px_28px_-14px_rgba(37,103,173,.8)] disabled:cursor-not-allowed" :disabled="!feedbackDraft.trim() || feedbackSending" @click="sendFeedbackToTeam">
           <svg v-if="feedbackSending" viewBox="0 0 24 24" class="h-5 w-5 animate-spin" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 3a9 9 0 1 1-9 9" /></svg>
           <svg v-else viewBox="0 0 24 24" class="h-5 w-5" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M22 2 11 13M22 2l-7 20-4-9-9-4 20-7Z" /></svg>
           {{ feedbackSending ? 'Sending...' : 'Send Feedback →' }}

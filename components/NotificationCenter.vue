@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import type { TaskFlowNotification } from '~/composables/useTaskFlowApi'
 
-const props = defineProps<{ activePage?: string }>()
+const props = defineProps<{ activePage?: string; dark?: boolean }>()
 const emit = defineEmits<{
   navigate: [target: { kind: 'task' | 'message'; id: string }]
   viewAll: []
@@ -96,7 +96,7 @@ onBeforeUnmount(() => {
       <span v-if="state.unreadCount" class="absolute -right-2 -top-2 grid min-h-5 min-w-5 place-items-center rounded-full border-2 border-white bg-task-danger px-1 text-[9px] font-bold leading-none text-white">{{ badge }}</span>
     </button>
     <Teleport to="body">
-    <div v-if="open" ref="panel" :style="panelStyle" class="tf-notification-dropdown fixed z-[9999] flex flex-col overflow-hidden rounded-[18px] border shadow-2xl">
+    <div v-if="open" ref="panel" :style="panelStyle" :class="['tf-notification-dropdown fixed z-[9999] flex flex-col overflow-hidden rounded-[18px] border shadow-2xl', props.dark ? 'is-dark-mode' : '']">
       <header class="tf-notification-header flex min-h-[68px] items-center justify-between gap-4 border-b px-4 py-3.5"><div class="min-w-0"><h2 class="font-bold">Notifications</h2><p class="mt-0.5 text-[11px] text-task-muted">{{ state.unreadCount }} unread</p></div><button v-if="state.unreadCount" type="button" class="h-auto w-auto shrink-0 whitespace-nowrap rounded-lg px-2.5 py-1.5 text-xs font-bold text-task-blue transition hover:bg-task-blueSoft" @click="allRead">Mark all as read</button></header>
       <div class="min-h-0 flex-1 overflow-y-auto">
         <div v-if="state.loading && !state.notifications.length" class="space-y-3 p-4"><div v-for="i in 3" :key="i" class="h-20 animate-pulse rounded-xl bg-slate-100" /></div>
