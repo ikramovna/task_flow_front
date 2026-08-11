@@ -3417,7 +3417,11 @@ const iconPath = (name: string) => {
           </div>
 
           <div class="tf-panel relative p-5">
-            <div class="mb-4 flex flex-col gap-3 xl:flex-row xl:items-center xl:justify-end">
+            <div class="mb-4 flex flex-col gap-3 xl:flex-row xl:items-center xl:justify-between">
+              <div>
+                <h2 class="text-xl font-bold text-task-ink">Staff Members</h2>
+                <p class="mt-1 text-sm text-task-muted">View and manage your team members.</p>
+              </div>
               <div class="flex flex-col gap-2 sm:flex-row sm:flex-wrap sm:items-center xl:justify-end">
                 <div class="tf-dropdown w-full sm:w-40">
                   <button type="button" class="tf-dropdown-button h-10 bg-white px-3 text-xs" @click="openDropdown = openDropdown === 'staffDepartment' ? null : 'staffDepartment'"><span class="truncate">{{ teamDepartmentFilter === 'all' ? 'All departments' : memberDepartmentOptions.find((department) => department.id === teamDepartmentFilter)?.name || 'Department' }}</span><svg viewBox="0 0 20 20" class="h-4 w-4 shrink-0" fill="none" stroke="currentColor" stroke-width="2"><path d="m5 7.5 5 5 5-5" /></svg></button>
