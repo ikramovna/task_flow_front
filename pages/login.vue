@@ -13,7 +13,7 @@ const isDarkTheme = ref(false)
 let themeMediaQuery: MediaQueryList | null = null
 
 useHead({
-  title: 'Login - TaskFlow Dashboard'
+  title: 'TaskFlow — Work in flow'
 })
 
 onMounted(() => {

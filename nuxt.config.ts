@@ -44,7 +44,7 @@ export default defineNuxtConfig({
   },
   app: {
     head: {
-      title: 'TaskFlow Dashboard',
+      title: 'TaskFlow — Work in flow',
       htmlAttrs: {
         lang: 'en'
       },
@@ -52,8 +52,29 @@ export default defineNuxtConfig({
         { name: 'viewport', content: 'width=device-width, initial-scale=1' },
         {
           name: 'description',
-          content: 'TaskFlow task management dashboard built with Nuxt and Tailwind CSS.'
-        }
+          content: 'Plan tasks, align your team and move every project forward with TaskFlow.'
+        },
+        { property: 'og:type', content: 'website' },
+        { property: 'og:site_name', content: 'TaskFlow' },
+        { property: 'og:title', content: 'TaskFlow — Work in flow' },
+        {
+          property: 'og:description',
+          content: 'Tasks, people and deadlines — beautifully organized in one workspace.'
+        },
+        { property: 'og:url', content: 'https://taskflow.websteredu.uz/' },
+        { property: 'og:image', content: 'https://taskflow.websteredu.uz/greeting-cards/morning-light-panorama-v4.png?v=6' },
+        { property: 'og:image:secure_url', content: 'https://taskflow.websteredu.uz/greeting-cards/morning-light-panorama-v4.png?v=6' },
+        { property: 'og:image:type', content: 'image/png' },
+        { property: 'og:image:width', content: '1983' },
+        { property: 'og:image:height', content: '813' },
+        { property: 'og:image:alt', content: 'TaskFlow workspace with a bright morning city view' },
+        { name: 'twitter:card', content: 'summary_large_image' },
+        { name: 'twitter:title', content: 'TaskFlow — Work in flow' },
+        {
+          name: 'twitter:description',
+          content: 'Tasks, people and deadlines — beautifully organized in one workspace.'
+        },
+        { name: 'twitter:image', content: 'https://taskflow.websteredu.uz/greeting-cards/morning-light-panorama-v4.png?v=6' }
       ],
       script: [
         {

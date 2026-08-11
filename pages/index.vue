@@ -147,7 +147,7 @@ const toggleSupportWidget = () => {
   supportWidgetOpen.value = !supportWidgetOpen.value
 }
 const membersRawResponse = ref<unknown>(null)
-const memberSummary = ref<{ total_members?: number; average_efficiency?: number; active_tasks?: number } | null>(null)
+const memberSummary = ref<{ total_members?: number; average_efficiency?: number; active_tasks?: number; overdue_tasks?: number } | null>(null)
 const selectedTeamMember = ref<Array<string | number> | null>(null)
 const memberDeleting = ref(false)
 const activeMessage = ref('')
@@ -162,6 +162,7 @@ const sidebarCollapsed = ref(false)
 const taskPage = ref(1)
 const taskViewMode = ref<'list' | 'kanban'>('kanban')
 const taskBoardSection = ref<'board' | 'backlog'>('board')
+const taskAttentionFilter = ref<'all' | 'overdue' | 'today' | 'on_hold' | 'unassigned'>('all')
 const draggedTaskId = ref('')
 const updatingTaskId = ref('')
 const editingTaskId = ref('')
@@ -304,7 +305,8 @@ const taskAssigneesLoading = ref(false)
 const filteredTaskAssignees = computed(() => {
   const query = taskAssigneeSearch.value.trim().toLowerCase()
   return taskAssigneeOptions.value.filter((member) => {
-    if (!teamMemberId(member)) return false
+    const memberId = teamMemberId(member)
+    if (!memberId || taskAssigneeIds.value.includes(memberId)) return false
     return !query || `${teamMemberName(member)} ${teamMemberEmail(member)}`.toLowerCase().includes(query)
   })
 })
@@ -445,9 +447,37 @@ const includesQuery = (row: Array<string | number> | string, query: string) => {
   return String(Array.isArray(row) ? row.join(' ') : row).toLowerCase().includes(query.toLowerCase())
 }
 
+const tashkentTodayIso = () => new Intl.DateTimeFormat('en-CA', {
+  timeZone: 'Asia/Tashkent', year: 'numeric', month: '2-digit', day: '2-digit'
+}).format(new Date())
+const taskDueIso = (task: Array<string | number>) => {
+  const raw = String(task[12] || task[4] || '').trim()
+  if (/^\d{4}-\d{2}-\d{2}/.test(raw)) return raw.slice(0, 10)
+  const dotted = raw.match(/^(\d{1,2})\.(\d{1,2})\.(\d{4})$/)
+  return dotted ? `${dotted[3]}-${dotted[2].padStart(2, '0')}-${dotted[1].padStart(2, '0')}` : ''
+}
+const isTaskOverdue = (task: Array<string | number>) => {
+  const status = String(task[3] || '').toLowerCase()
+  if (status === 'completed' || status === 'archived') return false
+  if (status === 'overdue') return true
+  const dueDate = taskDueIso(task)
+  return Boolean(dueDate && dueDate < tashkentTodayIso())
+}
+const matchesTaskAttentionFilter = (task: Array<string | number>) => {
+  if (taskAttentionFilter.value === 'all') return true
+  if (taskAttentionFilter.value === 'overdue') return isTaskOverdue(task)
+  if (taskAttentionFilter.value === 'today') return taskDueIso(task) === tashkentTodayIso()
+  if (taskAttentionFilter.value === 'on_hold') return String(task[3] || '').toLowerCase() === 'on hold'
+  return !String(task[1] || '').trim() || String(task[1] || '').toLowerCase() === 'unassigned'
+}
+
 const filteredTasks = computed(() =>
-  tasks.value.filter((task) => includesQuery(task, taskSearch.value) && (dropdownValues.priority === 'All Priorities' || String(task[2]) === dropdownValues.priority))
+  tasks.value.filter((task) => includesQuery(task, taskSearch.value) && matchesTaskAttentionFilter(task) && (dropdownValues.priority === 'All Priorities' || String(task[2]) === dropdownValues.priority))
 )
+const overdueTaskRows = computed(() => tasks.value.filter(isTaskOverdue))
+const dueTodayTaskRows = computed(() => tasks.value.filter(task => taskDueIso(task) === tashkentTodayIso() && String(task[3] || '').toLowerCase() !== 'completed'))
+const onHoldTaskRows = computed(() => tasks.value.filter(task => String(task[3] || '').toLowerCase() === 'on hold'))
+const unassignedTaskRows = computed(() => tasks.value.filter(task => !String(task[1] || '').trim() || String(task[1] || '').toLowerCase() === 'unassigned'))
 const kanbanColumns = computed(() => [
   { key: 'not_started', label: 'To Do', description: 'Ready to start', color: '#8B96A7', softColor: '#F3F5F7', tasks: filteredTasks.value.filter((task) => String(task[3]).toLowerCase() === 'not started') },
   { key: 'in_progress', label: 'In Progress', description: 'Being worked on', color: '#3B82F6', softColor: '#EEF5FF', tasks: filteredTasks.value.filter((task) => String(task[3]).toLowerCase() === 'in progress') },
@@ -544,11 +574,13 @@ const prioritySegments = computed(() => {
 })
 const activePriorityData = computed(() => prioritySegments.value.find((segment) => segment.key === activePrioritySegment.value) ?? null)
 const teamStats = computed(() => {
+  const overdueTasks = memberSummary.value?.overdue_tasks ?? tasks.value.filter(isTaskOverdue).length
   if (memberSummary.value) {
     return [
       [String(memberSummary.value.total_members ?? 0), 'Total Members', 'bg-[#EAF2FC]'],
       [`${memberSummary.value.average_efficiency ?? 0}%`, 'Avg Efficiency', 'bg-task-lavender'],
-      [String(memberSummary.value.active_tasks ?? 0), 'Active Tasks', 'bg-task-mint']
+      [String(memberSummary.value.active_tasks ?? 0), 'Active Tasks', 'bg-task-mint'],
+      [String(overdueTasks), 'Overdue Tasks', 'bg-task-dangerSoft']
     ]
   }
 
@@ -559,7 +591,8 @@ const teamStats = computed(() => {
   return [
     [String(total), 'Total Members', 'bg-[#EAF2FC]'],
     [`${avgEfficiency}%`, 'Avg Efficiency', 'bg-task-lavender'],
-    [String(activeTasks), 'Active Tasks', 'bg-task-mint']
+    [String(activeTasks), 'Active Tasks', 'bg-task-mint'],
+    [String(overdueTasks), 'Overdue Tasks', 'bg-task-dangerSoft']
   ]
 })
 const quickInsights = computed(() => {
@@ -1028,6 +1061,19 @@ const restoreActivePage = () => {
 const focusTaskSearch = () => {
   setPage('tasks')
   actionMenu.value = null
+}
+
+const showAttentionTasks = (filter: 'overdue' | 'today' | 'on_hold' | 'unassigned' = 'overdue') => {
+  taskAttentionFilter.value = filter
+  taskBoardSection.value = 'board'
+  taskViewMode.value = 'list'
+  taskPage.value = 1
+  setPage('tasks')
+}
+
+const clearTaskAttentionFilter = () => {
+  taskAttentionFilter.value = 'all'
+  taskPage.value = 1
 }
 
 const openNotifications = () => {
@@ -1750,12 +1796,16 @@ const selectTaskAssignee = (member: Array<string | number>) => {
   const selectedIndex = taskAssigneeIds.value.indexOf(id)
   if (selectedIndex >= 0) {
     removeTaskAssignee(selectedIndex)
+    taskAssigneeSearch.value = ''
+    openDropdown.value = null
     return
   }
   taskAssigneeIds.value.push(id)
   taskAssigneeLabels.value.push(name)
   if (!taskMainAssigneeId.value) taskMainAssigneeId.value = id
   form.assignee = taskAssigneeLabels.value.join(', ')
+  taskAssigneeSearch.value = ''
+  openDropdown.value = null
 }
 
 const removeTaskAssignee = (index: number) => {
@@ -2849,14 +2899,17 @@ const iconPath = (name: string) => {
       </aside>
 
       <div :class="['tf-content min-w-0 flex-1 p-4', activePage === 'calendar' ? 'tf-content-calendar' : '']">
-        <component :is="dashboardGreetingComponent" v-if="activePage === 'dashboard'" class="mb-4" :name="savedProfile.firstName || profileName || 'there'">
-          <template #actions>
-            <NotificationCenter :active-page="activePage" @navigate="navigateFromNotification" @view-all="setPage('notifications')" />
-            <button type="button" class="tf-theme-button" :aria-label="isDarkTheme ? 'Switch to light theme' : 'Switch to dark theme'" :aria-pressed="isDarkTheme" :title="isDarkTheme ? 'Light theme' : 'Dark theme'" @click="toggleTheme">
-              <svg viewBox="0 0 24 24" class="h-[17px] w-[17px]" fill="none" stroke="currentColor" stroke-width="1.8"><path :d="iconPath(isDarkTheme ? 'sun' : 'moon')" /></svg>
-            </button>
-          </template>
-        </component>
+        <div v-if="activePage === 'dashboard'" class="relative z-40 mb-4">
+          <component :is="dashboardGreetingComponent" :name="savedProfile.firstName || profileName || 'there'">
+            <template #actions>
+              <FocusRadio />
+              <NotificationCenter :active-page="activePage" @navigate="navigateFromNotification" @view-all="setPage('notifications')" />
+              <button type="button" class="tf-theme-button" :aria-label="isDarkTheme ? 'Switch to light theme' : 'Switch to dark theme'" :aria-pressed="isDarkTheme" :title="isDarkTheme ? 'Light theme' : 'Dark theme'" @click="toggleTheme">
+                <svg viewBox="0 0 24 24" class="h-[17px] w-[17px]" fill="none" stroke="currentColor" stroke-width="1.8"><path :d="iconPath(isDarkTheme ? 'sun' : 'moon')" /></svg>
+              </button>
+            </template>
+          </component>
+        </div>
         <header v-else class="tf-app-header tf-panel relative z-30 mb-4 flex h-[76px] items-center justify-between gap-4 overflow-visible px-5 shadow-none">
           <div v-if="activePage === 'dashboard'" class="tf-dashboard-hero-art" aria-hidden="true" />
           <div v-if="activePage !== 'dashboard'" class="pointer-events-none absolute inset-y-0 right-0 w-72 bg-gradient-to-l from-task-blueSoft/70 to-transparent" />
@@ -2905,7 +2958,8 @@ const iconPath = (name: string) => {
             </article>
           </div>
           <div class="grid items-stretch gap-4 xl:grid-cols-3">
-            <section v-for="panel in [{ title: 'Today’s Events', items: dashboardTodayEvents, upcoming: false }, { title: 'Upcoming Events', items: dashboardUpcomingEvents, upcoming: true }]" :key="panel.title" class="tf-panel tf-dashboard-list overflow-hidden p-0"><header class="tf-dashboard-list-header"><h2 class="flex items-center gap-2 font-bold"><span class="tf-section-icon">▣</span>{{ panel.title }}</h2><span class="tf-pill bg-task-blueSoft text-task-blue">{{ panel.items.length }}</span></header><div class="tf-dashboard-list-body divide-y divide-task-line"><button v-for="event in panel.items" :key="String(event.id)" type="button" class="tf-dashboard-list-row w-full text-left transition hover:bg-task-blueSoft focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-task-blue" @click="openDashboardEvent(event)"><time class="tf-event-date grid h-11 min-w-14 place-items-center rounded-[9px] bg-task-blueSoft px-2 text-xs font-bold text-task-blue">{{ panel.upcoming ? dashboardDateTime(event.starts_at).split(' ').slice(0, 2).join(' ') : dashboardDateTime(event.starts_at, 'time') }}</time><div class="min-w-0 flex-1"><p class="truncate text-sm font-bold">{{ event.title }}</p><p class="mt-1 truncate text-xs text-task-muted">{{ event.department?.name || 'No department' }} · {{ event.location || 'Online' }}</p></div><span class="text-xs text-task-muted">{{ panel.upcoming ? dashboardDateTime(event.starts_at, 'time') : '' }} ›</span></button><div v-if="!panel.items.length" class="tf-empty-events"><EmptyCalendarArt /><p>No events scheduled for today.</p><small>Enjoy your free time! 🎉</small></div></div></section>
+            <section class="tf-panel tf-dashboard-list overflow-hidden p-0"><header class="tf-dashboard-list-header"><h2 class="flex items-center gap-2 font-bold"><span class="text-task-danger">⚠</span>Needs Attention</h2><button type="button" class="text-xs font-bold text-task-blue" @click="showAttentionTasks('overdue')">View all →</button></header><div class="tf-dashboard-list-body divide-y divide-task-line"><button type="button" class="tf-dashboard-list-row flex w-full items-center text-left transition hover:bg-task-dangerSoft/50" @click="showAttentionTasks('overdue')"><span class="grid h-9 w-9 place-items-center rounded-[10px] bg-task-dangerSoft text-task-danger">!</span><span class="min-w-0 flex-1 font-semibold">Overdue Tasks</span><b class="text-task-danger">{{ overdueTaskRows.length }}</b></button><button type="button" class="tf-dashboard-list-row flex w-full items-center text-left transition hover:bg-task-warningSoft/50" @click="showAttentionTasks('today')"><span class="grid h-9 w-9 place-items-center rounded-[10px] bg-task-warningSoft text-task-warning">▣</span><span class="min-w-0 flex-1 font-semibold">Deadlines Today</span><b class="text-task-warning">{{ dueTodayTaskRows.length }}</b></button><button type="button" class="tf-dashboard-list-row flex w-full items-center text-left transition hover:bg-task-warningSoft/50" @click="showAttentionTasks('on_hold')"><span class="grid h-9 w-9 place-items-center rounded-[10px] bg-task-warningSoft text-task-warning">Ⅱ</span><span class="min-w-0 flex-1 font-semibold">On Hold Tasks</span><b class="text-task-warning">{{ onHoldTaskRows.length }}</b></button><button type="button" class="tf-dashboard-list-row flex w-full items-center text-left transition hover:bg-task-blueSoft" @click="showAttentionTasks('unassigned')"><span class="grid h-9 w-9 place-items-center rounded-[10px] bg-task-blueSoft text-task-blue">?</span><span class="min-w-0 flex-1 font-semibold">Tasks without Assignees</span><b class="text-task-blue">{{ unassignedTaskRows.length }}</b></button></div></section>
+            <section class="tf-panel tf-dashboard-list overflow-hidden p-0"><header class="tf-dashboard-list-header"><h2 class="flex items-center gap-2 font-bold"><span class="tf-section-icon">▣</span>Today’s Schedule</h2><div class="flex items-center gap-3"><span class="tf-pill bg-task-blueSoft text-task-blue">{{ dashboardTodayEvents.length }}</span><button type="button" class="text-xs font-bold text-task-blue" @click="setPage('calendar')">View all</button></div></header><div class="tf-dashboard-list-body divide-y divide-task-line"><button v-for="event in dashboardTodayEvents" :key="String(event.id)" type="button" class="tf-dashboard-list-row w-full text-left transition hover:bg-task-blueSoft focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-task-blue" @click="openDashboardEvent(event)"><time class="tf-event-date grid h-11 min-w-14 place-items-center rounded-[9px] bg-task-blueSoft px-2 text-xs font-bold text-task-blue">{{ dashboardDateTime(event.starts_at, 'time') }}</time><div class="min-w-0 flex-1"><p class="truncate text-sm font-bold">{{ event.title }}</p><p class="mt-1 truncate text-xs text-task-muted">{{ event.department?.name || 'No department' }} · {{ event.location || 'Online' }}</p></div><span class="text-xs text-task-muted">›</span></button><div v-if="!dashboardTodayEvents.length" class="tf-empty-events"><EmptyCalendarArt /><p>No events scheduled for today.</p><small>Enjoy your free time! 🎉</small></div></div></section>
             <section class="tf-panel tf-dashboard-list overflow-hidden p-0"><header class="tf-dashboard-list-header"><h2 class="font-bold">Upcoming Deadlines</h2><div class="flex items-center gap-3"><span class="tf-pill bg-task-blueSoft text-task-blue">{{ dashboardDeadlines.length }}</span><button type="button" class="text-xs font-bold text-task-blue" @click="setPage('tasks')">View all</button></div></header><div class="tf-dashboard-list-body divide-y divide-task-line"><button v-for="task in dashboardDeadlines" :key="String(task.id)" type="button" class="tf-dashboard-list-row w-full text-left transition hover:bg-task-blueSoft focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-task-blue" @click="openDashboardTask(task)"><span :class="['h-2.5 w-2.5 shrink-0 rounded-full', task.priority === 'high' ? 'bg-task-danger' : task.priority === 'medium' ? 'bg-task-warning' : 'bg-task-success']" /><div class="min-w-0 flex-1"><p class="truncate text-sm font-bold">{{ task.title }}</p><p class="mt-1 truncate text-xs text-task-muted">{{ task.department?.name || 'No department' }}</p></div><div class="text-right"><p class="text-xs font-bold">{{ dashboardDateTime(task.due_date) }}</p><p class="mt-1 text-[10px] font-semibold text-task-warning">{{ task.days_remaining }} days left</p></div></button><div v-if="!dashboardDeadlines.length" class="tf-empty-events"><p>No upcoming deadlines.</p><small>You are all caught up.</small></div></div></section>
           </div>
           <div class="grid items-stretch gap-4 xl:grid-cols-[0.8fr_1.2fr]">
@@ -3018,10 +3072,12 @@ const iconPath = (name: string) => {
             </div>
         </section>
 
-        <section v-else-if="activePage === 'tasks'" class="tf-panel relative p-4 sm:p-5">
-          <div class="mb-5 flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
-            <div><h2 class="text-lg font-bold">Task Board</h2><p class="mt-1 text-xs text-task-muted">Organize tasks and move them through each stage</p></div>
-            <div class="flex flex-col gap-3 sm:flex-row sm:flex-wrap sm:items-center sm:justify-end">
+        <section v-else-if="activePage === 'tasks'" class="space-y-4">
+          <div class="tf-panel relative p-4 sm:p-5">
+          <div class="mb-5">
+            <div><div class="flex flex-wrap items-center gap-2"><h2 class="text-lg font-bold">Task Board</h2><span class="inline-flex rounded-full bg-task-blueSoft px-2.5 py-1 text-[10px] font-extrabold text-task-blue">{{ filteredTasks.length }} tasks</span><button v-if="taskAttentionFilter !== 'all'" type="button" class="inline-flex items-center gap-1 rounded-full bg-task-dangerSoft px-3 py-1 text-[10px] font-extrabold uppercase tracking-wide text-task-danger" @click="clearTaskAttentionFilter">{{ taskAttentionFilter.replace('_', ' ') }} <span aria-hidden="true">×</span></button></div><p class="mt-1 text-xs text-task-muted">Organize tasks and move them through each stage</p></div>
+            <div class="mt-4 flex flex-col gap-3 xl:flex-row xl:flex-wrap xl:items-center xl:justify-between">
+              <div class="flex flex-col gap-3 sm:flex-row sm:flex-wrap sm:items-center">
               <div v-if="taskScope !== 'archived'" class="inline-flex h-11 shrink-0 items-center rounded-[12px] border border-task-line bg-slate-50 p-1" role="tablist" aria-label="Board section">
                 <button type="button" role="tab" :aria-selected="taskBoardSection === 'board'" :class="['h-9 rounded-[9px] px-3 text-xs font-bold transition', taskBoardSection === 'board' ? 'bg-white text-task-blue shadow-sm' : 'text-task-muted hover:text-task-ink']" @click="taskBoardSection = 'board'">Board</button>
                 <button type="button" role="tab" :aria-selected="taskBoardSection === 'backlog'" :class="['inline-flex h-9 items-center gap-2 rounded-[9px] px-3 text-xs font-bold transition', taskBoardSection === 'backlog' ? 'bg-white text-task-blue shadow-sm' : 'text-task-muted hover:text-task-ink']" @click="taskBoardSection = 'backlog'"><span>Backlog</span><span class="rounded-full bg-slate-200 px-1.5 py-0.5 text-[10px]">{{ backlogTasks.length }}</span></button>
@@ -3031,6 +3087,8 @@ const iconPath = (name: string) => {
                 <button type="button" role="tab" :aria-selected="taskScope === 'mine'" :disabled="taskScopeLoading" :class="['h-9 rounded-[9px] px-3 text-xs font-bold transition disabled:opacity-60', taskScope === 'mine' ? 'bg-white text-task-blue shadow-sm' : 'text-task-muted hover:text-task-ink']" @click="loadTaskScope('mine')">My Tasks</button>
                 <button v-if="canManageDepartment" type="button" role="tab" :aria-selected="taskScope === 'archived'" :disabled="taskScopeLoading" :class="['h-9 rounded-[9px] px-3 text-xs font-bold transition disabled:opacity-60', taskScope === 'archived' ? 'bg-white text-task-blue shadow-sm' : 'text-task-muted hover:text-task-ink']" @click="loadTaskScope('archived')">Archive</button>
               </div>
+              </div>
+              <div class="flex flex-col gap-3 sm:flex-row sm:flex-wrap sm:items-center sm:justify-end">
               <div v-if="taskBoardSection === 'board'" class="inline-flex h-11 shrink-0 items-center gap-2" role="tablist" aria-label="Task view">
                 <button type="button" role="tab" :aria-selected="taskViewMode === 'list'" :class="['inline-flex h-11 items-center gap-2 rounded-[12px] border px-4 text-sm font-semibold transition-all duration-200', taskViewMode === 'list' ? 'border-task-blue bg-task-blueSoft text-task-blue shadow-sm' : 'border-task-line bg-white text-task-muted hover:border-task-blue hover:text-task-blue']" @click="taskViewMode = 'list'">
                   <svg viewBox="0 0 20 20" class="h-4 w-4" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"><path d="M6.5 5h10M6.5 10h10M6.5 15h10" /><circle cx="3" cy="5" r=".7" fill="currentColor" stroke="none" /><circle cx="3" cy="10" r=".7" fill="currentColor" stroke="none" /><circle cx="3" cy="15" r=".7" fill="currentColor" stroke="none" /></svg>
@@ -3063,6 +3121,7 @@ const iconPath = (name: string) => {
                 <svg viewBox="0 0 24 24" class="h-4 w-4 transition group-hover:rotate-90" fill="none" stroke="currentColor" stroke-width="2.2"><path :d="iconPath('plus')" /></svg>
                 <span>New Task</span>
               </button>
+              </div>
             </div>
           </div>
           <div v-if="searchLoading.task || taskScopeLoading" class="tf-search-overlay"><span class="tf-search-loader" /> {{ taskScopeLoading ? 'Loading tasks...' : 'Searching tasks...' }}</div>
@@ -3170,6 +3229,7 @@ const iconPath = (name: string) => {
           </div>
           <p v-if="!filteredTasks.length" class="py-8 text-center text-sm text-task-muted">No tasks matched your filters.</p>
           <div v-if="filteredTasks.length > pageSize" class="mt-5 flex items-center justify-between text-xs text-task-muted"><span>Showing {{ paginatedTasks.length }} of {{ filteredTasks.length }} Tasks</span><div class="flex gap-2"><button class="tf-icon-button" type="button" @click="setListPage('task', taskPage - 1)">‹</button><button v-for="page in taskPageCount" :key="page" :class="[taskPage === page ? 'tf-primary' : 'tf-icon-button', 'h-9 w-9 p-0']" type="button" @click="setListPage('task', page)">{{ page }}</button><button class="tf-icon-button" type="button" @click="setListPage('task', taskPage + 1)">›</button></div></div>
+          </div>
         </section>
 
         <section v-else-if="activePage === 'projects'" class="space-y-4">
@@ -3408,19 +3468,18 @@ const iconPath = (name: string) => {
         </section>
 
         <section v-else-if="activePage === 'team'" class="space-y-4">
-          <div class="tf-panel grid gap-4 p-5 sm:grid-cols-3">
-            <div v-for="(item, index) in teamStats" :key="String(item[1])" :class="['group relative flex h-28 items-center gap-4 overflow-hidden rounded-[18px] border bg-gradient-to-br px-5', dashboardStatStyles[index]?.card]">
-              <span :class="['grid h-12 w-12 shrink-0 place-items-center rounded-[15px] bg-white/85 shadow-sm ring-1', dashboardStatStyles[index]?.icon]"><svg viewBox="0 0 24 24" class="h-6 w-6" fill="none" stroke="currentColor" stroke-width="1.8"><path :d="index === 0 ? iconPath('users') : index === 1 ? 'M4 17 10 11l4 4 6-8M15 7h5v5' : 'm6 12 4 4 8-9M12 22a10 10 0 1 1 0-20 10 10 0 0 1 0 20Z'" /></svg></span>
+          <div class="tf-panel grid gap-3 p-4 sm:grid-cols-2 xl:grid-cols-4">
+            <div v-for="(item, index) in teamStats" :key="String(item[1])" :class="['group relative flex h-24 items-center gap-3 overflow-hidden rounded-[15px] border bg-gradient-to-br px-4', dashboardStatStyles[index]?.card]">
+              <span :class="['grid h-11 w-11 shrink-0 place-items-center rounded-[13px] bg-white/85 shadow-sm ring-1', dashboardStatStyles[index]?.icon]"><svg viewBox="0 0 24 24" class="h-5 w-5" fill="none" stroke="currentColor" stroke-width="1.8"><path :d="index === 0 ? iconPath('users') : index === 1 ? 'M4 17 10 11l4 4 6-8M15 7h5v5' : index === 2 ? 'm6 12 4 4 8-9M12 22a10 10 0 1 1 0-20 10 10 0 0 1 0 20Z' : 'M18 8a6 6 0 0 0-12 0c0 7-3 7-3 9h18c0-2-3-2-3-9Zm-8 12h4'" /></svg></span>
               <div class="relative z-10"><p class="text-3xl font-bold">{{ item[0] }}</p><p class="mt-1 text-sm font-medium text-task-muted">{{ item[1] }}</p></div>
-              <svg viewBox="0 0 90 35" :class="['absolute bottom-3 right-3 h-9 w-24 opacity-75', dashboardStatStyles[index]?.line]" fill="none"><path d="M3 30 22 17l18 4 18-7 14-11 15 4" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" /><circle cx="87" cy="7" r="2.5" fill="currentColor" /></svg>
+              <svg viewBox="0 0 90 35" :class="['absolute bottom-3 right-3 h-8 w-20 opacity-70', dashboardStatStyles[index]?.line]" fill="none"><path d="M3 30 22 17l18 4 18-7 14-11 15 4" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" /><circle cx="87" cy="7" r="2.5" fill="currentColor" /></svg>
             </div>
           </div>
 
           <div class="tf-panel relative p-5">
             <div class="mb-4 flex flex-col gap-3 xl:flex-row xl:items-center xl:justify-between">
               <div>
-                <h2 class="text-xl font-bold text-task-ink">Staff Members</h2>
-                <p class="mt-1 text-sm text-task-muted">View and manage your team members.</p>
+                <h2 class="flex items-center gap-2 text-lg font-bold text-task-ink">Staff Members <span class="h-1 w-1 rounded-full bg-task-blue" /><span class="text-sm font-semibold text-task-muted">{{ filteredTeam.length }}</span></h2>
               </div>
               <div class="flex flex-col gap-2 sm:flex-row sm:flex-wrap sm:items-center xl:justify-end">
                 <div class="tf-dropdown w-full sm:w-40">
@@ -3437,8 +3496,8 @@ const iconPath = (name: string) => {
               </div>
             </div>
             <div v-if="searchLoading.team" class="tf-search-overlay"><span class="tf-search-loader" /> Searching staff...</div>
-            <div class="overflow-x-auto"><table class="w-full min-w-[1040px] text-left text-sm"><thead class="text-task-muted"><tr><th class="rounded-l-[14px] p-3 font-semibold"><button type="button" :class="['inline-flex items-center gap-1.5 transition hover:text-task-blue', teamSort.startsWith('name_') ? 'text-task-blue' : '']" @click="toggleTeamSort('name')">Staff <span class="text-[11px]">{{ teamSort.startsWith('name_') ? (teamSort.endsWith('_asc') ? '↑' : '↓') : '↕' }}</span></button></th><th class="p-3 font-semibold"><button type="button" :class="['inline-flex items-center gap-1.5 transition hover:text-task-blue', teamSort.startsWith('department_') ? 'text-task-blue' : '']" @click="toggleTeamSort('department')">Department <span class="text-[11px]">{{ teamSort.startsWith('department_') ? (teamSort.endsWith('_asc') ? '↑' : '↓') : '↕' }}</span></button></th><th class="p-3 font-semibold"><button type="button" :class="['inline-flex items-center gap-1.5 transition hover:text-task-blue', teamSort.startsWith('role_') ? 'text-task-blue' : '']" @click="toggleTeamSort('role')">Position <span class="text-[11px]">{{ teamSort.startsWith('role_') ? (teamSort.endsWith('_asc') ? '↑' : '↓') : '↕' }}</span></button></th><th class="p-3 font-semibold">Contact</th><th class="p-3 font-semibold"><button type="button" :class="['inline-flex items-center gap-1.5 transition hover:text-task-blue', teamSort.startsWith('efficiency_') ? 'text-task-blue' : '']" @click="toggleTeamSort('efficiency')">Efficiency <span class="text-[11px]">{{ teamSort.startsWith('efficiency_') ? (teamSort.endsWith('_asc') ? '↑' : '↓') : '↕' }}</span></button></th><th class="p-3 font-semibold">Completed</th><th class="p-3 font-semibold">In Progress</th><th class="rounded-r-[14px] p-3 text-right font-semibold">Actions</th></tr></thead><tbody class="divide-y divide-task-line"><tr v-for="(member, index) in paginatedTeam" :key="String(member[9] || member[7] || member[0])"><td class="p-3"><div class="flex items-center gap-3"><span :class="['grid h-10 w-10 shrink-0 place-items-center overflow-hidden rounded-full text-xs font-bold', index % 4 === 0 ? 'bg-task-blueSoft text-task-blue' : index % 4 === 1 ? 'bg-[#F0E9FF] text-[#8057D5]' : index % 4 === 2 ? 'bg-task-warningSoft text-task-warning' : 'bg-task-successSoft text-task-success']"><img v-if="member[8]" :src="String(member[8])" :alt="String(member[0])" class="h-full w-full object-cover" /><span v-else>{{ initials(String(member[0])) }}</span></span><div class="min-w-0"><p class="truncate font-bold text-task-ink">{{ member[0] }}</p><p class="truncate text-xs text-task-muted">{{ member[2] }}</p></div></div></td><td class="p-3"><span class="inline-flex rounded-full bg-task-blueSoft px-2.5 py-1 text-xs font-semibold text-task-blue">{{ memberDepartmentNameOf(member) }}</span></td><td class="p-3 text-task-muted">{{ member[1] }}</td><td class="p-3 text-task-muted">{{ member[3] }}</td><td class="p-3"><div class="flex items-center gap-2"><div class="h-2 w-24 overflow-hidden rounded-full bg-slate-200"><div class="h-full rounded-full bg-task-blue" :style="{ width: `${member[4]}%` }" /></div><span class="text-xs font-bold">{{ member[4] }}%</span></div></td><td class="p-3 font-semibold">{{ member[5] }}</td><td class="p-3 font-semibold">{{ member[6] }}</td><td class="relative p-3 text-right"><div class="relative inline-flex"><button type="button" class="tf-icon-button rounded-full" @click="toggleActionMenu(`team-${member[9] || member[7] || member[0]}`)"><svg viewBox="0 0 24 24" class="h-4 w-4" fill="none" stroke="currentColor"><path :d="iconPath('dots')" /></svg></button><div v-if="actionMenu === `team-${member[9] || member[7] || member[0]}`" class="tf-action-menu"><button type="button" class="tf-action-item" @click="viewMemberProfile(member)">View profile</button><button type="button" class="tf-action-item" @click="updateMemberStatus(member, String(member[12]) === 'Inactive')">{{ String(member[12]) === 'Inactive' ? 'Activate' : 'Deactivate' }}</button><button type="button" class="tf-action-item tf-action-danger" @click="requestMemberRemoval(member)">Remove member</button></div></div></td></tr></tbody></table></div>
-            <p v-if="!filteredTeam.length" class="py-10 text-center text-sm text-task-muted">No staff found.</p><div v-if="filteredTeam.length > pageSize" class="mt-5 flex justify-end gap-2"><button class="tf-icon-button" @click="setListPage('team', teamPage - 1)">‹</button><button v-for="page in teamPageCount" :key="page" :class="[teamPage === page ? 'tf-primary' : 'tf-icon-button', 'h-9 w-9 p-0']" @click="setListPage('team', page)">{{ page }}</button><button class="tf-icon-button" @click="setListPage('team', teamPage + 1)">›</button></div>
+            <div class="overflow-x-auto"><table class="w-full min-w-[940px] text-left text-sm"><thead class="border-y border-task-line bg-slate-50/80 text-[11px] uppercase tracking-wide text-task-muted"><tr><th class="p-3 font-semibold"><button type="button" :class="['inline-flex items-center gap-1.5 transition hover:text-task-blue', teamSort.startsWith('name_') ? 'text-task-blue' : '']" @click="toggleTeamSort('name')">Staff <span>{{ teamSort.startsWith('name_') ? (teamSort.endsWith('_asc') ? '↑' : '↓') : '↕' }}</span></button></th><th class="p-3 font-semibold"><button type="button" :class="['inline-flex items-center gap-1.5 transition hover:text-task-blue', teamSort.startsWith('department_') ? 'text-task-blue' : '']" @click="toggleTeamSort('department')">Department <span>{{ teamSort.startsWith('department_') ? (teamSort.endsWith('_asc') ? '↑' : '↓') : '↕' }}</span></button></th><th class="p-3 font-semibold"><button type="button" :class="['inline-flex items-center gap-1.5 transition hover:text-task-blue', teamSort.startsWith('role_') ? 'text-task-blue' : '']" @click="toggleTeamSort('role')">Position <span>{{ teamSort.startsWith('role_') ? (teamSort.endsWith('_asc') ? '↑' : '↓') : '↕' }}</span></button></th><th class="p-3 font-semibold">Contact</th><th class="p-3 font-semibold"><button type="button" :class="['inline-flex items-center gap-1.5 transition hover:text-task-blue', teamSort.startsWith('efficiency_') ? 'text-task-blue' : '']" @click="toggleTeamSort('efficiency')">Efficiency <span>{{ teamSort.startsWith('efficiency_') ? (teamSort.endsWith('_asc') ? '↑' : '↓') : '↕' }}</span></button></th><th class="p-3 font-semibold">Tasks</th><th class="p-3 text-right font-semibold">Actions</th></tr></thead><tbody class="divide-y divide-task-line"><tr v-for="(member, index) in paginatedTeam" :key="String(member[9] || member[7] || member[0])" class="transition hover:bg-task-blueSoft/40"><td class="p-3"><div class="flex items-center gap-3"><span :class="['grid h-10 w-10 shrink-0 place-items-center overflow-hidden rounded-full text-xs font-bold', index % 4 === 0 ? 'bg-task-blueSoft text-task-blue' : index % 4 === 1 ? 'bg-[#F0E9FF] text-[#8057D5]' : index % 4 === 2 ? 'bg-task-warningSoft text-task-warning' : 'bg-task-successSoft text-task-success']"><img v-if="member[8]" :src="String(member[8])" :alt="String(member[0])" class="h-full w-full object-cover" /><span v-else>{{ initials(String(member[0])) }}</span></span><div class="min-w-0"><p class="truncate font-bold text-task-ink">{{ member[0] }}</p><p class="truncate text-xs text-task-muted">{{ member[2] }}</p></div></div></td><td class="p-3"><span class="inline-flex rounded-full bg-task-blueSoft px-2.5 py-1 text-xs font-semibold text-task-blue">{{ memberDepartmentNameOf(member) }}</span></td><td class="max-w-[190px] p-3 text-task-muted">{{ member[1] }}</td><td class="p-3 text-task-muted">{{ member[3] || '—' }}</td><td class="p-3"><div class="min-w-[110px]"><b class="text-xs text-task-ink">{{ member[4] }}%</b><div class="mt-1.5 h-1.5 w-24 overflow-hidden rounded-full bg-slate-200"><div class="h-full rounded-full bg-task-blue" :style="{ width: `${member[4]}%` }" /></div></div></td><td class="p-3"><b class="text-task-ink">{{ Number(member[5] || 0) + Number(member[6] || 0) }} total</b><p class="mt-1 text-[11px] text-task-muted"><span class="text-task-success">{{ member[5] }} ✓</span> · <span class="text-task-blue">{{ member[6] }} active</span></p></td><td class="relative p-3 text-right"><div class="relative inline-flex"><button type="button" class="tf-icon-button rounded-full" @click="toggleActionMenu(`team-${member[9] || member[7] || member[0]}`)"><svg viewBox="0 0 24 24" class="h-4 w-4" fill="none" stroke="currentColor"><path :d="iconPath('dots')" /></svg></button><div v-if="actionMenu === `team-${member[9] || member[7] || member[0]}`" class="tf-action-menu"><button type="button" class="tf-action-item" @click="viewMemberProfile(member)">View profile</button><button type="button" class="tf-action-item" @click="updateMemberStatus(member, String(member[12]) === 'Inactive')">{{ String(member[12]) === 'Inactive' ? 'Activate' : 'Deactivate' }}</button><button type="button" class="tf-action-item tf-action-danger" @click="requestMemberRemoval(member)">Remove member</button></div></div></td></tr></tbody></table></div>
+            <p v-if="!filteredTeam.length" class="py-10 text-center text-sm text-task-muted">No staff found.</p><div v-if="filteredTeam.length" class="mt-5 flex flex-col items-center justify-between gap-3 border-t border-task-line pt-4 text-xs text-task-muted sm:flex-row"><span>Showing {{ (teamPage - 1) * pageSize + 1 }} to {{ Math.min(teamPage * pageSize, filteredTeam.length) }} of {{ filteredTeam.length }} staff members</span><div v-if="filteredTeam.length > pageSize" class="flex gap-2"><button class="tf-icon-button" @click="setListPage('team', teamPage - 1)">‹</button><button v-for="page in teamPageCount" :key="page" :class="[teamPage === page ? 'tf-primary' : 'tf-icon-button', 'h-9 w-9 p-0']" @click="setListPage('team', page)">{{ page }}</button><button class="tf-icon-button" @click="setListPage('team', teamPage + 1)">›</button></div></div>
           </div>
         </section>
 
