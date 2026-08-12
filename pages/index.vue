@@ -4,7 +4,7 @@ import GreetingCard from '~/components/GreetingCard.vue'
 import { greetingConfig } from '~/constants/greetings'
 
 type PageKey = 'dashboard' | 'tasks' | 'projects' | 'analytics' | 'calendar' | 'team' | 'reports' | 'messages' | 'notifications' | 'settings' | 'help'
-type ModalKey = 'task' | 'project' | 'event' | 'event-detail' | 'report' | 'member' | 'member-profile' | 'member-remove' | 'team-filter' | null
+type ModalKey = 'task' | 'project' | 'event' | 'event-detail' | 'report' | 'member' | 'member-profile' | 'member-remove' | 'team-filter' | 'logout' | null
 type ProjectCardMember = {
   id?: string | number
   email?: string
@@ -1339,9 +1339,18 @@ const loadProfile = async () => {
   }
 }
 
-const handleLogout = async () => {
+const handleLogout = () => {
   actionMenu.value = null
   openDropdown.value = null
+  modal.value = 'logout'
+}
+
+const confirmLogout = async () => {
+  modal.value = null
+  localStorage.removeItem(themeStorageKey)
+  themeCookie.value = null
+  document.documentElement.classList.remove('tf-dark')
+  document.documentElement.style.colorScheme = 'light'
   taskFlowApi.logout()
   await navigateTo('/login')
 }
@@ -3210,6 +3219,9 @@ const iconPath = (name: string) => {
 
       <div :class="['tf-content relative min-w-0 flex-1 p-4', activePage === 'calendar' ? 'tf-content-calendar' : '']">
         <div v-if="activePage === 'dashboard'" class="relative z-40 mb-4">
+          <button type="button" class="tf-dashboard-mobile-menu tf-icon-button absolute left-3 top-3 z-20 md:hidden" aria-label="Open menu" @click="mobileSidebarOpen = true">
+            <svg viewBox="0 0 24 24" class="h-5 w-5" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"><path d="M4 7h16M4 12h16M4 17h16" /></svg>
+          </button>
           <GreetingCard :config="dashboardGreetingConfig" :name="savedProfile.firstName || profileName || 'there'">
             <template #actions>
               <NotificationCenter :active-page="activePage" :dark="isDarkTheme" @navigate="navigateFromNotification" @view-all="setPage('notifications')" />
@@ -4036,9 +4048,17 @@ const iconPath = (name: string) => {
 
     <div v-if="modal" class="fixed inset-0 z-50 grid place-items-center bg-slate-900/45 p-3 backdrop-blur-[2px] sm:p-6" @click.self="closeModalFromBackdrop">
       <div :class="['tf-app-modal flex max-h-[calc(100vh-24px)] w-full flex-col overflow-hidden rounded-[22px] border border-white/70 bg-[#E3EAF2] shadow-[0_30px_90px_-20px_rgba(15,23,42,0.45)] sm:max-h-[calc(100vh-48px)]', modal === 'project' ? 'tf-project-modal max-w-[600px]' : modal === 'task' ? 'max-w-[620px]' : modal === 'member' ? 'tf-member-modal max-w-[760px]' : modal === 'member-remove' ? 'max-w-[660px]' : modal === 'event' || modal === 'event-detail' || modal === 'report' ? 'max-w-[620px]' : 'max-w-[520px]']" @keydown="handleModalKeydown">
-        <div class="flex shrink-0 items-center justify-between px-5 py-3.5 sm:px-6 sm:py-4"><h2 class="text-[21px] font-semibold tracking-[-0.025em] sm:text-[22px]">{{ modal === 'task' ? (taskModalMode === 'view' ? 'Task Details' : taskModalMode === 'edit' ? 'Edit Task' : 'Create Task') : modal === 'project' ? 'Create New Project' : modal === 'event' ? 'Add New Event' : modal === 'event-detail' ? 'Event Details' : modal === 'report' ? 'Custom Report Builder' : modal === 'member' ? (editingMemberId ? 'Edit Department Member' : 'Add Department Member') : modal === 'member-profile' ? 'Staff Profile' : modal === 'member-remove' ? 'Remove Member' : 'Filter Staff' }}</h2><button type="button" class="grid h-9 w-9 place-items-center rounded-full text-[28px] font-light leading-none transition hover:bg-white/60 hover:text-task-blue" aria-label="Close modal" @click="modal = null">×</button></div>
+        <div class="flex shrink-0 items-center justify-between px-5 py-3.5 sm:px-6 sm:py-4"><h2 class="text-[21px] font-semibold tracking-[-0.025em] sm:text-[22px]">{{ modal === 'task' ? (taskModalMode === 'view' ? 'Task Details' : taskModalMode === 'edit' ? 'Edit Task' : 'Create Task') : modal === 'project' ? 'Create New Project' : modal === 'event' ? 'Add New Event' : modal === 'event-detail' ? 'Event Details' : modal === 'report' ? 'Custom Report Builder' : modal === 'member' ? (editingMemberId ? 'Edit Department Member' : 'Add Department Member') : modal === 'member-profile' ? 'Staff Profile' : modal === 'member-remove' ? 'Remove Member' : modal === 'logout' ? 'Log out' : 'Filter Staff' }}</h2><button type="button" class="grid h-9 w-9 place-items-center rounded-full text-[28px] font-light leading-none transition hover:bg-white/60 hover:text-task-blue" aria-label="Close modal" @click="modal = null">×</button></div>
         <div :class="['min-h-0 overflow-y-auto bg-white', modal === 'project' || modal === 'task' ? 'mx-3 mb-3 rounded-[18px] p-5' : 'mx-2 mb-2 rounded-[16px] p-4', modal === 'member' ? 'tf-member-modal-body' : '']">
-          <template v-if="modal === 'member-profile' && selectedTeamMember">
+          <template v-if="modal === 'logout'">
+            <div class="flex gap-4 rounded-[14px] border border-task-danger/20 bg-task-dangerSoft/60 p-4">
+              <span class="grid h-11 w-11 shrink-0 place-items-center rounded-full bg-white text-task-danger shadow-sm">
+                <svg viewBox="0 0 24 24" class="h-5 w-5" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M10 17l5-5-5-5m5 5H3m6-9h10v18H9" /></svg>
+              </span>
+              <div><h3 class="text-lg font-bold text-task-ink">Are you sure you want to log out?</h3><p class="mt-1.5 text-sm leading-6 text-task-muted">You will need to sign in again to access your TaskFlow workspace.</p></div>
+            </div>
+          </template>
+          <template v-else-if="modal === 'member-profile' && selectedTeamMember">
             <div class="flex flex-col items-center text-center"><span class="grid h-20 w-20 place-items-center overflow-hidden rounded-full bg-task-blueSoft text-xl font-bold text-task-blue"><img v-if="selectedTeamMember[8]" :src="String(selectedTeamMember[8])" :alt="teamMemberName(selectedTeamMember)" class="h-full w-full object-cover" /><span v-else>{{ initials(teamMemberName(selectedTeamMember)) }}</span></span><h3 class="mt-3 text-xl font-bold text-task-ink">{{ teamMemberName(selectedTeamMember) }}</h3><p class="mt-1 text-sm text-task-muted">{{ selectedTeamMember[1] || 'Team member' }}</p><span :class="['mt-2 rounded-full px-3 py-1 text-xs font-bold', String(selectedTeamMember[12]) === 'Inactive' ? 'bg-slate-100 text-slate-500' : 'bg-task-successSoft text-task-success']">{{ selectedTeamMember[12] || 'Active' }}</span></div>
             <div class="mt-5 grid gap-3 sm:grid-cols-2"><div class="rounded-[12px] bg-slate-50 p-3"><p class="text-[10px] font-bold uppercase tracking-wide text-task-muted">Department</p><p class="mt-1.5 text-sm font-semibold text-task-ink">{{ memberDepartmentNameOf(selectedTeamMember) }}</p></div><div class="rounded-[12px] bg-slate-50 p-3"><p class="text-[10px] font-bold uppercase tracking-wide text-task-muted">Email</p><p class="mt-1.5 truncate text-sm font-semibold text-task-ink">{{ selectedTeamMember[2] }}</p></div><div class="rounded-[12px] bg-slate-50 p-3"><p class="text-[10px] font-bold uppercase tracking-wide text-task-muted">Phone</p><p class="mt-1.5 text-sm font-semibold text-task-ink">{{ selectedTeamMember[3] }}</p></div><div class="rounded-[12px] bg-slate-50 p-3"><p class="text-[10px] font-bold uppercase tracking-wide text-task-muted">Efficiency</p><p class="mt-1.5 text-sm font-semibold text-task-ink">{{ selectedTeamMember[4] }}%</p></div></div>
             <div class="mb-3 mt-3 grid grid-cols-2 gap-3"><div class="rounded-[12px] border border-task-line p-3 text-center"><p class="text-xl font-bold text-task-success">{{ selectedTeamMember[5] }}</p><p class="mt-1 text-xs text-task-muted">Completed tasks</p></div><div class="rounded-[12px] border border-task-line p-3 text-center"><p class="text-xl font-bold text-task-blue">{{ selectedTeamMember[6] }}</p><p class="mt-1 text-xs text-task-muted">In progress</p></div></div>
@@ -4434,12 +4454,13 @@ const iconPath = (name: string) => {
               <label class="text-sm font-semibold">Status<div class="tf-dropdown mt-2"><button type="button" class="tf-dropdown-button h-12" @click="openDropdown = openDropdown === 'reportStatus' ? null : 'reportStatus'"><span>{{ reportStatus }}</span><svg viewBox="0 0 20 20" class="h-4 w-4" fill="none" stroke="currentColor" stroke-width="2"><path d="m5 7.5 5 5 5-5" /></svg></button><div v-if="openDropdown === 'reportStatus'" class="tf-dropdown-menu"><button v-for="option in ['All Statuses', 'Completed', 'In Progress', 'Not Started']" :key="option" type="button" class="tf-dropdown-option" @click="reportStatus = option; openDropdown = null">{{ option }}</button></div></div></label>
             </div>
           </template>
-          <div :class="['sticky bottom-0 flex justify-end gap-2.5 bg-white', modal === 'project' || modal === 'task' ? '-mx-5 -mb-5 mt-5 px-5 py-3' : modal === 'event-detail' || modal === 'member-profile' || modal === 'member-remove' ? '-mx-4 -mb-4 mt-7 border-t border-task-line px-4 py-3' : '-mx-4 -mb-4 mt-4 border-t border-task-line px-4 py-3']">
+          <div :class="['sticky bottom-0 flex justify-end gap-2.5 bg-white', modal === 'project' || modal === 'task' ? '-mx-5 -mb-5 mt-5 px-5 py-3' : modal === 'logout' ? '-mx-4  px-4 pt-4' : modal === 'event-detail' || modal === 'member-profile' || modal === 'member-remove' ? '-mx-4 -mb-4 mt-7 border-t border-task-line px-4 py-3' : '-mx-4 -mb-4 mt-4 border-t border-task-line px-4 py-3']">
             <button v-if="modal === 'task' && editingTaskId && canDeleteOpenedTask" class="mr-auto h-10 rounded-full border border-task-danger bg-white px-5 text-sm font-semibold text-task-danger transition hover:bg-task-dangerSoft" @click="deleteOpenedTask">Delete Task</button>
             <button v-if="modal === 'task' && editingTaskId && taskFormStatus === 'Completed' && canManageDepartment" class="mr-auto h-10 rounded-full border border-slate-300 bg-slate-50 px-5 text-sm font-semibold text-slate-600 transition hover:border-task-blue hover:bg-task-blueSoft hover:text-task-blue" @click="archiveOpenedTask">Archive</button>
             <button class="h-10 rounded-full border border-task-line bg-white px-5 text-sm font-semibold shadow-button transition hover:border-task-blue hover:text-task-blue" @click="modal = null">{{ modal === 'member-profile' ? 'Close' : 'Cancel' }}</button>
             <button v-if="modal === 'member-profile' && canManageDepartment" type="button" class="inline-flex h-10 items-center gap-2 rounded-full bg-gradient-to-b from-[#72A4D7] to-[#2567AD] px-6 text-sm font-semibold text-white shadow-button transition hover:-translate-y-0.5" @click="editSelectedMember"><svg viewBox="0 0 24 24" class="h-4 w-4" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><path d="M12 20h9" /><path d="M16.5 3.5a2.1 2.1 0 0 1 3 3L8 18l-4 1 1-4Z" /></svg>Edit</button>
-            <button v-if="modal === 'member-remove'" type="button" :disabled="memberDeleting" class="h-10 rounded-full bg-task-danger px-6 text-sm font-semibold text-white shadow-button transition hover:-translate-y-0.5 hover:bg-rose-600 disabled:cursor-not-allowed disabled:opacity-60" @click="confirmMemberRemoval">{{ memberDeleting ? 'Removing...' : 'Remove Member' }}</button>
+            <button v-if="modal === 'logout'" type="button" class="h-10 rounded-full bg-task-danger px-6 text-sm font-semibold text-white shadow-button transition hover:-translate-y-0.5 hover:bg-rose-700" @click="confirmLogout">Log out</button>
+            <button v-else-if="modal === 'member-remove'" type="button" :disabled="memberDeleting" class="h-10 rounded-full bg-task-danger px-6 text-sm font-semibold text-white shadow-button transition hover:-translate-y-0.5 hover:bg-rose-600 disabled:cursor-not-allowed disabled:opacity-60" @click="confirmMemberRemoval">{{ memberDeleting ? 'Removing...' : 'Remove Member' }}</button>
             <button v-else-if="modal !== 'event-detail' && modal !== 'member-profile' && !(modal === 'task' && taskModalMode === 'view')" :disabled="taskSaving" class="h-10 rounded-full bg-gradient-to-b from-[#72A4D7] to-[#2567AD] px-6 text-sm font-semibold text-white shadow-button transition hover:-translate-y-0.5 disabled:cursor-not-allowed disabled:opacity-60" @click="submitModal">{{ taskSaving ? 'Saving...' : modal === 'report' ? 'Generate Report' : modal === 'event' ? 'Create Event' : modal === 'project' ? (editingProjectId ? 'Update Project' : 'Create Project') : modal === 'member' ? (editingMemberId ? 'Update Member' : 'Add Member') : modal === 'team-filter' ? 'Apply' : taskModalMode === 'edit' ? 'Save Changes' : 'Create Task' }}</button>
           </div>
         </div>

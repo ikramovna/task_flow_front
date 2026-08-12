@@ -9,24 +9,16 @@ const api = useTaskFlowApi()
 const taskFlowStore = useTaskFlowStore()
 const notifications = useNotifications()
 const themeCookie = useCookie<string | null>('taskflow-theme', { sameSite: 'lax', maxAge: 60 * 60 * 24 * 365 })
-const isDarkTheme = ref(false)
-let themeMediaQuery: MediaQueryList | null = null
 
 useHead({
   title: 'TaskFlow — Work in flow'
 })
 
 onMounted(() => {
-  const savedTheme = localStorage.getItem('taskflow-theme')
-  if (savedTheme) themeCookie.value = savedTheme
-  themeMediaQuery = window.matchMedia('(prefers-color-scheme: dark)')
-  isDarkTheme.value = savedTheme === 'Dark' || (savedTheme === 'System' && themeMediaQuery.matches)
-  document.documentElement.classList.toggle('tf-dark', isDarkTheme.value)
-  document.documentElement.style.colorScheme = isDarkTheme.value ? 'dark' : 'light'
-})
-
-onBeforeUnmount(() => {
-  themeMediaQuery = null
+  localStorage.removeItem('taskflow-theme')
+  themeCookie.value = null
+  document.documentElement.classList.remove('tf-dark')
+  document.documentElement.style.colorScheme = 'light'
 })
 
 const iconPath = (name: string) => {
@@ -70,12 +62,12 @@ const submitLogin = async () => {
 </script>
 
 <template>
-  <main :class="['tf-auth-page grid min-h-screen place-items-center px-4 py-8 text-task-ink sm:px-6', isDarkTheme ? 'tf-dark' : '']">
+  <main class="tf-auth-page grid min-h-screen place-items-center px-4 py-8 text-task-ink sm:px-6">
     <section class="w-full max-w-[520px]">
       <form class="tf-panel tf-auth-card p-6 sm:p-8" @submit.prevent="submitLogin">
         <NuxtLink to="/" class="mx-auto mb-6 block w-fit" aria-label="TaskFlow home">
           <img
-            :src="isDarkTheme ? '/taskflow-logo-compact-dark.webp' : '/taskflow-logo-compact.webp'"
+            src="/taskflow-logo-compact.webp"
             width="480"
             height="146"
             alt="TaskFlow"
@@ -131,15 +123,59 @@ const submitLogin = async () => {
 
 <style scoped>
 .tf-auth-page {
+  --tf-page: #f5f7fb;
+  --tf-surface: #ffffff;
+  --tf-border: #e5eaf1;
+  --tf-ink: #172033;
+  --tf-muted: #6f7b8e;
+  --tf-accent: #2877d4;
   background:
     radial-gradient(circle at 82% 0%, color-mix(in srgb, var(--tf-accent) 8%, transparent), transparent 30rem),
     var(--tf-page);
+  color-scheme: light;
 }
 
 .tf-auth-card {
-  background: var(--tf-surface);
-  border-color: var(--tf-border);
-  color: var(--tf-ink);
+  background: #ffffff !important;
+  border-color: #e5eaf1 !important;
+  color: #172033 !important;
+  box-shadow: 0 18px 50px -34px rgb(26 45 77 / 0.35), 0 2px 8px rgb(26 45 77 / 0.05) !important;
+}
+
+.tf-auth-card h1,
+.tf-auth-card label,
+.tf-auth-card span {
+  color: inherit;
+}
+
+.tf-auth-card .text-task-muted {
+  color: #667085 !important;
+}
+
+.tf-auth-card .text-task-blue {
+  color: #2567ad !important;
+}
+
+.tf-auth-card :deep(.tf-input) {
+  border-color: #e5eaf1 !important;
+  background: #ffffff !important;
+  color: #172033 !important;
+  -webkit-text-fill-color: #172033 !important;
+  box-shadow: none;
+}
+
+.tf-auth-card :deep(.tf-input::placeholder) {
+  color: #98a2b3 !important;
+  -webkit-text-fill-color: #98a2b3 !important;
+}
+
+.tf-auth-card :deep(.tf-input:hover) {
+  border-color: #b8c5d6 !important;
+}
+
+.tf-auth-card :deep(.tf-input:focus) {
+  border-color: #2877d4 !important;
+  box-shadow: 0 0 0 4px rgb(40 119 212 / 0.12) !important;
 }
 
 .tf-auth-field > svg,
@@ -154,5 +190,6 @@ const submitLogin = async () => {
 .tf-auth-checkbox {
   accent-color: var(--tf-accent);
   border-color: var(--tf-border);
+  color-scheme: light;
 }
 </style>

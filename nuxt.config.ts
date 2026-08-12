@@ -85,7 +85,7 @@ export default defineNuxtConfig({
         {
           key: 'taskflow-theme-init',
           tagPosition: 'head',
-          innerHTML: `(function(){try{var saved=localStorage.getItem('taskflow-theme');var match=document.cookie.match(/(?:^|;\\s*)taskflow-theme=([^;]+)/);var theme=saved||(match?decodeURIComponent(match[1]):'');var dark=theme==='Dark'||(theme==='System'&&window.matchMedia&&window.matchMedia('(prefers-color-scheme: dark)').matches);document.documentElement.classList.toggle('tf-dark',dark);document.documentElement.style.colorScheme=dark?'dark':'light';}catch(e){}})()`
+          innerHTML: `(function(){try{var auth=/^\\/(login|logout|forgot-password|reset-password)(?:\\/|$)/.test(location.pathname);var saved=localStorage.getItem('taskflow-theme');var match=document.cookie.match(/(?:^|;\\s*)taskflow-theme=([^;]+)/);var theme=saved||(match?decodeURIComponent(match[1]):'');var dark=!auth&&(theme==='Dark'||(theme==='System'&&window.matchMedia&&window.matchMedia('(prefers-color-scheme: dark)').matches));document.documentElement.classList.toggle('tf-dark',dark);document.documentElement.style.colorScheme=dark?'dark':'light';}catch(e){}})()`
         }
       ],
       link: [

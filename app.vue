@@ -1,5 +1,6 @@
 <script setup lang="ts">
 const initialThemeCookie = useCookie<string | null>('taskflow-theme')
+const currentRoute = useRoute()
 
 const siteDescription = 'Plan tasks, align your team and move every project forward with TaskFlow.'
 
@@ -21,10 +22,11 @@ useHead({
 })
 
 if (import.meta.server) {
+  const forceLightTheme = ['/login', '/logout', '/forgot-password', '/reset-password'].includes(currentRoute.path)
   useHead({
     htmlAttrs: {
-      class: initialThemeCookie.value === 'Dark' ? 'tf-dark' : undefined,
-      style: `color-scheme:${initialThemeCookie.value === 'Dark' ? 'dark' : 'light'}`
+      class: !forceLightTheme && initialThemeCookie.value === 'Dark' ? 'tf-dark' : undefined,
+      style: `color-scheme:${!forceLightTheme && initialThemeCookie.value === 'Dark' ? 'dark' : 'light'}`
     }
   })
 }
