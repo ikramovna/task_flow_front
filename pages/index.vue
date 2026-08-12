@@ -132,6 +132,7 @@ void taskFlowStore.loadBackendData()
 const { state, pages, stats, projectStats, analyticsStats, monthlyProgress, tasksByCategory, tasks, projects, team, workload, reports, events, messages, heatmap, currentUserId, currentDepartmentId, currentRole, currentUserActive, currentUserHasAllDepartmentsAccess, apiError, dashboardTodayEvents, dashboardUpcomingEvents, dashboardDeadlines, dashboardDepartments, dashboardRecentTasks, dashboardGeneratedAt } = taskFlowStore
 const normalizedRole = computed(() => currentRole.value.trim().toLowerCase())
 const canManageDepartment = computed(() => ['owner', 'admin', 'manager'].includes(normalizedRole.value))
+const canManageMembers = computed(() => currentUserActive.value && ['owner', 'admin', 'manager'].includes(normalizedRole.value))
 const canAddTask = computed(() => currentUserActive.value && ['owner', 'admin', 'manager'].includes(normalizedRole.value))
 const canCreateEvent = computed(() => canAddTask.value)
 const canChooseDepartment = computed(() =>
@@ -1837,6 +1838,10 @@ const setTaskPage = (page: number) => {
 }
 
 const openModal = (value: Exclude<ModalKey, null>) => {
+  if (value === 'member' && !canManageMembers.value) {
+    notifyError('Only active owners, admins, and managers can add members')
+    return
+  }
   if (value === 'task' && !canAddTask.value) {
     notifyError('Only active owners, admins, and managers can add tasks')
     return
@@ -3870,7 +3875,7 @@ const iconPath = (name: string) => {
                 </div>
                 <label class="relative w-full sm:w-60"><svg viewBox="0 0 24 24" class="pointer-events-none absolute left-3.5 top-1/2 h-4 w-4 -translate-y-1/2 text-task-muted" fill="none" stroke="currentColor" stroke-width="1.8"><path :d="iconPath('search')" /></svg><input v-model="teamSearchInput" class="tf-input h-10 w-full pl-10 pr-10" placeholder="Search staff..." /><button v-if="teamSearchInput && !searchLoading.team" type="button" class="tf-search-clear" aria-label="Clear staff search" @click="clearSearch('team')">×</button><span v-if="searchLoading.team" class="tf-search-spinner" /></label>
                 <button v-if="teamDepartmentFilter !== 'all' || teamRoleFilter !== 'all' || teamSort !== 'name_asc'" type="button" class="h-10 rounded-[10px] px-2.5 text-xs font-bold text-task-blue transition hover:bg-task-blueSoft" @click="teamDepartmentFilter = 'all'; teamRoleFilter = 'all'; teamSort = 'name_asc'; teamPage = 1">Reset</button>
-                <button class="tf-primary h-10 rounded-[11px] px-4 text-xs" @click="openModal('member')"><svg viewBox="0 0 24 24" class="h-4 w-4" fill="none" stroke="currentColor" stroke-width="1.8"><path :d="iconPath('users')" /><path d="M19 8v6m-3-3h6" /></svg>Add Member</button>
+                  <button v-if="canManageMembers" class="tf-primary h-10 rounded-[11px] px-4 text-xs" @click="openModal('member')"><svg viewBox="0 0 24 24" class="h-4 w-4" fill="none" stroke="currentColor" stroke-width="1.8"><path :d="iconPath('users')" /><path d="M19 8v6m-3-3h6" /></svg>Add Member</button>
               </div>
             </div>
             <div v-if="searchLoading.team" class="tf-search-overlay"><span class="tf-search-loader" /> Searching staff...</div>
