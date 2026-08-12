@@ -1088,6 +1088,17 @@ const openDashboardTask = async (task: { id: string; title: string; priority: st
   await openTaskFromCard(taskRow)
 }
 
+const openAnalyticsTask = async (task: { id: string; title: string; priority?: string; status?: string; due_date?: string }) => {
+  const taskRow = state.value.tasks.find((item) => String(item[6] || '') === String(task.id)) || [task.title, '', task.priority || '', task.status || '', task.due_date || '', 0, task.id]
+  await openTaskFromCard(taskRow)
+}
+
+const openAnalyticsEvent = (event: { id: string; starts_at: string }) => {
+  const calendarEvent = calendarEvents.value.find(item => item.backendId === String(event.id) || item.id === String(event.id))
+  if (calendarEvent) return openEventDetails(calendarEvent)
+  openDashboardEvent(event)
+}
+
 const pageCopy: Record<PageKey, { title: string; subtitle: string; eyebrow?: string }> = {
   dashboard: { title: 'Dashboard', subtitle: "Here's what's happening with your team today", eyebrow: 'Dashboard' },
   tasks: { title: 'Tasks', subtitle: 'Manage and track all team tasks', eyebrow: 'Tasks' },
@@ -3201,7 +3212,6 @@ const iconPath = (name: string) => {
         <div v-if="activePage === 'dashboard'" class="relative z-40 mb-4">
           <GreetingCard :config="dashboardGreetingConfig" :name="savedProfile.firstName || profileName || 'there'">
             <template #actions>
-              <div id="dashboard-focus-radio-slot" />
               <NotificationCenter :active-page="activePage" :dark="isDarkTheme" @navigate="navigateFromNotification" @view-all="setPage('notifications')" />
               <button type="button" class="tf-theme-button" :aria-label="isDarkTheme ? 'Switch to light theme' : 'Switch to dark theme'" :aria-pressed="isDarkTheme" :title="isDarkTheme ? 'Light theme' : 'Dark theme'" @click="toggleTheme">
                 <svg viewBox="0 0 24 24" class="h-[17px] w-[17px]" fill="none" stroke="currentColor" stroke-width="1.8"><path :d="iconPath(isDarkTheme ? 'sun' : 'moon')" /></svg>
@@ -3234,7 +3244,6 @@ const iconPath = (name: string) => {
             <div v-else class="min-w-0"><h1 class="truncate text-lg font-bold">{{ pageCopy[activePage].title }}</h1><p class="mt-1 truncate text-xs text-task-muted">{{ pageCopy[activePage].subtitle }}</p></div>
           </div>
           <div class="relative z-10 flex items-center gap-3">
-            <div id="header-focus-radio-slot" />
             <label v-if="activePage === 'analytics'" class="relative hidden sm:block">
               <svg viewBox="0 0 24 24" class="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-task-muted" fill="none" stroke="currentColor" stroke-width="1.8"><path :d="iconPath('calendar')" /></svg>
               <select v-model="analyticsFilters.days" class="tf-input h-11 min-w-[145px] appearance-none py-0 pl-10 pr-8 text-xs font-bold text-task-ink" :disabled="Boolean(analyticsFilters.start_date || analyticsFilters.end_date)"><option value="7">Last 7 Days</option><option value="30">Last 30 Days</option><option value="90">Last 90 Days</option><option value="365">Last 365 Days</option></select>
@@ -3255,9 +3264,9 @@ const iconPath = (name: string) => {
         </header>
 
         <ClientOnly>
-          <Teleport :to="activePage === 'dashboard' ? '#dashboard-focus-radio-slot' : '#header-focus-radio-slot'">
+          <div :class="['tf-persistent-focus-radio', activePage === 'analytics' ? 'is-analytics' : '']">
             <FocusRadio :dark="isDarkTheme" />
-          </Teleport>
+          </div>
         </ClientOnly>
 
         <section v-if="activePage === 'dashboard'" class="space-y-4">
@@ -3592,6 +3601,32 @@ const iconPath = (name: string) => {
             </div>
           </div>
 
+          <div class="grid gap-3 lg:grid-cols-3">
+            <section class="tf-panel overflow-hidden p-0">
+              <header class="flex items-center justify-between border-b border-task-line px-4 py-3.5"><div><h2 class="text-sm font-extrabold text-task-ink">Recent Tasks</h2><p class="mt-0.5 text-[10px] text-task-muted">Click to open task details</p></div><span class="tf-pill bg-task-blueSoft text-task-blue">{{ dashboardRecentTasks.length }}</span></header>
+              <div class="divide-y divide-task-line">
+                <button v-for="task in dashboardRecentTasks.slice(0, 4)" :key="String(task.id)" type="button" class="flex min-h-[62px] w-full items-center gap-3 px-4 py-3 text-left transition hover:bg-task-blueSoft/50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-task-blue" @click="openAnalyticsTask(task)"><span class="grid h-9 w-9 shrink-0 place-items-center rounded-[10px] bg-task-blueSoft text-task-blue"><svg viewBox="0 0 24 24" class="h-4 w-4" fill="none" stroke="currentColor" stroke-width="1.9"><path d="M6 4h12v16H6V4Zm3 5h6m-6 4h6" /></svg></span><span class="min-w-0 flex-1"><b class="block truncate text-xs text-task-ink">{{ task.title }}</b><small class="mt-1 block truncate text-[10px] text-task-muted">{{ task.department?.name || 'No department' }} · {{ dashboardStatus(task.status) }}</small></span><span class="text-task-muted">›</span></button>
+                <p v-if="!dashboardRecentTasks.length" class="px-4 py-8 text-center text-xs text-task-muted">No recent tasks.</p>
+              </div>
+            </section>
+
+            <section class="tf-panel overflow-hidden p-0">
+              <header class="flex items-center justify-between border-b border-task-line px-4 py-3.5"><div><h2 class="text-sm font-extrabold text-task-ink">Upcoming Deadlines</h2><p class="mt-0.5 text-[10px] text-task-muted">Click to open deadline task</p></div><span class="tf-pill bg-task-warningSoft text-task-warning">{{ dashboardDeadlines.length }}</span></header>
+              <div class="divide-y divide-task-line">
+                <button v-for="task in dashboardDeadlines.slice(0, 4)" :key="String(task.id)" type="button" class="flex min-h-[62px] w-full items-center gap-3 px-4 py-3 text-left transition hover:bg-task-warningSoft/50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-task-warning" @click="openAnalyticsTask(task)"><span :class="['h-2.5 w-2.5 shrink-0 rounded-full', task.priority === 'high' ? 'bg-task-danger' : task.priority === 'medium' ? 'bg-task-warning' : 'bg-task-success']" /><span class="min-w-0 flex-1"><b class="block truncate text-xs text-task-ink">{{ task.title }}</b><small class="mt-1 block truncate text-[10px] text-task-muted">{{ task.department?.name || 'No department' }}</small></span><span class="shrink-0 text-right"><b class="block text-[10px] text-task-ink">{{ dashboardDateTime(task.due_date) }}</b><small class="mt-1 block text-[9px] font-bold text-task-warning">{{ task.days_remaining }} days</small></span></button>
+                <p v-if="!dashboardDeadlines.length" class="px-4 py-8 text-center text-xs text-task-muted">No upcoming deadlines.</p>
+              </div>
+            </section>
+
+            <section class="tf-panel overflow-hidden p-0">
+              <header class="flex items-center justify-between border-b border-task-line px-4 py-3.5"><div><h2 class="text-sm font-extrabold text-task-ink">Upcoming Events</h2><p class="mt-0.5 text-[10px] text-task-muted">Click to open event details</p></div><span class="tf-pill bg-task-successSoft text-task-success">{{ dashboardUpcomingEvents.length }}</span></header>
+              <div class="divide-y divide-task-line">
+                <button v-for="event in dashboardUpcomingEvents.slice(0, 4)" :key="String(event.id)" type="button" class="flex min-h-[62px] w-full items-center gap-3 px-4 py-3 text-left transition hover:bg-task-successSoft/40 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-task-success" @click="openAnalyticsEvent(event)"><time class="grid h-9 min-w-11 shrink-0 place-items-center rounded-[10px] bg-task-successSoft px-2 text-[10px] font-extrabold text-task-success">{{ dashboardDateTime(event.starts_at, 'date') }}</time><span class="min-w-0 flex-1"><b class="block truncate text-xs text-task-ink">{{ event.title }}</b><small class="mt-1 block truncate text-[10px] text-task-muted">{{ dashboardDateTime(event.starts_at, 'time') }} · {{ event.location || 'Online' }}</small></span><span class="text-task-muted">›</span></button>
+                <p v-if="!dashboardUpcomingEvents.length" class="px-4 py-8 text-center text-xs text-task-muted">No upcoming events.</p>
+              </div>
+            </section>
+          </div>
+
           <div class="grid gap-3 xl:grid-cols-[1.55fr_.85fr]">
             <div class="tf-panel p-4">
               <div class="mb-2 flex items-start justify-between">
@@ -3786,7 +3821,7 @@ const iconPath = (name: string) => {
               <div class="space-y-2">
                 <section v-for="group in analyticsOverdueByStaff.slice(0, 5)" :key="group.name" class="overflow-hidden rounded-[12px] border border-task-line">
                   <div class="flex items-center gap-2 bg-slate-50 px-3 py-2.5"><span class="grid h-7 w-7 shrink-0 place-items-center rounded-full bg-task-dangerSoft text-[9px] font-extrabold text-task-danger">{{ initials(group.name) }}</span><b class="min-w-0 flex-1 truncate text-xs text-task-ink">{{ group.name }}</b><span class="shrink-0 text-[10px] font-bold text-task-danger">{{ group.rows.length }} overdue</span></div>
-                  <button v-for="task in group.rows.slice(0, 3)" :key="String(task[6] || task[0])" type="button" class="flex w-full items-start gap-2 border-t border-task-line px-3 py-2.5 text-left transition hover:bg-task-dangerSoft/40" @click="openTaskFromCard(task)">
+                  <button v-for="task in group.rows.slice(0, 3)" :key="String(task[6] || task[0])" type="button" class="tf-analytics-overdue-task flex w-full items-start gap-2 border-t border-task-line px-3 py-2.5 text-left transition" @click="openTaskFromCard(task)">
                     <i class="mt-1.5 h-2 w-2 shrink-0 rounded-full bg-task-danger" /><span class="min-w-0 flex-1"><b class="line-clamp-2 text-[11px] leading-4 text-task-ink">{{ task[0] }}</b><small class="mt-1 block text-[9px] text-task-muted">Due {{ task[4] || '—' }}</small></span><span class="shrink-0 text-[9px] font-bold text-task-danger">{{ analyticsOverdueDays(task) }}d</span>
                   </button>
                 </section>
@@ -4411,9 +4446,9 @@ const iconPath = (name: string) => {
       </div>
     </div>
 
-    <button v-if="supportWidgetOpen" type="button" class="fixed inset-0 z-[65] bg-slate-950/30 backdrop-blur-[1px]" aria-label="Close help support" @click="!feedbackSending && (supportWidgetOpen = false)" />
+    <button v-if="supportWidgetOpen" type="button" class="fixed inset-0 z-[65] bg-transparent" aria-label="Close help support" @click="!feedbackSending && (supportWidgetOpen = false)" />
     <div ref="supportWidgetRoot" class="fixed bottom-5 right-5 z-[70] h-14 w-14" :style="supportWidgetStyle" @paste="handleFeedbackPaste">
-      <div v-if="supportWidgetOpen" class="tf-panel tf-support-panel fixed left-1/2 top-1/2 max-h-[calc(100dvh-32px)] w-[390px] max-w-[calc(100vw-32px)] -translate-x-1/2 -translate-y-1/2 overflow-x-hidden overflow-y-auto overscroll-contain p-5 shadow-2xl">
+      <div v-if="supportWidgetOpen" :class="['tf-panel tf-support-panel absolute max-h-[calc(100dvh-116px)] w-[390px] max-w-[calc(100vw-32px)] overflow-x-hidden overflow-y-auto overscroll-contain p-5 shadow-2xl', supportPanelPlacement]">
         <div class="flex touch-none items-start justify-between gap-4" :class="supportWidgetDragging ? 'cursor-grabbing' : 'cursor-move'" @pointerdown="startSupportDrag">
           <div class="flex select-none items-center gap-3">
             <span class="grid h-14 w-14 shrink-0 place-items-center rounded-[16px] bg-gradient-to-br from-task-blueSoft to-white p-0.5 shadow-sm ring-1 ring-task-blue/15"><img src="/images/tiko-assistant-v2.png" alt="Tiko feedback assistant" class="h-full w-full object-contain" /></span>
@@ -4456,9 +4491,9 @@ const iconPath = (name: string) => {
           {{ feedbackSending ? 'Sending...' : 'Send Feedback →' }}
         </button>
       </div>
-      <button type="button" :class="['tf-support-launcher touch-none select-none', supportWidgetDragging ? 'cursor-grabbing scale-105' : 'cursor-grab']" aria-label="Open or move Taskly support" title="Drag to move · Click to open" @dragstart.prevent @pointerdown="startSupportDrag" @click="toggleSupportWidget">
+      <button type="button" :class="['tf-support-launcher touch-none select-none', supportWidgetOpen ? 'is-open' : '', supportWidgetDragging ? 'is-dragging cursor-grabbing scale-105' : 'cursor-grab']" aria-label="Open or move Taskly support" title="Drag to move · Click to open" @dragstart.prevent @pointerdown="startSupportDrag" @click="toggleSupportWidget">
         <span class="tf-support-greeting" aria-hidden="true"><b>Hi! I'm Tiko 👋</b><small>Ask Tiko <i>✦</i></small></span>
-        <img src="/images/tiko-assistant-v2.png" alt="Tiko feedback assistant" draggable="false" class="pointer-events-none h-[66px] w-[66px] max-w-none select-none object-contain drop-shadow-[0_8px_12px_rgba(7,40,91,.38)]" />
+        <img src="/images/tiko-assistant-v2.png" alt="Tiko feedback assistant" draggable="false" class="tf-support-robot pointer-events-none h-[66px] w-[66px] max-w-none select-none object-contain drop-shadow-[0_8px_12px_rgba(7,40,91,.38)]" />
       </button>
     </div>
 

@@ -489,8 +489,6 @@ export const useTaskFlowApi = () => {
     if (import.meta.client) {
       localStorage.removeItem(authStorageKey)
       sessionStorage.removeItem(authStorageKey)
-      document.documentElement.classList.remove('tf-dark')
-      document.documentElement.style.colorScheme = 'light'
     }
   }
 

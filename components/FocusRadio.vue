@@ -2,16 +2,17 @@
 const props = withDefaults(defineProps<{ dark?: boolean }>(), { dark: false })
 
 const stations = [
-  { name: 'Lo-Fi Focus', description: 'Warm chords and soft focused beats', color: '#3b82f6', tempo: 72, wave: 'triangle' as OscillatorType, notes: [261.63, 329.63, 392, 493.88, 392, 329.63] },
-  { name: 'Deep Focus', description: 'Slow minimal concentration tones', color: '#8b5cf6', tempo: 54, wave: 'sine' as OscillatorType, notes: [174.61, 220, 261.63, 220, 196, 146.83] },
-  { name: 'Coffee Jazz', description: 'Soft jazzy workspace harmony', color: '#f59e0b', tempo: 82, wave: 'triangle' as OscillatorType, notes: [293.66, 349.23, 440, 523.25, 466.16, 349.23] },
-  { name: 'Ambient', description: 'Floating calm background sound', color: '#14b8a6', tempo: 46, wave: 'sine' as OscillatorType, notes: [130.81, 196, 246.94, 196, 164.81, 220] },
-  { name: 'Space Focus', description: 'Dreamy instrumental electronic tones', color: '#ec4899', tempo: 64, wave: 'sine' as OscillatorType, notes: [220, 277.18, 329.63, 415.3, 329.63, 277.18] }
+  { name: 'Lo-Fi Focus', description: 'YouTube focus music · selected collection', color: '#3b82f6', videoId: 'sjkrrmBnpGE', tempo: 72, wave: 'triangle' as OscillatorType, notes: [261.63, 329.63, 392, 493.88, 392, 329.63] },
+  { name: 'Deep Focus', description: 'YouTube deep focus · selected collection', color: '#8b5cf6', videoId: 'EOAPMhaCtuw', tempo: 54, wave: 'sine' as OscillatorType, notes: [174.61, 220, 261.63, 220, 196, 146.83] },
+  { name: 'Coffee Jazz', description: 'YouTube work music · selected collection', color: '#f59e0b', videoId: 'X4VbdwhkE10', tempo: 82, wave: 'triangle' as OscillatorType, notes: [293.66, 349.23, 440, 523.25, 466.16, 349.23] },
+  { name: 'Ambient', description: 'YouTube ambient · selected collection', color: '#14b8a6', videoId: '_bLX5WfDQfM', tempo: 46, wave: 'sine' as OscillatorType, notes: [130.81, 196, 246.94, 196, 164.81, 220] },
+  { name: 'Space Focus', description: 'YouTube space focus · selected collection', color: '#ec4899', videoId: 'V_HmhifhbNo', tempo: 64, wave: 'sine' as OscillatorType, notes: [220, 277.18, 329.63, 415.3, 329.63, 277.18] }
 ]
 
 const trigger = ref<HTMLElement | null>(null)
 const root = ref<HTMLElement | null>(null)
 const panel = ref<HTMLElement | null>(null)
+const youtubePlayer = ref<HTMLIFrameElement | null>(null)
 const isOpen = ref(false)
 const selectedIndex = ref(0)
 const isPlaying = ref(false)
@@ -22,6 +23,7 @@ const elapsedSeconds = ref(0)
 const errorMessage = ref('')
 const panelStyle = ref<Record<string, string>>({})
 const selectedStation = computed(() => stations[selectedIndex.value]!)
+const youtubeEmbedUrl = computed(() => `https://www.youtube-nocookie.com/embed/${selectedStation.value.videoId}?enablejsapi=1&playsinline=1&rel=0&controls=1`)
 const SESSION_DURATION_SECONDS = 30 * 60
 const formatTime = (seconds: number) => `${String(Math.floor(seconds / 60)).padStart(2, '0')}:${String(seconds % 60).padStart(2, '0')}`
 const formattedElapsed = computed(() => formatTime(elapsedSeconds.value))
@@ -34,6 +36,15 @@ let elapsedTimer: ReturnType<typeof setInterval> | null = null
 let nextNoteTime = 0
 let noteStep = 0
 
+const sendYoutubeCommand = (func: string, args: Array<string | number> = []) => {
+  youtubePlayer.value?.contentWindow?.postMessage(JSON.stringify({ event: 'command', func, args }), 'https://www.youtube-nocookie.com')
+}
+
+const handleYoutubeReady = () => {
+  sendYoutubeCommand('setVolume', [volume.value])
+  if (isPlaying.value) sendYoutubeCommand('playVideo')
+}
+
 const amplifiedVolume = () => Math.min(1.55, (volume.value / 100) * 1.55)
 const startElapsedTimer = () => {
   if (elapsedTimer) clearInterval(elapsedTimer)
@@ -41,9 +52,7 @@ const startElapsedTimer = () => {
     elapsedSeconds.value += 1
     if (elapsedSeconds.value >= SESSION_DURATION_SECONDS) {
       elapsedSeconds.value = SESSION_DURATION_SECONDS
-      if (scheduler) clearInterval(scheduler)
-      scheduler = null
-      void audioContext?.suspend()
+      sendYoutubeCommand('pauseVideo')
       isPlaying.value = false
       stopElapsedTimer()
     }
@@ -108,6 +117,7 @@ onBeforeUnmount(() => {
   if (scheduler) clearInterval(scheduler)
   stopElapsedTimer()
   void audioContext?.close()
+  sendYoutubeCommand('stopVideo')
   window.removeEventListener('resize', updatePanelPosition)
   window.removeEventListener('scroll', updatePanelPosition, true)
   window.removeEventListener('taskflow:overlay-open', closeOnOtherOverlay)
@@ -149,17 +159,8 @@ const startPlayback = async () => {
   isLoading.value = true
   try {
     if (elapsedSeconds.value >= SESSION_DURATION_SECONDS) elapsedSeconds.value = 0
-    if (!audioContext) {
-      audioContext = new AudioContext()
-      masterGain = audioContext.createGain()
-      masterGain.gain.value = amplifiedVolume()
-      masterGain.connect(audioContext.destination)
-    }
-    await audioContext.resume()
-    nextNoteTime = audioContext.currentTime + 0.05
-    if (scheduler) clearInterval(scheduler)
-    scheduler = setInterval(fillSchedule, 80)
-    fillSchedule()
+    sendYoutubeCommand('setVolume', [volume.value])
+    sendYoutubeCommand('playVideo')
     isPlaying.value = true
     startElapsedTimer()
   } catch {
@@ -171,9 +172,7 @@ const startPlayback = async () => {
 
 const togglePlayback = async () => {
   if (isPlaying.value) {
-    if (scheduler) clearInterval(scheduler)
-    scheduler = null
-    await audioContext?.suspend()
+    sendYoutubeCommand('pauseVideo')
     isPlaying.value = false
     stopElapsedTimer()
   } else await startPlayback()
@@ -189,10 +188,9 @@ const selectStation = async (index: number) => {
   localStorage.setItem('taskflow-radio-station', String(index))
   errorMessage.value = ''
   noteStep = 0
-  if (isPlaying.value && audioContext) {
-    nextNoteTime = audioContext.currentTime + 0.05
-    fillSchedule()
-  } else await startPlayback()
+  await nextTick()
+  sendYoutubeCommand('loadVideoById', [selectedStation.value.videoId])
+  await startPlayback()
 }
 
 const changeStation = (direction: number) => {
@@ -202,7 +200,7 @@ const changeStation = (direction: number) => {
 
 const updateVolume = () => {
   if (volume.value > 0) lastAudibleVolume.value = volume.value
-  if (masterGain && audioContext) masterGain.gain.setTargetAtTime(amplifiedVolume(), audioContext.currentTime, 0.04)
+  sendYoutubeCommand('setVolume', [volume.value])
   localStorage.setItem('taskflow-radio-volume', String(volume.value))
 }
 
@@ -225,7 +223,7 @@ const toggleMute = () => {
 
     <Teleport to="body">
     <Transition name="radio-popover">
-      <section v-if="isOpen" ref="panel" :class="['focus-radio__panel', props.dark ? 'is-dark-mode' : '']" :style="panelStyle" aria-label="Focus Radio player">
+      <section v-show="isOpen" ref="panel" :class="['focus-radio__panel', props.dark ? 'is-dark-mode' : '']" :style="panelStyle" aria-label="Focus Radio player">
         <header><div><h2>Focus Radio</h2><p>Music for your work session</p></div><button type="button" aria-label="Close Focus Radio" @click="isOpen = false">×</button></header>
 
         <div class="focus-radio__stations">
@@ -237,6 +235,19 @@ const toggleMute = () => {
             <span class="focus-radio__station-copy"><b>{{ station.name }}</b><small>{{ station.description }}</small></span>
             <span v-if="selectedIndex === index && isPlaying" class="focus-radio__bars" aria-hidden="true"><i /><i /><i /><i /></span>
           </button>
+        </div>
+
+        <div class="focus-radio__youtube">
+          <iframe
+            ref="youtubePlayer"
+            :src="youtubeEmbedUrl"
+            :title="`${selectedStation.name} on YouTube`"
+            width="300"
+            height="200"
+            allow="autoplay; encrypted-media; picture-in-picture"
+            allowfullscreen
+            @load="handleYoutubeReady"
+          />
         </div>
 
         <p v-if="errorMessage" class="focus-radio__error">{{ errorMessage }}</p>
@@ -257,7 +268,7 @@ const toggleMute = () => {
             <input v-model.number="volume" type="range" min="0" max="100" aria-label="Radio volume" @input="updateVolume" />
             <span>{{ volume }}%</span>
           </div>
-          <span class="block mt-2 text-center text-[8px] text-slate-400">30-minute focus music · no internet required</span>
+          <span class="block mt-2 text-center text-[8px] text-slate-400">30-minute focus session · music powered by YouTube</span>
         </footer>
       </section>
     </Transition>
@@ -303,4 +314,5 @@ const toggleMute = () => {
 .focus-radio__panel.is-dark-mode .focus-radio__transport button{color:#a9b9cc}
 .focus-radio__panel.is-dark-mode .focus-radio__volume{color:#a9b9cc}
 .focus-radio__volume button{display:grid;width:27px;height:27px;flex:none;place-items:center;border-radius:8px;transition:.18s}.focus-radio__volume button:hover{background:#eff6ff;color:#2567ad}.focus-radio__volume span{width:28px;flex:none;text-align:right;font-size:8px;font-weight:700;font-variant-numeric:tabular-nums}.focus-radio__panel.is-dark-mode .focus-radio__volume button:hover{background:#17304f;color:#7dd3fc}.focus-radio__panel.is-dark-mode .focus-radio__session-progress{background:#203653}
+.focus-radio__youtube{margin:0 18px 12px;overflow:hidden;border:1px solid #dbe4ef;border-radius:12px;background:#020617}.focus-radio__youtube iframe{display:block;width:100%;min-height:200px;border:0}.focus-radio__panel.is-dark-mode .focus-radio__youtube{border-color:#2b405d}
 </style>

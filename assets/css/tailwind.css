@@ -1519,6 +1519,78 @@ body {
   box-shadow: 0 14px 30px -12px rgb(37 103 173 / 0.65);
 }
 
+.tf-persistent-focus-radio {
+  position: absolute;
+  z-index: 46;
+  top: 32px;
+  right: 126px;
+}
+
+.tf-persistent-focus-radio.is-analytics {
+  right: 474px;
+}
+
+@media (max-width: 1024px) {
+  .tf-persistent-focus-radio.is-analytics {
+    right: 126px;
+  }
+}
+
+@media (max-width: 640px) {
+  .tf-persistent-focus-radio {
+    right: 116px;
+  }
+}
+
+.tf-support-launcher::before {
+  position: absolute;
+  inset: -5px;
+  z-index: -1;
+  border: 2px solid rgb(74 150 235 / 0.42);
+  border-radius: 999px;
+  content: '';
+  animation: tf-support-pulse 2.8s ease-out infinite;
+}
+
+.tf-support-robot {
+  transform-origin: 50% 82%;
+  animation: tf-support-float 3.6s ease-in-out infinite;
+  will-change: transform;
+}
+
+.tf-support-launcher:hover .tf-support-robot,
+.tf-support-launcher:focus-visible .tf-support-robot {
+  animation: tf-support-wave 700ms ease-in-out;
+}
+
+.tf-support-launcher.is-open::before,
+.tf-support-launcher.is-dragging::before {
+  animation-play-state: paused;
+  opacity: 0;
+}
+
+.tf-support-launcher.is-open .tf-support-robot,
+.tf-support-launcher.is-dragging .tf-support-robot {
+  animation-play-state: paused;
+}
+
+@keyframes tf-support-float {
+  0%, 100% { transform: translateY(0) rotate(0deg); }
+  45% { transform: translateY(-5px) rotate(-2deg); }
+  55% { transform: translateY(-5px) rotate(2deg); }
+}
+
+@keyframes tf-support-wave {
+  0%, 100% { transform: translateY(0) rotate(0deg) scale(1); }
+  30% { transform: translateY(-5px) rotate(-7deg) scale(1.06); }
+  65% { transform: translateY(-3px) rotate(6deg) scale(1.04); }
+}
+
+@keyframes tf-support-pulse {
+  0% { opacity: 0.65; transform: scale(0.92); }
+  70%, 100% { opacity: 0; transform: scale(1.25); }
+}
+
 .tf-support-panel {
   scrollbar-width: thin;
   scrollbar-color: rgb(148 163 184 / 0.65) transparent;
@@ -1662,6 +1734,11 @@ body {
   html,
   body {
     transition: none !important;
+  }
+
+  .tf-support-launcher::before,
+  .tf-support-robot {
+    animation: none !important;
   }
 }
 
@@ -2386,6 +2463,19 @@ body {
 
 .tf-dark .tf-analytics-overdue .bg-slate-50 {
   background: #17243a;
+}
+
+.tf-analytics-overdue-task:hover,
+.tf-analytics-overdue-task:focus-visible {
+  background: #fff1f4;
+  outline: none;
+  box-shadow: inset 3px 0 0 #ef4767;
+}
+
+.tf-dark .tf-analytics-overdue-task:hover,
+.tf-dark .tf-analytics-overdue-task:focus-visible {
+  background: #321a27;
+  box-shadow: inset 3px 0 0 #ff5d7a;
 }
 
 .tf-analytics-overdue-summary {

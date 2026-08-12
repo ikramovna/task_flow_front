@@ -70,9 +70,9 @@ const submitLogin = async () => {
 </script>
 
 <template>
-  <main :class="['grid min-h-screen place-items-center bg-task-page px-4 py-8 text-task-ink sm:px-6', isDarkTheme ? 'tf-dark' : '']">
+  <main :class="['tf-auth-page grid min-h-screen place-items-center px-4 py-8 text-task-ink sm:px-6', isDarkTheme ? 'tf-dark' : '']">
     <section class="w-full max-w-[520px]">
-      <form class="rounded-ui border border-task-line bg-white p-6 shadow-card sm:p-8" @submit.prevent="submitLogin">
+      <form class="tf-panel tf-auth-card p-6 sm:p-8" @submit.prevent="submitLogin">
         <NuxtLink to="/" class="mx-auto mb-6 block w-fit" aria-label="TaskFlow home">
           <img
             :src="isDarkTheme ? '/taskflow-logo-compact-dark.png' : '/taskflow-logo-compact.png'"
@@ -91,7 +91,7 @@ const submitLogin = async () => {
 
           <label class="mb-4 block">
             <span class="mb-2 block text-sm font-semibold">Email Address</span>
-            <span class="relative block">
+            <span class="tf-auth-field relative block">
               <svg viewBox="0 0 24 24" class="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-task-muted" fill="none" stroke="currentColor" stroke-width="1.8"><path :d="iconPath('mail')" /></svg>
               <input v-model="email" class="tf-input h-12 w-full pl-10" placeholder="Enter email address" type="email" autocomplete="email" />
             </span>
@@ -99,7 +99,7 @@ const submitLogin = async () => {
 
           <label class="block">
             <span class="mb-2 block text-sm font-semibold">Password</span>
-            <span class="relative block">
+            <span class="tf-auth-field relative block">
               <svg viewBox="0 0 24 24" class="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-task-muted" fill="none" stroke="currentColor" stroke-width="1.8"><path :d="iconPath('lock')" /></svg>
               <input v-model="password" class="tf-input h-12 w-full pl-10 pr-11" placeholder="Enter password" :type="showPassword ? 'text' : 'password'" autocomplete="current-password" />
               <button type="button" class="absolute right-3 top-1/2 -translate-y-1/2 text-task-muted transition hover:text-task-blue" @click="showPassword = !showPassword">
@@ -110,7 +110,7 @@ const submitLogin = async () => {
 
           <div class="my-5 flex items-center justify-between gap-3 text-sm">
             <label class="flex items-center gap-2 text-task-muted">
-              <input v-model="rememberMe" class="h-4 w-4 rounded border-task-line text-task-blue focus:ring-task-blueSoft" type="checkbox" />
+              <input v-model="rememberMe" class="tf-auth-checkbox h-4 w-4 rounded" type="checkbox" />
               Remember me
             </label>
             <NuxtLink class="font-semibold text-task-blue transition hover:opacity-75" to="/forgot-password">
@@ -126,3 +126,31 @@ const submitLogin = async () => {
     </section>
   </main>
 </template>
+
+<style scoped>
+.tf-auth-page {
+  background:
+    radial-gradient(circle at 82% 0%, color-mix(in srgb, var(--tf-accent) 8%, transparent), transparent 30rem),
+    var(--tf-page);
+}
+
+.tf-auth-card {
+  background: var(--tf-surface);
+  border-color: var(--tf-border);
+  color: var(--tf-ink);
+}
+
+.tf-auth-field > svg,
+.tf-auth-field > button {
+  color: var(--tf-muted);
+}
+
+.tf-auth-field > button:hover {
+  color: var(--tf-accent);
+}
+
+.tf-auth-checkbox {
+  accent-color: var(--tf-accent);
+  border-color: var(--tf-border);
+}
+</style>
