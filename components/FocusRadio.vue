@@ -17,11 +17,16 @@ const selectedIndex = ref(0)
 const isPlaying = ref(false)
 const isLoading = ref(false)
 const volume = ref(42)
+const lastAudibleVolume = ref(42)
 const elapsedSeconds = ref(0)
 const errorMessage = ref('')
 const panelStyle = ref<Record<string, string>>({})
 const selectedStation = computed(() => stations[selectedIndex.value]!)
-const formattedElapsed = computed(() => `${String(Math.floor(elapsedSeconds.value / 60)).padStart(2, '0')}:${String(elapsedSeconds.value % 60).padStart(2, '0')}`)
+const SESSION_DURATION_SECONDS = 30 * 60
+const formatTime = (seconds: number) => `${String(Math.floor(seconds / 60)).padStart(2, '0')}:${String(seconds % 60).padStart(2, '0')}`
+const formattedElapsed = computed(() => formatTime(elapsedSeconds.value))
+const formattedDuration = formatTime(SESSION_DURATION_SECONDS)
+const sessionProgress = computed(() => Math.min(100, (elapsedSeconds.value / SESSION_DURATION_SECONDS) * 100))
 let audioContext: AudioContext | null = null
 let masterGain: GainNode | null = null
 let scheduler: ReturnType<typeof setInterval> | null = null
@@ -32,7 +37,17 @@ let noteStep = 0
 const amplifiedVolume = () => Math.min(1.55, (volume.value / 100) * 1.55)
 const startElapsedTimer = () => {
   if (elapsedTimer) clearInterval(elapsedTimer)
-  elapsedTimer = setInterval(() => { elapsedSeconds.value += 1 }, 1000)
+  elapsedTimer = setInterval(() => {
+    elapsedSeconds.value += 1
+    if (elapsedSeconds.value >= SESSION_DURATION_SECONDS) {
+      elapsedSeconds.value = SESSION_DURATION_SECONDS
+      if (scheduler) clearInterval(scheduler)
+      scheduler = null
+      void audioContext?.suspend()
+      isPlaying.value = false
+      stopElapsedTimer()
+    }
+  }, 1000)
 }
 const stopElapsedTimer = () => {
   if (elapsedTimer) clearInterval(elapsedTimer)
@@ -79,7 +94,10 @@ onMounted(() => {
   const savedIndex = Number(localStorage.getItem('taskflow-radio-station'))
   const savedVolume = Number(localStorage.getItem('taskflow-radio-volume'))
   if (Number.isInteger(savedIndex) && savedIndex >= 0 && savedIndex < stations.length) selectedIndex.value = savedIndex
-  if (Number.isFinite(savedVolume) && savedVolume >= 0 && savedVolume <= 100) volume.value = savedVolume
+  if (Number.isFinite(savedVolume) && savedVolume >= 0 && savedVolume <= 100) {
+    volume.value = savedVolume
+    if (savedVolume > 0) lastAudibleVolume.value = savedVolume
+  }
   window.addEventListener('resize', updatePanelPosition)
   window.addEventListener('scroll', updatePanelPosition, true)
   window.addEventListener('taskflow:overlay-open', closeOnOtherOverlay)
@@ -130,6 +148,7 @@ const startPlayback = async () => {
   errorMessage.value = ''
   isLoading.value = true
   try {
+    if (elapsedSeconds.value >= SESSION_DURATION_SECONDS) elapsedSeconds.value = 0
     if (!audioContext) {
       audioContext = new AudioContext()
       masterGain = audioContext.createGain()
@@ -182,8 +201,17 @@ const changeStation = (direction: number) => {
 }
 
 const updateVolume = () => {
+  if (volume.value > 0) lastAudibleVolume.value = volume.value
   if (masterGain && audioContext) masterGain.gain.setTargetAtTime(amplifiedVolume(), audioContext.currentTime, 0.04)
   localStorage.setItem('taskflow-radio-volume', String(volume.value))
+}
+
+const toggleMute = () => {
+  if (volume.value > 0) {
+    lastAudibleVolume.value = volume.value
+    volume.value = 0
+  } else volume.value = lastAudibleVolume.value || 42
+  updateVolume()
 }
 </script>
 
@@ -213,14 +241,23 @@ const updateVolume = () => {
 
         <p v-if="errorMessage" class="focus-radio__error">{{ errorMessage }}</p>
         <footer>
-          <div class="focus-radio__session-time"><span>{{ formattedElapsed }}</span><small>{{ isPlaying ? 'Focus session' : 'Ready to focus' }}</small></div>
+          <div class="focus-radio__session-time"><span>{{ formattedElapsed }} <i>/</i> {{ formattedDuration }}</span><small>{{ isPlaying ? '30 min focus session' : elapsedSeconds ? 'Session paused' : 'Ready to focus' }}</small></div>
+          <div class="focus-radio__session-progress" aria-hidden="true"><i :style="{ width: `${sessionProgress}%` }" /></div>
           <div class="focus-radio__transport">
             <button type="button" aria-label="Previous station" @click="changeStation(-1)"><svg viewBox="0 0 24 24"><path d="M6 6v12m12-11-8 5 8 5V7Z" /></svg></button>
             <button type="button" class="focus-radio__main-play" :aria-label="isPlaying ? 'Pause radio' : 'Play radio'" @click="togglePlayback"><span v-if="isLoading" class="focus-radio__spinner" /><svg v-else-if="isPlaying" viewBox="0 0 24 24"><path d="M9 7v10M15 7v10" /></svg><svg v-else viewBox="0 0 24 24"><path d="m9 7 8 5-8 5V7Z" /></svg></button>
             <button type="button" aria-label="Next station" @click="changeStation(1)"><svg viewBox="0 0 24 24"><path d="M18 6v12M6 7l8 5-8 5V7Z" /></svg></button>
           </div>
-          <label class="focus-radio__volume"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M5 10v4h3l4 4V6l-4 4H5Zm11-1a5 5 0 0 1 0 6m2-9a9 9 0 0 1 0 12" /></svg><input v-model.number="volume" type="range" min="0" max="100" aria-label="Radio volume" @input="updateVolume" /></label>
-          <span class="block mt-2 text-center text-[8px] text-slate-400">Generative audio · no internet required</span>
+          <div class="focus-radio__volume">
+            <button type="button" :aria-label="volume === 0 ? 'Unmute radio' : 'Mute radio'" :title="volume === 0 ? 'Unmute' : 'Mute'" @click="toggleMute">
+              <svg v-if="volume === 0" viewBox="0 0 24 24" aria-hidden="true"><path d="M5 10v4h3l4 4V6l-4 4H5Zm11 1 5 5m0-5-5 5" /></svg>
+              <svg v-else-if="volume < 45" viewBox="0 0 24 24" aria-hidden="true"><path d="M5 10v4h3l4 4V6l-4 4H5Zm4.5 2h.01" /></svg>
+              <svg v-else viewBox="0 0 24 24" aria-hidden="true"><path d="M5 10v4h3l4 4V6l-4 4H5Zm11-1a5 5 0 0 1 0 6m2-9a9 9 0 0 1 0 12" /></svg>
+            </button>
+            <input v-model.number="volume" type="range" min="0" max="100" aria-label="Radio volume" @input="updateVolume" />
+            <span>{{ volume }}%</span>
+          </div>
+          <span class="block mt-2 text-center text-[8px] text-slate-400">30-minute focus music · no internet required</span>
         </footer>
       </section>
     </Transition>
@@ -243,7 +280,7 @@ const updateVolume = () => {
 :global(.tf-dark) .focus-radio__trigger:hover,:global(.tf-dark) .focus-radio__trigger.is-playing{border-color:rgba(56,189,248,.48)!important;background:linear-gradient(135deg,#153759,#0c2949)!important;color:#7dd3fc!important;box-shadow:0 12px 30px -13px rgba(14,165,233,.65),inset 0 1px 0 rgba(255,255,255,.1)!important}
 :global(.tf-dark) .focus-radio__trigger-icon{border-color:rgba(125,211,252,.2);background:linear-gradient(145deg,rgba(37,99,235,.25),rgba(14,165,233,.12));color:#7dd3fc;box-shadow:inset 0 1px 0 rgba(255,255,255,.08)}
 :global(.tf-dark) .focus-radio__trigger-icon i{border-color:#0c2949}
-.focus-radio__session-time{display:flex;align-items:baseline;justify-content:center;gap:7px;margin-bottom:7px}.focus-radio__session-time span{font-variant-numeric:tabular-nums;color:#2567ad;font-size:15px;font-weight:800;letter-spacing:.04em}.focus-radio__session-time small{color:#94a3b8;font-size:8px;font-weight:600}:global(.tf-dark) .focus-radio__session-time span{color:#7dd3fc}
+.focus-radio__session-time{display:flex;align-items:baseline;justify-content:center;gap:7px;margin-bottom:7px}.focus-radio__session-time span{font-variant-numeric:tabular-nums;color:#2567ad;font-size:15px;font-weight:800;letter-spacing:.04em}.focus-radio__session-time span i{color:#94a3b8;font-style:normal;font-weight:500}.focus-radio__session-time small{color:#94a3b8;font-size:8px;font-weight:600}.focus-radio__session-progress{height:3px;margin:0 8px 9px;overflow:hidden;border-radius:999px;background:#e2e8f0}.focus-radio__session-progress i{display:block;height:100%;border-radius:inherit;background:linear-gradient(90deg,#60a5fa,#2567ad);transition:width .4s linear}:global(.tf-dark) .focus-radio__session-time span{color:#7dd3fc}:global(.tf-dark) .focus-radio__session-progress{background:#203653}
 @media(max-width:640px){.focus-radio__trigger{min-width:44px!important;width:44px!important;padding:0!important}.focus-radio__trigger-icon{width:32px;height:32px}.focus-radio__trigger-copy,.focus-radio__mini-bars{display:none}}
 :global(.is-dark) .focus-radio__trigger{border-color:rgba(96,165,250,.22)!important;background:linear-gradient(135deg,rgba(15,36,64,.93),rgba(7,24,45,.86))!important;color:#eaf3ff!important;box-shadow:0 10px 28px -13px rgba(0,0,0,.9),inset 0 1px 0 rgba(255,255,255,.08)!important}
 :global(.is-dark) .focus-radio__trigger:hover,:global(.is-dark) .focus-radio__trigger.is-playing{border-color:rgba(56,189,248,.48)!important;background:linear-gradient(135deg,#153759,#0c2949)!important;color:#7dd3fc!important}
@@ -265,4 +302,5 @@ const updateVolume = () => {
 .focus-radio__panel.is-dark-mode .focus-radio__session-time span{color:#7dd3fc}
 .focus-radio__panel.is-dark-mode .focus-radio__transport button{color:#a9b9cc}
 .focus-radio__panel.is-dark-mode .focus-radio__volume{color:#a9b9cc}
+.focus-radio__volume button{display:grid;width:27px;height:27px;flex:none;place-items:center;border-radius:8px;transition:.18s}.focus-radio__volume button:hover{background:#eff6ff;color:#2567ad}.focus-radio__volume span{width:28px;flex:none;text-align:right;font-size:8px;font-weight:700;font-variant-numeric:tabular-nums}.focus-radio__panel.is-dark-mode .focus-radio__volume button:hover{background:#17304f;color:#7dd3fc}.focus-radio__panel.is-dark-mode .focus-radio__session-progress{background:#203653}
 </style>

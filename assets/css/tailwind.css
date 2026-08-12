@@ -1945,6 +1945,28 @@ body {
   color: #cbd5e1;
 }
 
+.tf-task-list-table {
+  border-collapse: separate;
+  border-spacing: 0;
+  overflow: hidden;
+  border: 1px solid #e6ebf2;
+  border-radius: 14px;
+}
+
+.tf-task-list-table thead {
+  background: #f6f8fb;
+  color: #75849a;
+  font-size: 11px;
+}
+
+.tf-task-list-table tbody tr { transition: background-color 160ms ease; }
+.tf-task-list-table tbody tr:hover { background: #f8fbff; }
+.tf-task-list-table td { height: 62px; }
+
+.tf-dark .tf-task-list-table { border-color: #2b364a; }
+.tf-dark .tf-task-list-table thead { background: #172033; color: #94a3b8; }
+.tf-dark .tf-task-list-table tbody tr:hover { background: #182943; }
+
 .tf-department-donut {
   display: grid;
   height: 112px;
