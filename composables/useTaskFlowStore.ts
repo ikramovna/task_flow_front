@@ -103,7 +103,7 @@ export const useTaskFlowStore = () => {
           ...state.value,
           loaded: true,
           stats: [
-            [String(metric('total_tasks').count), 'Total Tasks', metric('total_tasks').percentage],
+            [String(metric('total_tasks').count), 'Total Active Task', metric('total_tasks').percentage],
             [String(metric('completed_tasks').count), 'Completed Tasks', metric('completed_tasks').percentage],
             [String(metric('in_progress_tasks').count), 'In Progress', metric('in_progress_tasks').percentage],
             [String(metric('not_started_tasks').count), 'Not Started', metric('not_started_tasks').percentage],
@@ -146,7 +146,7 @@ export const useTaskFlowStore = () => {
         ...createEmptyState(),
         loaded: true,
         stats: dashboard ? [
-          [String(dashboardMetric('total_tasks').count), 'Total Tasks', dashboardMetric('total_tasks').percentage],
+          [String(dashboardMetric('total_tasks').count), 'Total Active Task', dashboardMetric('total_tasks').percentage],
           [String(dashboardMetric('completed_tasks').count), 'Completed Tasks', dashboardMetric('completed_tasks').percentage],
           [String(dashboardMetric('in_progress_tasks').count), 'In Progress', dashboardMetric('in_progress_tasks').percentage],
           [String(dashboardMetric('not_started_tasks').count), 'Not Started', dashboardMetric('not_started_tasks').percentage],

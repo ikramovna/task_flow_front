@@ -190,9 +190,14 @@ body {
     @apply absolute right-0 top-[calc(100%+6px)] z-[75] min-w-36 overflow-hidden rounded-ui border border-task-line bg-white py-1 shadow-xl;
   }
 
-  .tf-action-item {
+.tf-action-item {
     @apply block w-full px-3 py-2 text-left text-sm font-medium text-task-ink transition hover:bg-task-blueSoft hover:text-task-blue;
-  }
+}
+
+/* Keep row actions visible when a team search leaves only one short row. */
+.tf-panel:has(table.min-w-\[940px\] tbody .tf-action-menu) > .overflow-x-auto {
+  padding-bottom: 10rem;
+}
 
   .tf-action-danger {
     @apply text-task-danger hover:bg-task-dangerSoft hover:text-task-danger;
@@ -284,7 +289,7 @@ body {
   }
 
   .tf-sidebar-logout {
-    @apply inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-ui border border-task-line bg-white text-task-muted transition hover:border-task-blue hover:text-task-blue;
+    @apply inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-ui border border-red-200 bg-white text-red-500 transition hover:border-red-400 hover:bg-red-50 hover:text-red-600;
   }
 
   .tf-support-launcher {
@@ -893,6 +898,18 @@ body {
 .tf-dark .tf-sidebar-logout {
   background: var(--tf-surface);
   border-color: var(--tf-border);
+}
+
+.tf-dark .tf-sidebar-logout {
+  color: #fb7185;
+  border-color: rgb(244 63 94 / 0.32);
+  background: rgb(244 63 94 / 0.08);
+}
+
+.tf-dark .tf-sidebar-logout:hover {
+  color: #fda4af;
+  border-color: rgb(251 113 133 / 0.65);
+  background: rgb(244 63 94 / 0.16);
 }
 
 .tf-dark .tf-icon-button:hover {

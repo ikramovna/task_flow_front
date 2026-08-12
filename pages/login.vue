@@ -74,7 +74,11 @@ const submitLogin = async () => {
     <section class="w-full max-w-[520px]">
       <form class="rounded-ui border border-task-line bg-white p-6 shadow-card sm:p-8" @submit.prevent="submitLogin">
         <NuxtLink to="/" class="mx-auto mb-6 block w-fit" aria-label="TaskFlow home">
-          <img src="/taskflow-logo.png?v=3" alt="TaskFlow" class="h-auto w-[230px]" />
+          <img
+            :src="isDarkTheme ? '/taskflow-logo-compact-dark.png' : '/taskflow-logo-compact.png'"
+            alt="TaskFlow"
+            class="h-auto w-[230px]"
+          />
         </NuxtLink>
         <div class="mb-8 text-center">
           <h1 class="text-3xl font-bold">Welcome back</h1>
@@ -114,9 +118,9 @@ const submitLogin = async () => {
             </NuxtLink>
           </div>
 
-          <button class="tf-primary h-12 w-full text-base" type="submit" :disabled="isSubmitting">
-            <span v-if="isSubmitting" class="h-4 w-4 rounded-full border-2 border-white/40 border-t-white animate-spin" />
-            {{ isSubmitting ? 'Signing in...' : 'Sign In' }}
+          <button class="tf-primary h-12 w-full text-base !text-white disabled:opacity-80" type="submit" :disabled="isSubmitting">
+            <span v-if="isSubmitting" class="relative z-10 h-4 w-4 rounded-full border-2 border-white/40 border-t-white animate-spin" />
+            <span class="relative z-10 text-white">{{ isSubmitting ? 'Signing in...' : 'Sign In' }}</span>
           </button>
       </form>
     </section>

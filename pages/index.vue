@@ -147,7 +147,7 @@ const effectiveDepartmentId = computed(() => {
 const departmentTeam = computed(() => team.value.filter((member) => !effectiveDepartmentId.value || String(member[11] || '') === effectiveDepartmentId.value))
 const taskSearchInput = ref('')
 const taskSearch = ref('')
-const taskScope = ref<'all' | 'mine' | 'archived'>(currentRole.value.toLowerCase() === 'member' ? 'mine' : 'all')
+const taskScope = ref<'all' | 'mine' | 'archived'>('all')
 const taskScopeLoading = ref(false)
 const projectSearchInput = ref('')
 const projectSearch = ref('')
@@ -573,7 +573,7 @@ const filteredTasks = computed(() =>
   tasks.value.filter((task) => includesQuery(task, taskSearch.value) && matchesTaskAttentionFilter(task) && (dropdownValues.priority === 'All Priorities' || String(task[2]) === dropdownValues.priority))
 )
 const taskOverviewCards = computed(() => [
-  { label: 'All Tasks', value: tasks.value.length, color: 'blue', status: 'all' },
+  { label: 'All Active Tasks', value: tasks.value.length, color: 'blue', status: 'all' },
   { label: 'To Do', value: tasks.value.filter((task) => String(task[3]).toLowerCase() === 'not started').length, color: 'slate', status: 'all' },
   { label: 'In Progress', value: tasks.value.filter((task) => String(task[3]).toLowerCase() === 'in progress').length, color: 'blue', status: 'all' },
   { label: 'On Hold', value: tasks.value.filter((task) => String(task[3]).toLowerCase() === 'on hold').length, color: 'amber', status: 'on_hold' },
@@ -1152,9 +1152,7 @@ const dashboardDateTime = (value: unknown, kind: 'date' | 'time' = 'date') => {
 }
 
 const loadTaskScope = async (scope: 'all' | 'mine' | 'archived') => {
-  const isMember = currentRole.value.toLowerCase() === 'member'
-  if (scope === 'all' && isMember) scope = 'mine'
-  if (scope === 'archived' && !canManageDepartment.value) scope = 'mine'
+  if (scope === 'archived' && !canManageDepartment.value) scope = 'all'
   if (taskScopeLoading.value) return
   taskScope.value = scope
   taskScopeLoading.value = true
@@ -1164,7 +1162,7 @@ const loadTaskScope = async (scope: 'all' | 'mine' | 'archived') => {
       page_size: 100,
       // The backend already limits members to tasks they are allowed to see,
       // including hidden tasks where they are one of the assignees.
-      my_tasks: scope === 'mine' && !isMember ? 'true' : undefined,
+      my_tasks: scope === 'mine' ? 'true' : undefined,
       archived: scope === 'archived' ? 'true' : undefined
     })
     state.value.tasks = taskFlowApi.listItems(response).map(taskFlowApi.mapTask)
@@ -1197,7 +1195,7 @@ watch(canManageDepartment, (canManage) => {
 
 const openTaskOverviewCard = (status: string) => {
   if (status === 'archived') return
-  if (taskScope.value === 'archived') void loadTaskScope(currentRole.value.toLowerCase() === 'member' ? 'mine' : 'all')
+  if (taskScope.value === 'archived') void loadTaskScope('all')
   if (status === 'all') clearTaskAttentionFilter()
   else openTaskAttention(status as typeof taskAttentionFilter.value)
 }
@@ -1235,9 +1233,6 @@ const archiveOpenedTask = async () => {
   modal.value = null
 }
 
-watch(currentRole, (role) => {
-  if (role.toLowerCase() === 'member' && taskScope.value !== 'mine') void loadTaskScope('mine')
-}, { immediate: true })
 const dashboardStatus = (value: unknown) => String(value || '').split('_').map((word) => word.charAt(0).toUpperCase() + word.slice(1)).join(' ')
 
 const setPage = (key: PageKey) => {
@@ -1252,7 +1247,7 @@ const setPage = (key: PageKey) => {
     taskViewMode.value = 'kanban'
     taskAttentionFilter.value = 'all'
     taskPage.value = 1
-    if (taskScope.value === 'archived') taskScope.value = currentRole.value.toLowerCase() === 'member' ? 'mine' : 'all'
+    if (taskScope.value === 'archived') taskScope.value = 'all'
   }
   if (key === 'analytics') sidebarCollapsed.value = true
   activePage.value = key
@@ -3411,7 +3406,7 @@ const iconPath = (name: string) => {
             <div class="mb-5 flex flex-col gap-3 xl:flex-row xl:items-center xl:justify-between">
               <div class="flex flex-wrap items-center gap-2"><h2 class="text-lg font-bold">{{ taskScope === 'archived' ? 'Archived Tasks' : taskBoardSection === 'backlog' ? 'Task Backlog' : taskViewMode === 'kanban' ? 'Kanban Board' : 'All Active Tasks' }}</h2><span class="rounded-full bg-task-blueSoft px-2.5 py-1 text-[10px] font-extrabold text-task-blue">{{ filteredTasks.length }} tasks</span><span v-if="selectedTaskKeys.length && taskViewMode === 'list'" class="rounded-full bg-task-successSoft px-2.5 py-1 text-[10px] font-extrabold text-task-success">{{ selectedTaskKeys.length }} selected</span><button v-if="taskAttentionFilter !== 'all'" type="button" class="rounded-full bg-task-dangerSoft px-3 py-1 text-[10px] font-bold uppercase text-task-danger" @click="clearTaskAttentionFilter">{{ taskAttentionFilter.replace('_', ' ') }} ×</button></div>
               <div class="flex flex-col gap-2 sm:flex-row sm:flex-wrap sm:items-center">
-                <div class="inline-flex h-11 items-center rounded-[11px] border border-task-line bg-slate-50 p-1"><button v-if="currentRole.toLowerCase() !== 'member'" type="button" :class="['h-9 rounded-[8px] px-3 text-xs font-bold', taskScope === 'all' ? 'bg-white text-task-blue shadow-sm' : 'text-task-muted']" @click="loadTaskScope('all')">All Tasks</button><button type="button" :class="['h-9 rounded-[8px] px-3 text-xs font-bold', taskScope === 'mine' ? 'bg-white text-task-blue shadow-sm' : 'text-task-muted']" @click="loadTaskScope('mine')">My Tasks</button></div>
+                <div class="inline-flex h-11 items-center rounded-[11px] border border-task-line bg-slate-50 p-1"><button type="button" :class="['h-9 rounded-[8px] px-3 text-xs font-bold', taskScope === 'all' ? 'bg-white text-task-blue shadow-sm' : 'text-task-muted']" @click="loadTaskScope('all')">All Tasks</button><button type="button" :class="['h-9 rounded-[8px] px-3 text-xs font-bold', taskScope === 'mine' ? 'bg-white text-task-blue shadow-sm' : 'text-task-muted']" @click="loadTaskScope('mine')">My Tasks</button></div>
                 <label class="relative w-full sm:w-auto">
                 <svg viewBox="0 0 24 24" class="pointer-events-none absolute left-3.5 top-1/2 h-4 w-4 -translate-y-1/2 text-task-muted" fill="none" stroke="currentColor" stroke-width="1.8"><path :d="iconPath('search')" /></svg>
                 <input v-model="taskSearchInput" class="tf-input h-11 w-full pl-10 pr-10 sm:w-64" placeholder="Search tasks..." />
