@@ -12,5 +12,5 @@ export const greetingConfig = (period: GreetingPeriod, theme: GreetingTheme): Gr
   period,
   theme,
   ...copy[period],
-  background: `/greeting-cards/${period}-${theme}-panorama-v4.png?v=5`
+  background: `/greeting-cards/${period}-${theme}-panorama-v4-1440.webp`
 })

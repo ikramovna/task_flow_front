@@ -3166,10 +3166,10 @@ const iconPath = (name: string) => {
         </button>
         <div :class="['tf-sidebar-brand flex h-[64px] items-center', sidebarCollapsed ? 'justify-center px-1' : 'gap-1 px-0']">
           <button class="flex min-w-0 flex-1 items-center justify-start" type="button" :title="sidebarCollapsed ? 'Open menu' : 'TaskFlow'" :aria-label="sidebarCollapsed ? 'Open menu' : 'Go to dashboard'" @click="sidebarCollapsed ? (sidebarCollapsed = false) : setPage('dashboard')">
-            <img v-if="sidebarCollapsed" src="/taskflow-logo-mark.png?v=3" alt="TaskFlow" class="h-11 w-11 rounded-[12px] object-contain" />
+            <img v-if="sidebarCollapsed" src="/taskflow-logo-mark.webp" width="96" height="96" alt="TaskFlow" class="h-11 w-11 rounded-[12px] object-contain" />
             <span v-else class="tf-sidebar-brand-logo relative block h-[54px] w-[145px]">
-              <img src="/taskflow-logo-compact.png?v=4" alt="TaskFlow" class="tf-sidebar-brand-logo__light absolute inset-0 h-full w-full object-contain object-left" />
-              <img src="/taskflow-logo-compact-dark.png?v=4" alt="" aria-hidden="true" class="tf-sidebar-brand-logo__dark absolute inset-0 h-full w-full object-contain object-left" />
+              <img src="/taskflow-logo-compact.webp" width="480" height="146" alt="TaskFlow" class="tf-sidebar-brand-logo__light absolute inset-0 h-full w-full object-contain object-left" />
+              <img src="/taskflow-logo-compact-dark.webp" width="480" height="146" alt="" aria-hidden="true" class="tf-sidebar-brand-logo__dark absolute inset-0 h-full w-full object-contain object-left" />
             </span>
           </button>
           <button v-if="!sidebarCollapsed" type="button" class="group hidden h-10 w-10 shrink-0 place-items-center rounded-[12px] bg-slate-50 text-slate-500 transition duration-200 hover:-translate-x-0.5 hover:bg-task-blueSoft hover:text-task-blue md:grid" aria-label="Collapse menu" title="Close sidebar" @click="sidebarCollapsed = true">
@@ -4451,7 +4451,7 @@ const iconPath = (name: string) => {
       <div v-if="supportWidgetOpen" :class="['tf-panel tf-support-panel absolute max-h-[calc(100dvh-116px)] w-[390px] max-w-[calc(100vw-32px)] overflow-x-hidden overflow-y-auto overscroll-contain p-5 shadow-2xl', supportPanelPlacement]">
         <div class="flex touch-none items-start justify-between gap-4" :class="supportWidgetDragging ? 'cursor-grabbing' : 'cursor-move'" @pointerdown="startSupportDrag">
           <div class="flex select-none items-center gap-3">
-            <span class="grid h-14 w-14 shrink-0 place-items-center rounded-[16px] bg-gradient-to-br from-task-blueSoft to-white p-0.5 shadow-sm ring-1 ring-task-blue/15"><img src="/images/tiko-assistant-v2.png" alt="Tiko feedback assistant" class="h-full w-full object-contain" /></span>
+            <span class="grid h-14 w-14 shrink-0 place-items-center rounded-[16px] bg-gradient-to-br from-task-blueSoft to-white p-0.5 shadow-sm ring-1 ring-task-blue/15"><img src="/images/tiko-assistant.webp" width="192" height="192" alt="Tiko feedback assistant" class="h-full w-full object-contain" /></span>
             <div><h2 class="text-lg font-extrabold text-task-ink">Taskly</h2><p class="mt-0.5 text-xs font-medium text-task-muted">Feedback Assistant</p></div>
           </div>
           <button type="button" class="tf-icon-button h-8 w-8 shrink-0 cursor-pointer disabled:cursor-not-allowed disabled:opacity-50" :disabled="feedbackSending" aria-label="Close support" title="Close" @pointerdown.stop @click="supportWidgetOpen = false">
@@ -4493,7 +4493,7 @@ const iconPath = (name: string) => {
       </div>
       <button type="button" :class="['tf-support-launcher touch-none select-none', supportWidgetOpen ? 'is-open' : '', supportWidgetDragging ? 'is-dragging cursor-grabbing scale-105' : 'cursor-grab']" aria-label="Open or move Taskly support" title="Drag to move · Click to open" @dragstart.prevent @pointerdown="startSupportDrag" @click="toggleSupportWidget">
         <span class="tf-support-greeting" aria-hidden="true"><b>Hi! I'm Tiko 👋</b><small>Ask Tiko <i>✦</i></small></span>
-        <img src="/images/tiko-assistant-v2.png" alt="Tiko feedback assistant" draggable="false" class="tf-support-robot pointer-events-none h-[66px] w-[66px] max-w-none select-none object-contain drop-shadow-[0_8px_12px_rgba(7,40,91,.38)]" />
+        <img src="/images/tiko-assistant.webp" width="192" height="192" alt="Tiko feedback assistant" draggable="false" class="tf-support-robot pointer-events-none h-[66px] w-[66px] max-w-none select-none object-contain drop-shadow-[0_8px_12px_rgba(7,40,91,.38)]" />
       </button>
     </div>
 

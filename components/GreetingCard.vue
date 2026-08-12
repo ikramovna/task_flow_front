@@ -11,10 +11,7 @@ const props = withDefaults(defineProps<GreetingCardProps & { config: GreetingCar
 
 const emit = defineEmits<{ notification: []; theme: [] }>()
 const displayCount = computed(() => props.notificationCount > 99 ? '99+' : String(props.notificationCount))
-const lightBackground = computed(() => props.config.background.replace('-dark-', '-light-'))
-// Keep the exact same composition in both themes. Dark mode is produced with
-// CSS color treatment so switching themes never changes the crop or objects.
-const darkBackground = computed(() => lightBackground.value)
+const background = computed(() => props.config.background.replace('-dark-', '-light-'))
 const tashkentNow = ref(new Date())
 const weatherTemperature = ref<number | null>(null)
 const weatherCode = ref<number | null>(null)
@@ -60,8 +57,7 @@ onBeforeUnmount(() => {
 
 <template>
   <article :class="['greeting-card', `is-${config.theme}`, `is-${config.period}`]" :aria-label="`${config.greeting}, ${name}`">
-    <img class="greeting-card__background greeting-card__background--light" :src="lightBackground" alt="" width="1983" height="813" loading="eager" decoding="sync" fetchpriority="high">
-    <img class="greeting-card__background greeting-card__background--dark" :src="darkBackground" alt="" width="1983" height="813" loading="eager" decoding="sync" fetchpriority="high">
+    <img class="greeting-card__background" :src="background" alt="" width="1983" height="813" loading="eager" decoding="async" fetchpriority="high">
     <div class="greeting-card__veil" aria-hidden="true" />
     <div class="greeting-card__content">
       <h1>{{ config.greeting }}, {{ name }}! <span aria-hidden="true">{{ config.icon }}</span></h1>
@@ -101,8 +97,8 @@ onBeforeUnmount(() => {
 <style scoped>
 .greeting-card{z-index:30}
 .greeting-card{position:relative;isolation:isolate;height:clamp(220px,15vw,270px);overflow:visible;border:1px solid #d9e1eb;border-radius:12px;background:#fff;color:#0b1b32;box-shadow:0 8px 24px rgb(15 23 42/.12);container-type:inline-size}.greeting-card__background{position:absolute;z-index:-2;inset:0;width:100%;height:100%;border-radius:inherit;object-fit:cover;object-position:center}.greeting-card__veil{position:absolute;z-index:-1;inset:0;border-radius:inherit;background:linear-gradient(90deg,#fff 0%,rgb(255 255 255/.98) 35%,rgb(255 255 255/.72) 51%,transparent 72%)}.greeting-card__content{display:flex;height:100%;width:54%;flex-direction:column;justify-content:center;padding:28px clamp(24px,4vw,64px)}h1{font-size:clamp(24px,2.2vw,34px);font-weight:800;line-height:1.1;letter-spacing:-.035em}.greeting-card__subtitle{margin-top:10px;color:#52647b;font-size:clamp(12px,1vw,15px)}blockquote{margin-top:24px;border-left:2px solid #1689ee;padding-left:16px;max-width:220px;font-size:12px;line-height:1.55}cite{display:block;margin-top:6px;color:#087ae3;font-style:normal;font-weight:600}.greeting-card__actions{position:absolute;z-index:4;top:16px;right:16px;display:flex;gap:8px}.greeting-card__actions>:deep(button){position:relative;display:grid;width:40px;height:40px;place-items:center;border:1px solid rgb(148 163 184/.35);border-radius:11px;background:rgb(255 255 255/.75);color:#425269;box-shadow:0 5px 16px rgb(15 23 42/.08);backdrop-filter:blur(10px);transition:transform .18s ease,background .18s ease}.greeting-card__actions>:deep(button:hover){transform:translateY(-2px);background:#fff}.greeting-card__actions>:deep(button svg){width:18px;fill:none;stroke:currentColor;stroke-width:1.7}.greeting-card__badge{position:absolute;top:-7px;right:-6px;display:grid;min-width:18px;height:18px;place-items:center;border:2px solid #fff;border-radius:99px;background:#f43f5e;color:#fff;font-size:9px;font-weight:800}.is-dark{border-color:#253750;background:#07182d;color:#f8fbff;box-shadow:0 10px 30px rgb(0 0 0/.3)}.is-dark .greeting-card__veil{background:linear-gradient(90deg,#07182d 0%,rgb(7 24 45/.98) 38%,rgb(7 24 45/.74) 55%,transparent 78%)}.is-dark .greeting-card__subtitle{color:#c0cbda}.is-dark .greeting-card__actions>:deep(button){border-color:#38506f;background:rgb(7 24 45/.7);color:#e8f1ff}.is-dark .greeting-card__actions>:deep(button:hover){background:#102b4c}@media(max-width:760px){.greeting-card{height:230px}.greeting-card__content{width:82%;padding:24px 20px}.greeting-card__veil,.is-dark .greeting-card__veil{background:linear-gradient(90deg,var(--mobile-bg,#fff) 0%,rgb(255 255 255/.9) 65%,transparent)}.is-dark{--mobile-bg:#07182d}.is-dark .greeting-card__veil{background:linear-gradient(90deg,#07182d 0%,rgb(7 24 45/.92) 67%,transparent)}blockquote{margin-top:20px}.greeting-card__actions{top:12px;right:12px}}@media(prefers-reduced-motion:reduce){.greeting-card__actions>:deep(button){transition:none}}
-.greeting-card__background{inset:0;width:100%;height:100%;object-fit:cover;object-position:center 64%;transform:none;transform-origin:center;opacity:0;transition:opacity 120ms ease}.greeting-card__background--light,.greeting-card__background--dark{transform:none}.is-light .greeting-card__background--light,.is-dark .greeting-card__background--dark{opacity:1}.is-morning .greeting-card__background{object-position:center 64%}.is-afternoon .greeting-card__background{object-position:center 64%}.is-evening .greeting-card__background{object-position:center 62%}.greeting-card__veil{opacity:.22}.is-dark .greeting-card__veil{opacity:.16}
-.is-dark .greeting-card__background--dark{filter:brightness(.48) saturate(.88) contrast(1.08)}
+.greeting-card__background{inset:0;width:100%;height:100%;object-fit:cover;object-position:center 64%;transform:none}.is-morning .greeting-card__background{object-position:center 64%}.is-afternoon .greeting-card__background{object-position:center 64%}.is-evening .greeting-card__background{object-position:center 62%}.greeting-card__veil{opacity:.22}.is-dark .greeting-card__veil{opacity:.16}
+.is-dark .greeting-card__background{filter:brightness(.48) saturate(.88) contrast(1.08)}
 .is-dark .greeting-card__veil{display:block;opacity:1;background:linear-gradient(90deg,#06162b 0%,rgb(6 22 43/.96) 34%,rgb(6 22 43/.72) 52%,rgb(6 22 43/.12) 74%,transparent 100%)}
 .greeting-card__meta{position:absolute;z-index:4;bottom:13px;left:clamp(20px,4vw,64px);display:flex;max-width:calc(100% - 150px);flex-wrap:wrap;gap:7px}.greeting-card__meta span{display:inline-flex;min-height:32px;align-items:center;gap:7px;border:1px solid rgb(148 163 184/.24);border-radius:9px;background:rgb(255 255 255/.68);padding:6px 10px;color:#425269;font-size:10px;font-weight:700;box-shadow:0 4px 14px rgb(15 23 42/.06);backdrop-filter:blur(10px)}.greeting-card__meta-icon{width:17px;height:17px;flex:none;fill:none;stroke:currentColor;stroke-width:1.8;stroke-linecap:round;stroke-linejoin:round;color:#2563eb}.greeting-card__meta-icon--weather{width:19px;height:19px;color:#f59e0b}.is-dark .greeting-card__meta span{border-color:rgb(148 163 184/.2);background:rgb(7 24 45/.66);color:#dbeafe}.is-dark .greeting-card__meta-icon{color:#60a5fa}.is-dark .greeting-card__meta-icon--weather{color:#fbbf24}
 
@@ -198,8 +194,7 @@ onBeforeUnmount(() => {
 .is-dark .greeting-card__actions .greeting-card__action-button{border-color:rgb(96 165 250/.22)!important;background:linear-gradient(135deg,rgb(15 36 64/.93),rgb(7 24 45/.86))!important;color:#eaf3ff!important;box-shadow:0 10px 28px -13px rgb(0 0 0/.9),inset 0 1px 0 rgb(255 255 255/.08)!important}
 .is-dark .greeting-card__actions .greeting-card__action-button:hover{background:linear-gradient(135deg,#153759,#0c2949)!important;color:#7dd3fc!important}
 /* Final theme treatment: one source image, identical geometry in both modes. */
-.is-light .greeting-card__background--light,
-.is-dark .greeting-card__background--dark{transform:none!important;object-fit:cover!important}
-.is-dark .greeting-card__background--dark{filter:brightness(.48) saturate(.88) contrast(1.08)}
+.greeting-card__background{transform:none!important;object-fit:cover!important}
+.is-dark .greeting-card__background{filter:brightness(.48) saturate(.88) contrast(1.08)}
 .is-dark .greeting-card__veil{display:block!important;opacity:1!important;background:linear-gradient(90deg,#06162b 0%,rgb(6 22 43/.96) 34%,rgb(6 22 43/.72) 52%,rgb(6 22 43/.12) 74%,transparent 100%)!important}
 </style>

@@ -223,7 +223,7 @@ const toggleMute = () => {
 
     <Teleport to="body">
     <Transition name="radio-popover">
-      <section v-show="isOpen" ref="panel" :class="['focus-radio__panel', props.dark ? 'is-dark-mode' : '']" :style="panelStyle" aria-label="Focus Radio player">
+      <section v-if="isOpen" ref="panel" :class="['focus-radio__panel', props.dark ? 'is-dark-mode' : '']" :style="panelStyle" aria-label="Focus Radio player">
         <header><div><h2>Focus Radio</h2><p>Music for your work session</p></div><button type="button" aria-label="Close Focus Radio" @click="isOpen = false">×</button></header>
 
         <div class="focus-radio__stations">

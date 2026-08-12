@@ -5,7 +5,7 @@
       <span class="tf-loading-ring tf-loading-ring--outer" />
       <span class="tf-loading-ring tf-loading-ring--middle" />
       <span class="tf-loading-core">
-        <img src="/taskflow-logo-mark.png?v=2" alt="" class="h-14 w-14 rounded-[14px] object-contain" aria-hidden="true" />
+        <img src="/taskflow-logo-mark.webp" width="96" height="96" alt="" class="h-14 w-14 rounded-[14px] object-contain" aria-hidden="true" />
       </span>
     </div>
     <p class="tf-loading-title">Loading<span class="tf-loading-dots" aria-hidden="true">...</span></p>

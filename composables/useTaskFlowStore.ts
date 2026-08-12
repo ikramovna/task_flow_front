@@ -75,7 +75,9 @@ const createEmptyState = (): TaskFlowState => ({
 })
 
 export const useTaskFlowStore = () => {
-  const state = useState<TaskFlowState>('taskflow:store', () => ({ ...createEmptyState(), loaded: false }))
+  // Render the dashboard shell immediately. Backend data enhances the already
+  // visible UI instead of gating the entire page (and its LCP image) behind API calls.
+  const state = useState<TaskFlowState>('taskflow:store', () => createEmptyState())
   const apiError = useState('taskflow:api-error', () => '')
 
   const reset = () => {
@@ -84,10 +86,7 @@ export const useTaskFlowStore = () => {
   }
 
   const loadBackendData = async () => {
-    if (!import.meta.client) {
-      state.value = { ...createEmptyState(), loaded: false }
-      return
-    }
+    if (!import.meta.client) return
 
     const api = useTaskFlowApi()
 

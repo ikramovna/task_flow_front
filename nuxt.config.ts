@@ -1,11 +1,23 @@
 export default defineNuxtConfig({
   modules: ['@nuxtjs/tailwindcss'],
   css: ['~/assets/css/tailwind.css'],
-  devtools: { enabled: true },
+  devtools: { enabled: false },
   experimental: {
     emitRouteChunkError: 'reload-immediate'
   },
   routeRules: {
+    '/_nuxt/**': {
+      headers: { 'cache-control': 'public, max-age=31536000, immutable' }
+    },
+    '/greeting-cards/**': {
+      headers: { 'cache-control': 'public, max-age=31536000, immutable' }
+    },
+    '/images/**': {
+      headers: { 'cache-control': 'public, max-age=31536000, immutable' }
+    },
+    '/taskflow-logo*': {
+      headers: { 'cache-control': 'public, max-age=31536000, immutable' }
+    },
     '/': {
       headers: {
         'cache-control': 'no-cache, no-store, must-revalidate',
@@ -79,12 +91,6 @@ export default defineNuxtConfig({
       link: [
         { rel: 'icon', type: 'image/png', href: '/favicon.png?v=2' },
         { rel: 'apple-touch-icon', href: '/apple-touch-icon.png?v=2' },
-        { rel: 'preconnect', href: 'https://fonts.googleapis.com' },
-        { rel: 'preconnect', href: 'https://fonts.gstatic.com', crossorigin: '' },
-        {
-          rel: 'stylesheet',
-          href: 'https://fonts.googleapis.com/css2?family=Inter+Tight:wght@400;500;600;700;800&display=swap'
-        }
       ]
     }
   }

@@ -75,7 +75,9 @@ const submitLogin = async () => {
       <form class="tf-panel tf-auth-card p-6 sm:p-8" @submit.prevent="submitLogin">
         <NuxtLink to="/" class="mx-auto mb-6 block w-fit" aria-label="TaskFlow home">
           <img
-            :src="isDarkTheme ? '/taskflow-logo-compact-dark.png' : '/taskflow-logo-compact.png'"
+            :src="isDarkTheme ? '/taskflow-logo-compact-dark.webp' : '/taskflow-logo-compact.webp'"
+            width="480"
+            height="146"
             alt="TaskFlow"
             class="h-auto w-[230px]"
           />

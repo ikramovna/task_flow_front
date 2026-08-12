@@ -10,7 +10,7 @@ export default {
   theme: {
     extend: {
       fontFamily: {
-        sans: ['Inter Tight', 'Inter', 'ui-sans-serif', 'system-ui', 'sans-serif']
+        sans: ['Inter', 'ui-sans-serif', 'system-ui', '-apple-system', 'BlinkMacSystemFont', 'Segoe UI', 'sans-serif']
       },
       colors: {
         task: {
@@ -22,11 +22,11 @@ export default {
           line: '#E6EAF0',
           page: '#F3F7FB',
           card: '#FFFFFF',
-          success: '#1FBF86',
+          success: '#087A55',
           successSoft: '#E7F8F0',
-          warning: '#F5A524',
+          warning: '#9A5B00',
           warningSoft: '#FFF4DC',
-          danger: '#F04466',
+          danger: '#BE123C',
           dangerSoft: '#FDEBED',
           lavender: '#F0EFFB',
           mint: '#EDF8EB',
