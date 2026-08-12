@@ -1462,6 +1462,10 @@ body {
   opacity: 1;
 }
 
+.tf-sidebar-brand-logo__dark { display: none; }
+.tf-dark .tf-sidebar-brand-logo__light { display: none; }
+.tf-dark .tf-sidebar-brand-logo__dark { display: block; }
+
 .tf-sidebar-avatar img {
   display: block;
   opacity: 1;
@@ -1493,8 +1497,65 @@ body {
 }
 
 .tf-support-launcher {
+  position: relative;
   background: linear-gradient(145deg, #59a4f2, #2269ba);
   box-shadow: 0 14px 30px -12px rgb(37 103 173 / 0.65);
+}
+
+.tf-support-panel {
+  scrollbar-width: thin;
+  scrollbar-color: rgb(148 163 184 / 0.65) transparent;
+}
+
+.tf-support-panel::-webkit-scrollbar { width: 6px; }
+.tf-support-panel::-webkit-scrollbar-thumb {
+  border-radius: 999px;
+  background: rgb(148 163 184 / 0.55);
+}
+
+.tf-support-greeting {
+  pointer-events: none;
+  position: absolute;
+  right: calc(100% + 12px);
+  top: 50%;
+  display: grid;
+  min-width: 142px;
+  gap: 5px;
+  border: 1px solid rgb(205 219 236 / 0.95);
+  border-radius: 14px;
+  background: rgb(255 255 255 / 0.96);
+  padding: 10px 13px;
+  color: #10213a;
+  text-align: left;
+  box-shadow: 0 15px 35px -16px rgb(15 23 42 / 0.45);
+  opacity: 0;
+  transform: translate(8px, -50%) scale(0.96);
+  transform-origin: right center;
+  visibility: hidden;
+  transition: opacity 160ms ease, transform 160ms ease, visibility 160ms ease;
+}
+
+.tf-support-greeting::after {
+  position: absolute;
+  right: -6px;
+  top: 50%;
+  width: 11px;
+  height: 11px;
+  border-right: 1px solid rgb(205 219 236 / 0.95);
+  border-top: 1px solid rgb(205 219 236 / 0.95);
+  background: inherit;
+  content: '';
+  transform: translateY(-50%) rotate(45deg);
+}
+
+.tf-support-greeting b { font-size: 12px; line-height: 1.15; }
+.tf-support-greeting small { color: #3177ca; font-size: 10px; font-weight: 750; }
+.tf-support-greeting i { color: #7c3aed; font-style: normal; }
+.tf-support-launcher:hover .tf-support-greeting,
+.tf-support-launcher:focus-visible .tf-support-greeting {
+  opacity: 1;
+  transform: translate(0, -50%) scale(1);
+  visibility: visible;
 }
 
 .tf-dark .tf-shell,
@@ -1568,6 +1629,16 @@ body {
 .tf-dark .tf-support-launcher {
   box-shadow: 0 14px 34px -12px rgb(19 93 178 / 0.8), inset 0 1px 0 rgb(255 255 255 / 0.16);
 }
+
+.tf-dark .tf-support-greeting {
+  border-color: #2b4565;
+  background: rgb(12 28 50 / 0.97);
+  color: #f8fafc;
+  box-shadow: 0 18px 40px -15px rgb(0 0 0 / 0.75);
+}
+
+.tf-dark .tf-support-greeting::after { border-color: #2b4565; }
+.tf-dark .tf-support-greeting small { color: #7dd3fc; }
 
 @media (prefers-reduced-motion: reduce) {
   .tf-theme-button,
@@ -1683,6 +1754,8 @@ body {
 .tf-summary-card--5 .tf-summary-icon { background: #fff3e2; }
 .tf-summary-card--6 { color: #f04460; }
 .tf-summary-card--6 .tf-summary-icon { background: #ffe9ee; }
+.tf-summary-card--7 { color: #64748b; }
+.tf-summary-card--7 .tf-summary-icon { background: #e9eef5; }
 
 .tf-dashboard-list {
   display: flex;
@@ -1716,6 +1789,14 @@ body {
   gap: .75rem;
   padding: .7rem 1.25rem;
 }
+
+.tf-attention-row { transition: background-color 160ms ease, box-shadow 160ms ease; }
+.tf-attention-row--danger:hover { background: #fff1f4; box-shadow: inset 3px 0 0 #f04466; }
+.tf-attention-row--warning:hover { background: #fff8ea; box-shadow: inset 3px 0 0 #f59e0b; }
+.tf-attention-row--blue:hover { background: #eff6ff; box-shadow: inset 3px 0 0 #3b82f6; }
+.tf-dark .tf-attention-row--danger:hover { background: #301b29; box-shadow: inset 3px 0 0 #fb7185; }
+.tf-dark .tf-attention-row--warning:hover { background: #302615; box-shadow: inset 3px 0 0 #fbbf24; }
+.tf-dark .tf-attention-row--blue:hover { background: #142b47; box-shadow: inset 3px 0 0 #60a5fa; }
 
 .tf-section-icon {
   display: inline-grid;
@@ -1961,11 +2042,60 @@ body {
 
 .tf-task-list-table tbody tr { transition: background-color 160ms ease; }
 .tf-task-list-table tbody tr:hover { background: #f8fbff; }
+.tf-task-list-table tbody tr.is-selected,
+.tf-task-list-table tbody tr.is-selected:hover {
+  background: linear-gradient(90deg, #eaf3ff, #f3f8ff);
+  box-shadow: inset 3px 0 0 #2f7bd5;
+}
+.tf-task-list-table tbody tr.is-selected td { border-color: #d7e6f8; }
 .tf-task-list-table td { height: 62px; }
+
+.tf-task-checkbox {
+  appearance: none;
+  display: inline-grid;
+  width: 17px;
+  height: 17px;
+  cursor: pointer;
+  place-content: center;
+  border: 1.5px solid #b8c4d4;
+  border-radius: 5px;
+  background: #fff;
+  transition: border-color 150ms ease, background-color 150ms ease, box-shadow 150ms ease;
+}
+.tf-task-checkbox:hover { border-color: #3b82f6; }
+.tf-task-checkbox:focus-visible { outline: none; box-shadow: 0 0 0 3px rgb(59 130 246 / 0.2); }
+.tf-task-checkbox:checked,
+.tf-task-checkbox:indeterminate { border-color: #2f7bd5; background: #2f7bd5; }
+.tf-task-checkbox:checked::after {
+  width: 4px;
+  height: 8px;
+  border: solid #fff;
+  border-width: 0 2px 2px 0;
+  content: '';
+  transform: translateY(-1px) rotate(45deg);
+}
+.tf-task-checkbox:indeterminate::after {
+  width: 8px;
+  height: 2px;
+  border-radius: 999px;
+  background: #fff;
+  content: '';
+}
 
 .tf-dark .tf-task-list-table { border-color: #2b364a; }
 .tf-dark .tf-task-list-table thead { background: #172033; color: #94a3b8; }
 .tf-dark .tf-task-list-table tbody tr:hover { background: #182943; }
+.tf-dark .tf-task-list-table tbody tr.is-selected,
+.tf-dark .tf-task-list-table tbody tr.is-selected:hover {
+  background: linear-gradient(90deg, #173354, #142a45);
+  box-shadow: inset 3px 0 0 #60a5fa;
+}
+.tf-dark .tf-task-list-table tbody tr.is-selected td { border-color: #284665; }
+.tf-dark .tf-task-list-table tbody tr.is-selected .text-task-ink { color: #f8fbff; }
+.tf-dark .tf-task-list-table tbody tr.is-selected .text-task-muted { color: #aebed2; }
+.tf-dark .tf-task-checkbox { border-color: #51637c; background: #111c2f; }
+.tf-dark .tf-task-checkbox:checked,
+.tf-dark .tf-task-checkbox:indeterminate { border-color: #60a5fa; background: #3182d8; }
 
 .tf-department-donut {
   display: grid;
@@ -2019,6 +2149,7 @@ body {
 .tf-dark .tf-summary-card--3 .tf-summary-icon { background: #302052; }
 .tf-dark .tf-summary-card--4 .tf-summary-icon { background: #263348; }
 .tf-dark .tf-summary-card--6 .tf-summary-icon { background: #4b1c29; }
+.tf-dark .tf-summary-card--7 .tf-summary-icon { background: #263348; }
 
 .tf-settings-grid {
   align-items: stretch;
@@ -2223,6 +2354,167 @@ body {
   background: #3d2a0b;
   color: #ffc95c;
   box-shadow: inset 0 1px 0 rgb(255 255 255 / 0.04);
+}
+
+.tf-analytics-overdue {
+  max-height: calc(100dvh - 112px);
+}
+
+.tf-analytics-overdue > .p-3 {
+  max-height: calc(100dvh - 252px);
+  overflow-y: auto;
+  scrollbar-width: thin;
+  scrollbar-color: rgb(148 163 184 / 0.45) transparent;
+}
+
+.tf-dark .tf-analytics-overdue .bg-slate-50 {
+  background: #17243a;
+}
+
+.tf-analytics-overdue-summary {
+  background: linear-gradient(135deg, #fff3f6 0%, #fff8fa 100%);
+}
+
+.tf-dark .tf-analytics-overdue-summary {
+  border-color: #563044;
+  background: linear-gradient(135deg, #301928 0%, #221726 100%);
+}
+
+.tf-dark .tf-analytics-overdue-summary .text-task-ink {
+  color: #fff5f7;
+}
+
+.tf-dark .tf-analytics-overdue-summary .text-task-muted {
+  color: #c8aebb;
+}
+
+.tf-dark .tf-analytics-overdue-summary .text-task-danger {
+  color: #ff718c;
+}
+
+.tf-analytics-layout {
+  grid-template-columns: minmax(0, 1fr);
+}
+
+.tf-analytics-kpis,
+.tf-analytics-details {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+
+.tf-analytics-trends {
+  grid-template-columns: minmax(0, 1.45fr) minmax(280px, 0.85fr);
+}
+
+.tf-analytics-filter-button,
+.tf-analytics-date-input {
+  display: flex;
+  height: 46px;
+  width: 100%;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  border: 1px solid #dbe4ef;
+  border-radius: 14px;
+  background: linear-gradient(180deg, #fff 0%, #f9fbfd 100%);
+  padding: 0 14px;
+  color: #172033;
+  font-size: 13px;
+  font-weight: 700;
+  box-shadow: 0 4px 12px -10px rgb(15 23 42 / .45);
+  transition: border-color .18s ease, box-shadow .18s ease, transform .18s ease;
+}
+
+.tf-analytics-filter-panel {
+  position: relative;
+  z-index: 40;
+  overflow: visible;
+  transform: none !important;
+}
+
+.tf-analytics-filter-panel:hover,
+.tf-analytics-filter-panel.is-dropdown-open {
+  z-index: 120;
+  transform: none !important;
+}
+
+.tf-analytics-filter-panel .tf-dropdown {
+  z-index: 1;
+}
+
+/* Only the currently opened field may create the top stacking layer. Without
+   this, controls rendered later in the grid (for example Granularity) paint
+   above an earlier dropdown menu such as Status. */
+.tf-analytics-filter-panel .tf-dropdown:has(.tf-dropdown-menu) {
+  z-index: 140;
+}
+
+.tf-analytics-filter-panel .tf-dropdown-menu {
+  z-index: 150;
+}
+
+.tf-analytics-filter-panel .tf-dropdown-menu {
+  box-shadow: 0 22px 50px -22px rgb(15 23 42 / .55), 0 8px 20px -12px rgb(15 23 42 / .3);
+}
+
+.tf-analytics-filter-button:hover,
+.tf-analytics-date-input:hover {
+  border-color: #8bb9f3;
+  box-shadow: 0 8px 20px -14px rgb(37 103 173 / .65);
+}
+
+.tf-analytics-filter-button:focus-visible,
+.tf-analytics-date-input:focus-within {
+  border-color: #2877ed;
+  outline: none;
+  box-shadow: 0 0 0 3px rgb(40 119 237 / .13);
+}
+
+.tf-analytics-date-input { margin-top: 8px; justify-content: flex-start; }
+.tf-analytics-date-input > svg { width: 18px; height: 18px; flex: none; color: #2877ed; }
+.tf-analytics-date-input input { min-width: 0; flex: 1; border: 0; outline: 0; background: transparent; color: inherit; font: inherit; }
+.tf-analytics-date-input input::-webkit-calendar-picker-indicator { cursor: pointer; opacity: .55; }
+
+.tf-dark .tf-analytics-filter-button,
+.tf-dark .tf-analytics-date-input {
+  border-color: #304159;
+  background: linear-gradient(180deg, #18253a 0%, #142034 100%);
+  color: #f2f6fb;
+  box-shadow: inset 0 1px 0 rgb(255 255 255 / .035);
+}
+
+.tf-dark .tf-analytics-filter-button:hover,
+.tf-dark .tf-analytics-date-input:hover { border-color: #4d78a8; background: #1b2b43; }
+
+@media (min-width: 1280px) {
+  .tf-analytics-kpis { grid-template-columns: repeat(5, minmax(145px, 1fr)); }
+  .tf-analytics-details { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+  .tf-analytics-date-filter:first-of-type { grid-column-start: 2; }
+}
+
+@media (min-width: 1760px) {
+  .tf-analytics-layout { grid-template-columns: minmax(0, 1fr) 320px; }
+  .tf-analytics-overdue { position: sticky; top: 16px; }
+}
+
+@media (max-width: 1279px) {
+  .tf-analytics-overdue,
+  .tf-analytics-overdue > .p-3 {
+    max-height: none;
+  }
+
+  .tf-analytics-overdue > .p-3 {
+    overflow: visible;
+  }
+
+  .tf-analytics-trends,
+  .tf-analytics-details {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}
+
+@media (max-width: 639px) {
+  .tf-analytics-kpis,
+  .tf-analytics-details { grid-template-columns: minmax(0, 1fr); }
 }
 
 @media (max-width: 767px) {

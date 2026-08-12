@@ -171,6 +171,17 @@ type ApiAnalytics = {
   tasks_by_category?: Array<string | Record<string, unknown>>
 }
 
+export type AnalyticsQuery = {
+  department?: string
+  employee?: string
+  priority?: 'low' | 'medium' | 'high'
+  status?: 'backlog' | 'not_started' | 'in_progress' | 'on_hold' | 'completed'
+  days?: 7 | 30 | 90 | 365
+  start_date?: string
+  end_date?: string
+  granularity?: 'day' | 'week' | 'month'
+}
+
 type DashboardMetric = { count: number; percentage: number }
 type DashboardDepartment = { id: string; name: string }
 type DashboardEvent = {
@@ -594,6 +605,15 @@ export const useTaskFlowApi = () => {
     return await apiFetch<ListResponse<ApiMember>>(`/members/${suffix}`)
   }
 
+  const getAnalytics = async (query: AnalyticsQuery = {}) => {
+    const params = new URLSearchParams()
+    Object.entries(query).forEach(([key, value]) => {
+      if (value !== undefined && value !== '') params.set(key, String(value))
+    })
+    const suffix = params.toString() ? `?${params}` : ''
+    return await apiFetch<ApiAnalytics>(`/analytics/${suffix}`)
+  }
+
   const getMember = async (id: string) => await apiFetch<ApiMember>(`/members/${id}/`)
 
   const createMember = async (member: MemberPayload, avatarFile?: File | null) => {
@@ -942,6 +962,7 @@ export const useTaskFlowApi = () => {
     updateMe,
     listProjects,
     listMembers,
+    getAnalytics,
     getMember,
     createMember,
     patchMember,

@@ -19,9 +19,10 @@ type ProjectCardMember = {
 const pageStorageKey = 'taskflow-active-page'
 const validPageKeys: PageKey[] = ['dashboard', 'tasks', 'projects', 'analytics', 'calendar', 'team', 'reports', 'messages', 'notifications', 'settings', 'help']
 const pageCookie = useCookie<PageKey | null>('taskflow-active-page', { sameSite: 'lax', maxAge: 60 * 60 * 24 * 30 })
-// Keep SSR and the first client render identical. The URL/local preference is
-// restored after mount, which replaces the active navigation DOM deterministically.
-const activePage = ref<PageKey>('dashboard')
+// The cookie is available to both SSR and the first client render, preventing
+// Dashboard from flashing before the URL/local preference is restored.
+const initialPage = pageCookie.value && validPageKeys.includes(pageCookie.value) ? pageCookie.value : 'dashboard'
+const activePage = ref<PageKey>(initialPage)
 const settingsTab = ref<'profile' | 'security'>('profile')
 const modal = ref<ModalKey>(null)
 const openDropdown = ref<string | null>(null)
@@ -55,6 +56,76 @@ const taskFlowStore = useTaskFlowStore()
 const taskFlowApi = useTaskFlowApi()
 const runtimeConfig = useRuntimeConfig()
 const route = useRoute()
+
+const analyticsFilters = reactive({
+  department: '',
+  employee: '',
+  priority: '',
+  status: '',
+  days: '30',
+  start_date: '',
+  end_date: '',
+  granularity: 'day'
+})
+const analyticsLoading = ref(false)
+const analyticsFilterError = ref('')
+let analyticsRequestSequence = 0
+
+const loadFilteredAnalytics = async () => {
+  if (activePage.value !== 'analytics') return
+  const sequence = ++analyticsRequestSequence
+  analyticsLoading.value = true
+  analyticsFilterError.value = ''
+  try {
+    const query = Object.fromEntries(Object.entries(analyticsFilters).filter(([, value]) => value)) as any
+    if (query.start_date || query.end_date) delete query.days
+    const analytics: any = await taskFlowApi.getAnalytics(query)
+    if (sequence !== analyticsRequestSequence) return
+    const completionRate = Number(analytics.task_completion_rate ?? analytics.completion_rate ?? 0)
+    const overdue = Number(analytics.overdue_tasks ?? analytics.overdue_count ?? 0)
+    const velocity = Number(analytics.team_velocity ?? analytics.active_workload ?? 0)
+    const avgTime = Number(analytics.avg_completion_time ?? analytics.average_completion_time ?? 0)
+    const activeWorkload = Number(analytics.active_workload ?? analytics.active_tasks ?? analytics.total_active_tasks ?? velocity)
+    state.value.analyticsStats = [
+      [`${completionRate}%`, 'Task Completion Rate', 'bg-[#EAF2FC]'],
+      [`${Number(analytics.on_time_completion ?? analytics.on_time_rate ?? 0)}%`, 'On-Time Completion', 'bg-task-mint'],
+      [`${Number(analytics.overdue_rate ?? overdue)}%`, 'Overdue Rate', 'bg-task-rose'],
+      [avgTime ? `${avgTime} days` : '0 days', 'Avg. Completion Time', 'bg-task-lavender'],
+      [String(activeWorkload), 'Active Workload', 'bg-[#EAF2FC]']
+    ]
+    state.value.monthlyProgress = taskFlowApi.mapAnalyticsMonthlyProgress(analytics)
+    state.value.tasksByCategory = taskFlowApi.mapAnalyticsTasksByCategory(analytics)
+  } catch (error) {
+    if (sequence === analyticsRequestSequence) analyticsFilterError.value = taskFlowApiErrorMessage(error, 'Analytics data could not be loaded')
+  } finally {
+    if (sequence === analyticsRequestSequence) analyticsLoading.value = false
+  }
+}
+
+const exportAnalyticsReport = () => {
+  if (!import.meta.client) return
+  const rows = [
+    ['Metric', 'Value'],
+    ...analyticsStats.value.map(item => [String(item[1] || ''), String(item[0] || '')]),
+    [],
+    ['Task', 'Assignee', 'Priority', 'Status', 'Due date'],
+    ...tasks.value.map(task => [String(task[0] || ''), String(task[1] || ''), String(task[2] || ''), String(task[3] || ''), String(task[4] || '')])
+  ]
+  const csv = rows.map(row => row.map(value => `"${String(value).replace(/"/g, '""')}"`).join(',')).join('\n')
+  const url = URL.createObjectURL(new Blob([`\uFEFF${csv}`], { type: 'text/csv;charset=utf-8' }))
+  const link = document.createElement('a')
+  link.href = url
+  link.download = `taskflow-analytics-${new Date().toISOString().slice(0, 10)}.csv`
+  link.click()
+  URL.revokeObjectURL(url)
+  notify('Analytics report exported')
+}
+
+let analyticsFilterTimer: ReturnType<typeof setTimeout> | undefined
+watch([activePage, () => ({ ...analyticsFilters })], () => {
+  clearTimeout(analyticsFilterTimer)
+  analyticsFilterTimer = setTimeout(loadFilteredAnalytics, 250)
+}, { deep: true })
 
 void taskFlowStore.loadBackendData()
 
@@ -170,7 +241,12 @@ const sidebarCollapsed = ref(false)
 const taskPage = ref(1)
 const selectedTaskKeys = ref<string[]>([])
 const archivedTaskCount = ref(0)
-const taskViewMode = ref<'list' | 'kanban'>('list')
+const dashboardStats = computed(() => {
+  const total = Number(stats.value[0]?.[0] || 0)
+  const archivedPercent = total ? Math.round((archivedTaskCount.value / total) * 100) : 0
+  return [...stats.value, [String(archivedTaskCount.value), 'Archived Tasks', archivedPercent]]
+})
+const taskViewMode = ref<'list' | 'kanban'>('kanban')
 const taskBoardSection = ref<'board' | 'backlog'>('board')
 const taskAttentionFilter = ref<'all' | 'overdue' | 'today' | 'on_hold' | 'unassigned'>('all')
 const draggedTaskId = ref('')
@@ -505,6 +581,22 @@ const taskOverviewCards = computed(() => [
   { label: 'Archived', value: archivedTaskCount.value, color: 'slate', status: 'archived' }
 ])
 const overdueTaskRows = computed(() => tasks.value.filter(isTaskOverdue))
+const analyticsOverdueByStaff = computed(() => {
+  const groups = new Map<string, Array<Array<string | number>>>()
+  overdueTaskRows.value.forEach((task) => {
+    const assignee = String(task[1] || 'Unassigned')
+    if (!groups.has(assignee)) groups.set(assignee, [])
+    groups.get(assignee)!.push(task)
+  })
+  return [...groups.entries()].map(([name, rows]) => ({ name, rows })).sort((a, b) => b.rows.length - a.rows.length)
+})
+const analyticsOverdueDays = (task: Array<string | number>) => {
+  const due = taskDueIso(task)
+  if (!due) return 0
+  const todayMs = new Date(`${tashkentTodayIso()}T00:00:00+05:00`).getTime()
+  const dueMs = new Date(`${due}T00:00:00+05:00`).getTime()
+  return Math.max(0, Math.floor((todayMs - dueMs) / 86_400_000))
+}
 const dueTodayTaskRows = computed(() => tasks.value.filter(task => taskDueIso(task) === tashkentTodayIso() && String(task[3] || '').toLowerCase() !== 'completed'))
 const onHoldTaskRows = computed(() => tasks.value.filter(task => String(task[3] || '').toLowerCase() === 'on hold'))
 const unassignedTaskRows = computed(() => tasks.value.filter(task => !String(task[1] || '').trim() || String(task[1] || '').toLowerCase() === 'unassigned'))
@@ -665,7 +757,7 @@ const sidebarGroups = computed(() => [
   { label: 'TEAM', items: menuPages.value.filter((page) => page.key === 'team') },
   { label: 'REPORTS', items: menuPages.value.filter((page) => page.key === 'reports') }
 ].filter((group) => group.items.length))
-const comingSoonPages = new Set<PageKey>(['projects', 'analytics', 'reports'])
+const comingSoonPages = new Set<PageKey>(['projects', 'reports'])
 const isComingSoonPage = (key: PageKey) => comingSoonPages.has(key)
 const profileName = computed(() => `${savedProfile.firstName} ${savedProfile.lastName}`.trim())
 const profileInitials = computed(() => profileName.value ? initials(profileName.value) : '')
@@ -922,6 +1014,47 @@ const categoryTrendData = computed(() => {
     growth: `${Number(item[2] || item[1] || 0)} tasks`
   }))
 })
+const analyticsStatusRows = computed(() => {
+  const definitions = [
+    ['Completed', 'completed', '#20B486'], ['In Progress', 'in progress', '#2F80ED'],
+    ['Not Started', 'not started', '#8057D5'], ['On Hold', 'on hold', '#F59E0B'], ['Backlog', 'backlog', '#94A3B8']
+  ]
+  const total = Math.max(tasks.value.length, 1)
+  return definitions.map(([label, status, color]) => {
+    const count = tasks.value.filter(task => String(task[3] || '').toLowerCase() === status).length
+    return { label, count, color, percent: Math.round(count / total * 100) }
+  })
+})
+const analyticsStatusGradient = computed(() => {
+  let cursor = 0
+  const segments = analyticsStatusRows.value.map(row => {
+    const start = cursor
+    cursor += row.percent
+    return `${row.color} ${start}% ${cursor}%`
+  })
+  return `conic-gradient(${segments.join(',')})`
+})
+const analyticsPriorityRows = computed(() => {
+  const definitions = [['High', 'high', '#EF4444'], ['Medium', 'medium', '#F59E0B'], ['Low', 'low', '#2F80ED']]
+  const total = Math.max(tasks.value.length, 1)
+  const rows = definitions.map(([label, priority, color]) => {
+    const count = tasks.value.filter(task => String(task[2] || '').toLowerCase() === priority).length
+    return { label, count, color, percent: Math.round(count / total * 100) }
+  })
+  const counted = rows.reduce((sum, row) => sum + row.count, 0)
+  rows.push({ label: 'No Priority', count: Math.max(0, tasks.value.length - counted), color: '#94A3B8', percent: Math.round(Math.max(0, tasks.value.length - counted) / total * 100) })
+  return rows
+})
+const analyticsPriorityGradient = computed(() => {
+  let cursor = 0
+  return `conic-gradient(${analyticsPriorityRows.value.map(row => { const start = cursor; cursor += row.percent; return `${row.color} ${start}% ${cursor}%` }).join(',')})`
+})
+const analyticsDepartmentRows = computed(() => dashboardDepartments.value.slice(0, 6).map((department, index) => ({
+  name: String(department.department_name || 'Department'), count: Number(department.task_count || 0), percent: Math.round(Number(department.percentage || 0)), color: dashboardDepartmentColor(index)
+})))
+const analyticsWorkloadRows = computed(() => team.value.slice(0, 5).map(member => ({
+  name: String(member[0] || 'Member'), active: Number(member[6] || 0), completed: Number(member[5] || 0), efficiency: Number(member[4] || 0), overdue: tasks.value.filter(task => isTaskOverdue(task) && String(task[1] || '') === String(member[0] || '')).length
+})))
 const productivityTrendData = computed(() =>
   heatmap.value.map((value, index) => ({
     day: ['Sat', 'Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri'][index % 7],
@@ -1047,6 +1180,20 @@ const loadTaskScope = async (scope: 'all' | 'mine' | 'archived') => {
   }
 }
 
+const loadArchivedTaskCount = async () => {
+  if (!canManageDepartment.value) return
+  try {
+    const response = await taskFlowApi.listTasks({ page_size: 1, archived: 'true' })
+    archivedTaskCount.value = Number((response as { count?: number }).count ?? taskFlowApi.listItems(response).length)
+  } catch {
+    archivedTaskCount.value = 0
+  }
+}
+
+watch(canManageDepartment, (canManage) => {
+  if (canManage) void loadArchivedTaskCount()
+}, { immediate: true })
+
 const openTaskOverviewCard = (status: string) => {
   if (status === 'archived') return
   if (taskScope.value === 'archived') void loadTaskScope(currentRole.value.toLowerCase() === 'member' ? 'mine' : 'all')
@@ -1098,6 +1245,15 @@ const setPage = (key: PageKey) => {
     mobileSidebarOpen.value = false
     return
   }
+  const enteringTasks = key === 'tasks' && activePage.value !== 'tasks'
+  if (enteringTasks) {
+    taskBoardSection.value = 'board'
+    taskViewMode.value = 'kanban'
+    taskAttentionFilter.value = 'all'
+    taskPage.value = 1
+    if (taskScope.value === 'archived') taskScope.value = currentRole.value.toLowerCase() === 'member' ? 'mine' : 'all'
+  }
+  if (key === 'analytics') sidebarCollapsed.value = true
   activePage.value = key
   pageCookie.value = key
   if (import.meta.client) {
@@ -1128,11 +1284,11 @@ const focusTaskSearch = () => {
 }
 
 const showAttentionTasks = (filter: 'overdue' | 'today' | 'on_hold' | 'unassigned' = 'overdue') => {
+  setPage('tasks')
   taskAttentionFilter.value = filter
   taskBoardSection.value = 'board'
   taskViewMode.value = 'list'
   taskPage.value = 1
-  setPage('tasks')
 }
 
 const clearTaskAttentionFilter = () => {
@@ -1299,6 +1455,7 @@ onMounted(() => {
   }
   syncRootThemeClass()
   restoreActivePage()
+  void loadArchivedTaskCount()
   const linkedTaskId = String(route.query.task || '')
   if (linkedTaskId) {
     setPage('tasks')
@@ -2989,10 +3146,8 @@ const iconPath = (name: string) => {
 
 <template>
   <main :class="['tf-shell', isDarkTheme ? 'tf-dark' : '']">
-    <Transition name="tf-loading-fade">
-      <LoadingPulse v-if="!state.loaded" />
-    </Transition>
-    <section class="tf-window">
+    <LoadingPulse v-if="!state.loaded" />
+    <section v-else class="tf-window">
       <div v-if="mobileSidebarOpen" class="tf-mobile-overlay" @click="mobileSidebarOpen = false" />
       <aside :class="['tf-sidebar tf-sidebar-modern relative flex shrink-0 flex-col border-r border-task-line bg-white transition-[width,padding] duration-300 ease-out', sidebarCollapsed ? 'w-[82px] px-3 py-4' : 'w-[250px] px-4 py-4', mobileSidebarOpen ? 'is-open' : '']">
         <button type="button" class="tf-icon-button absolute right-3 top-3 md:hidden" aria-label="Close menu" @click="mobileSidebarOpen = false">
@@ -3001,7 +3156,10 @@ const iconPath = (name: string) => {
         <div :class="['tf-sidebar-brand flex h-[64px] items-center', sidebarCollapsed ? 'justify-center px-1' : 'gap-1 px-0']">
           <button class="flex min-w-0 flex-1 items-center justify-start" type="button" :title="sidebarCollapsed ? 'Open menu' : 'TaskFlow'" :aria-label="sidebarCollapsed ? 'Open menu' : 'Go to dashboard'" @click="sidebarCollapsed ? (sidebarCollapsed = false) : setPage('dashboard')">
             <img v-if="sidebarCollapsed" src="/taskflow-logo-mark.png?v=3" alt="TaskFlow" class="h-11 w-11 rounded-[12px] object-contain" />
-            <img v-else :src="isDarkTheme ? '/taskflow-logo-compact-dark.png?v=3' : '/taskflow-logo-compact.png?v=3'" alt="TaskFlow" class="h-[54px] w-[145px] object-contain object-left" />
+            <span v-else class="tf-sidebar-brand-logo relative block h-[54px] w-[145px]">
+              <img src="/taskflow-logo-compact.png?v=4" alt="TaskFlow" class="tf-sidebar-brand-logo__light absolute inset-0 h-full w-full object-contain object-left" />
+              <img src="/taskflow-logo-compact-dark.png?v=4" alt="" aria-hidden="true" class="tf-sidebar-brand-logo__dark absolute inset-0 h-full w-full object-contain object-left" />
+            </span>
           </button>
           <button v-if="!sidebarCollapsed" type="button" class="group hidden h-10 w-10 shrink-0 place-items-center rounded-[12px] bg-slate-50 text-slate-500 transition duration-200 hover:-translate-x-0.5 hover:bg-task-blueSoft hover:text-task-blue md:grid" aria-label="Collapse menu" title="Close sidebar" @click="sidebarCollapsed = true">
             <svg viewBox="0 0 24 24" class="h-5 w-5 transition group-hover:scale-110" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m13 7-5 5 5 5M19 7l-5 5 5 5" /></svg>
@@ -3077,6 +3235,12 @@ const iconPath = (name: string) => {
           </div>
           <div class="relative z-10 flex items-center gap-3">
             <div id="header-focus-radio-slot" />
+            <label v-if="activePage === 'analytics'" class="relative hidden sm:block">
+              <svg viewBox="0 0 24 24" class="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-task-muted" fill="none" stroke="currentColor" stroke-width="1.8"><path :d="iconPath('calendar')" /></svg>
+              <select v-model="analyticsFilters.days" class="tf-input h-11 min-w-[145px] appearance-none py-0 pl-10 pr-8 text-xs font-bold text-task-ink" :disabled="Boolean(analyticsFilters.start_date || analyticsFilters.end_date)"><option value="7">Last 7 Days</option><option value="30">Last 30 Days</option><option value="90">Last 90 Days</option><option value="365">Last 365 Days</option></select>
+              <svg viewBox="0 0 20 20" class="pointer-events-none absolute right-2.5 top-1/2 h-4 w-4 -translate-y-1/2 text-task-muted" fill="none" stroke="currentColor" stroke-width="2"><path d="m5 7.5 5 5 5-5" /></svg>
+            </label>
+            <button v-if="activePage === 'analytics'" type="button" class="tf-primary hidden h-11 px-4 sm:inline-flex" @click="exportAnalyticsReport"><svg viewBox="0 0 24 24" class="h-4 w-4" fill="none" stroke="currentColor" stroke-width="1.9"><path d="M12 3v12m0 0 4-4m-4 4-4-4M5 21h14" /></svg>Export Report</button>
             <label v-if="false" class="relative hidden sm:block">
               <svg viewBox="0 0 24 24" class="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-task-muted" fill="none" stroke="currentColor" stroke-width="1.7"><path :d="iconPath('search')" /></svg>
               <input v-model="taskSearchInput" class="tf-input w-[230px] pl-9 pr-10" placeholder="Search tasks..." @focus="focusTaskSearch" @input="focusTaskSearch" />
@@ -3097,16 +3261,16 @@ const iconPath = (name: string) => {
         </ClientOnly>
 
         <section v-if="activePage === 'dashboard'" class="space-y-4">
-          <div class="tf-dashboard-stats grid gap-3 sm:grid-cols-2 lg:grid-cols-4 2xl:grid-cols-7">
-            <article v-for="index in state.loaded ? 0 : 7" :key="`summary-skeleton-${index}`" class="tf-panel h-[118px] animate-pulse border p-4 shadow-none"><div class="h-9 w-9 rounded-[11px] bg-slate-200" /><div class="mt-3 h-6 w-12 rounded bg-slate-200" /><div class="mt-3 h-1.5 rounded-full bg-slate-200" /></article>
-            <article v-for="(item, index) in stats" :key="String(item[1])" :class="['tf-panel tf-summary-card border p-4 shadow-none', `tf-summary-card--${index}`]">
-              <div class="flex items-center gap-2.5"><span class="tf-summary-icon grid h-9 w-9 place-items-center rounded-[11px]"><svg viewBox="0 0 24 24" class="h-[17px] w-[17px]" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><path :d="index === 1 ? 'm6 12 4 4 8-9' : index === 2 ? 'M12 7v5l3 2m7-2a9 9 0 1 1-18 0 9 9 0 0 1 18 0Z' : index === 4 ? 'M4 8h16l-1 12H5L4 8Zm2-4h12l2 4H4l2-4Zm4 8h4' : index === 5 ? 'M12 21a9 9 0 1 0 0-18 9 9 0 0 0 0 18Zm-2-12v6m4-6v6' : index === 6 ? 'M12 9v4m0 4h.01M4.5 19h15L12 4 4.5 19Z' : index === 3 ? 'M6 4h12v16H6V4Zm4 5h4m-4 3h4' : 'M5 4h14v16H5V4Zm4 4h6m-6 4h6'" /></svg></span><p class="text-[11px] font-semibold text-task-muted">{{ item[1] }}</p></div>
+          <div class="tf-dashboard-stats grid gap-3 sm:grid-cols-2 lg:grid-cols-4 2xl:grid-cols-8">
+            <article v-for="index in state.loaded ? 0 : 8" :key="`summary-skeleton-${index}`" class="tf-panel h-[118px] animate-pulse border p-4 shadow-none"><div class="h-9 w-9 rounded-[11px] bg-slate-200" /><div class="mt-3 h-6 w-12 rounded bg-slate-200" /><div class="mt-3 h-1.5 rounded-full bg-slate-200" /></article>
+            <article v-for="(item, index) in dashboardStats" :key="String(item[1])" :class="['tf-panel tf-summary-card border p-4 shadow-none', `tf-summary-card--${index}`]">
+              <div class="flex items-center gap-2.5"><span class="tf-summary-icon grid h-9 w-9 place-items-center rounded-[11px]"><svg viewBox="0 0 24 24" class="h-[17px] w-[17px]" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><path :d="index === 7 ? 'M4 7h16v13H4V7Zm-1-4h18v4H3V3Zm6 9h6' : index === 1 ? 'm6 12 4 4 8-9' : index === 2 ? 'M12 7v5l3 2m7-2a9 9 0 1 1-18 0 9 9 0 0 1 18 0Z' : index === 4 ? 'M4 8h16l-1 12H5L4 8Zm2-4h12l2 4H4l2-4Zm4 8h4' : index === 5 ? 'M12 21a9 9 0 1 0 0-18 9 9 0 0 0 0 18Zm-2-12v6m4-6v6' : index === 6 ? 'M12 9v4m0 4h.01M4.5 19h15L12 4 4.5 19Z' : index === 3 ? 'M6 4h12v16H6V4Zm4 5h4m-4 3h4' : 'M5 4h14v16H5V4Zm4 4h6m-6 4h6'" /></svg></span><p class="text-[11px] font-semibold text-task-muted">{{ item[1] }}</p></div>
               <p class="mt-3 text-2xl font-extrabold text-task-ink">{{ item[0] }}</p>
               <div class="mt-3 flex items-center gap-2 text-[11px] font-bold"><span class="tf-summary-percent">{{ Number(item[2] || 0).toFixed(0) }}%</span><div class="tf-summary-track h-1.5 flex-1 overflow-hidden rounded-full"><div class="tf-summary-progress h-full rounded-full" :style="{ width: `${Math.min(100, Number(item[2] || 0))}%` }" /></div></div>
             </article>
           </div>
           <div class="grid items-stretch gap-4 xl:grid-cols-3">
-            <section class="tf-panel tf-dashboard-list overflow-hidden p-0"><header class="tf-dashboard-list-header"><h2 class="flex items-center gap-2 font-bold"><span class="text-task-danger">⚠</span>Needs Attention</h2><button type="button" class="text-xs font-bold text-task-blue" @click="showAttentionTasks('overdue')">View all →</button></header><div class="tf-dashboard-list-body divide-y divide-task-line"><button type="button" class="tf-dashboard-list-row flex w-full items-center text-left transition hover:bg-task-dangerSoft/50" @click="showAttentionTasks('overdue')"><span class="grid h-9 w-9 place-items-center rounded-[10px] bg-task-dangerSoft text-task-danger">!</span><span class="min-w-0 flex-1 font-semibold">Overdue Tasks</span><b class="text-task-danger">{{ overdueTaskRows.length }}</b></button><button type="button" class="tf-dashboard-list-row flex w-full items-center text-left transition hover:bg-task-warningSoft/50" @click="showAttentionTasks('today')"><span class="grid h-9 w-9 place-items-center rounded-[10px] bg-task-warningSoft text-task-warning">▣</span><span class="min-w-0 flex-1 font-semibold">Deadlines Today</span><b class="text-task-warning">{{ dueTodayTaskRows.length }}</b></button><button type="button" class="tf-dashboard-list-row flex w-full items-center text-left transition hover:bg-task-warningSoft/50" @click="showAttentionTasks('on_hold')"><span class="grid h-9 w-9 place-items-center rounded-[10px] bg-task-warningSoft text-task-warning">Ⅱ</span><span class="min-w-0 flex-1 font-semibold">On Hold Tasks</span><b class="text-task-warning">{{ onHoldTaskRows.length }}</b></button><button type="button" class="tf-dashboard-list-row flex w-full items-center text-left transition hover:bg-task-blueSoft" @click="showAttentionTasks('unassigned')"><span class="grid h-9 w-9 place-items-center rounded-[10px] bg-task-blueSoft text-task-blue">?</span><span class="min-w-0 flex-1 font-semibold">Tasks without Assignees</span><b class="text-task-blue">{{ unassignedTaskRows.length }}</b></button></div></section>
+            <section class="tf-panel tf-dashboard-list tf-attention-list overflow-hidden p-0"><header class="tf-dashboard-list-header"><h2 class="flex items-center gap-2 font-bold"><span class="text-task-danger">⚠</span>Needs Attention</h2><button type="button" class="text-xs font-bold text-task-blue" @click="showAttentionTasks('overdue')">View all →</button></header><div class="tf-dashboard-list-body divide-y divide-task-line"><button type="button" class="tf-dashboard-list-row tf-attention-row tf-attention-row--danger flex w-full items-center text-left" @click="showAttentionTasks('overdue')"><span class="grid h-9 w-9 place-items-center rounded-[10px] bg-task-dangerSoft text-task-danger">!</span><span class="min-w-0 flex-1 font-semibold">Overdue Tasks</span><b class="text-task-danger">{{ overdueTaskRows.length }}</b></button><button type="button" class="tf-dashboard-list-row tf-attention-row tf-attention-row--warning flex w-full items-center text-left" @click="showAttentionTasks('today')"><span class="grid h-9 w-9 place-items-center rounded-[10px] bg-task-warningSoft text-task-warning">▣</span><span class="min-w-0 flex-1 font-semibold">Deadlines Today</span><b class="text-task-warning">{{ dueTodayTaskRows.length }}</b></button><button type="button" class="tf-dashboard-list-row tf-attention-row tf-attention-row--warning flex w-full items-center text-left" @click="showAttentionTasks('on_hold')"><span class="grid h-9 w-9 place-items-center rounded-[10px] bg-task-warningSoft text-task-warning">Ⅱ</span><span class="min-w-0 flex-1 font-semibold">On Hold Tasks</span><b class="text-task-warning">{{ onHoldTaskRows.length }}</b></button><button type="button" class="tf-dashboard-list-row tf-attention-row tf-attention-row--blue flex w-full items-center text-left" @click="showAttentionTasks('unassigned')"><span class="grid h-9 w-9 place-items-center rounded-[10px] bg-task-blueSoft text-task-blue">?</span><span class="min-w-0 flex-1 font-semibold">Tasks without Assignees</span><b class="text-task-blue">{{ unassignedTaskRows.length }}</b></button></div></section>
             <section class="tf-panel tf-dashboard-list overflow-hidden p-0"><header class="tf-dashboard-list-header"><h2 class="flex items-center gap-2 font-bold"><span class="tf-section-icon">▣</span>Today’s Schedule</h2><div class="flex items-center gap-3"><span class="tf-pill bg-task-blueSoft text-task-blue">{{ dashboardTodayEvents.length }}</span><button type="button" class="text-xs font-bold text-task-blue" @click="setPage('calendar')">View all</button></div></header><div class="tf-dashboard-list-body divide-y divide-task-line"><button v-for="event in dashboardTodayEvents" :key="String(event.id)" type="button" class="tf-dashboard-list-row w-full text-left transition hover:bg-task-blueSoft focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-task-blue" @click="openDashboardEvent(event)"><time class="tf-event-date grid h-11 min-w-14 place-items-center rounded-[9px] bg-task-blueSoft px-2 text-xs font-bold text-task-blue">{{ dashboardDateTime(event.starts_at, 'time') }}</time><div class="min-w-0 flex-1"><p class="truncate text-sm font-bold">{{ event.title }}</p><p class="mt-1 truncate text-xs text-task-muted">{{ event.department?.name || 'No department' }} · {{ event.location || 'Online' }}</p></div><span class="text-xs text-task-muted">›</span></button><div v-if="!dashboardTodayEvents.length" class="tf-empty-events"><EmptyCalendarArt /><p>No events scheduled for today.</p><small>Enjoy your free time! 🎉</small></div></div></section>
             <section class="tf-panel tf-dashboard-list overflow-hidden p-0"><header class="tf-dashboard-list-header"><h2 class="font-bold">Upcoming Deadlines</h2><div class="flex items-center gap-3"><span class="tf-pill bg-task-blueSoft text-task-blue">{{ dashboardDeadlines.length }}</span><button type="button" class="text-xs font-bold text-task-blue" @click="setPage('tasks')">View all</button></div></header><div class="tf-dashboard-list-body divide-y divide-task-line"><button v-for="task in dashboardDeadlines" :key="String(task.id)" type="button" class="tf-dashboard-list-row w-full text-left transition hover:bg-task-blueSoft focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-task-blue" @click="openDashboardTask(task)"><span :class="['h-2.5 w-2.5 shrink-0 rounded-full', task.priority === 'high' ? 'bg-task-danger' : task.priority === 'medium' ? 'bg-task-warning' : 'bg-task-success']" /><div class="min-w-0 flex-1"><p class="truncate text-sm font-bold">{{ task.title }}</p><p class="mt-1 truncate text-xs text-task-muted">{{ task.department?.name || 'No department' }}</p></div><div class="text-right"><p class="text-xs font-bold">{{ dashboardDateTime(task.due_date) }}</p><p class="mt-1 text-[10px] font-semibold text-task-warning">{{ task.days_remaining }} days left</p></div></button><div v-if="!dashboardDeadlines.length" class="tf-empty-events"><p>No upcoming deadlines.</p><small>You are all caught up.</small></div></div></section>
           </div>
@@ -3284,10 +3448,10 @@ const iconPath = (name: string) => {
           </div>
           <div v-else-if="taskViewMode === 'list'" class="overflow-x-auto">
           <table class="tf-task-list-table w-full min-w-[940px] text-left text-sm">
-            <thead><tr><th class="w-12 p-3"><input type="checkbox" class="h-4 w-4 cursor-pointer rounded border-task-line accent-task-blue" :checked="currentTaskPageAllSelected" :indeterminate="currentTaskPageSomeSelected" aria-label="Select all tasks on this page" @click.stop @change="toggleCurrentTaskPageSelection" /></th><th class="p-3">Task</th><th class="p-3">Project</th><th class="p-3">Assignee</th><th class="p-3">Priority</th><th class="p-3">Due Date</th><th class="p-3">Status</th><th class="p-3 text-right">Actions</th></tr></thead>
+            <thead><tr><th class="w-12 p-3"><input type="checkbox" class="tf-task-checkbox" :checked="currentTaskPageAllSelected" :indeterminate="currentTaskPageSomeSelected" aria-label="Select all tasks on this page" @click.stop @change="toggleCurrentTaskPageSelection" /></th><th class="p-3">Task</th><th class="p-3">Project</th><th class="p-3">Assignee</th><th class="p-3">Priority</th><th class="p-3">Due Date</th><th class="p-3">Status</th><th class="p-3 text-right">Actions</th></tr></thead>
             <tbody class="divide-y divide-task-line">
-              <tr v-for="task in taskListPageTasks" :key="String(task[6] || `${task[0]}-${task[4]}`)" :class="['cursor-pointer transition-colors', isTaskSelected(task) ? 'bg-task-blueSoft/60' : '']" @click="openTaskFromCard(task)">
-                <td class="p-3"><input type="checkbox" class="h-4 w-4 cursor-pointer rounded border-task-line accent-task-blue" :checked="isTaskSelected(task)" :aria-label="`Select ${task[0]}`" @click.stop @change="toggleTaskSelection(task)" /></td>
+              <tr v-for="task in taskListPageTasks" :key="String(task[6] || `${task[0]}-${task[4]}`)" :class="['cursor-pointer', isTaskSelected(task) ? 'is-selected' : '']" @click="openTaskFromCard(task)">
+                <td class="p-3"><input type="checkbox" class="tf-task-checkbox" :checked="isTaskSelected(task)" :aria-label="`Select ${task[0]}`" @click.stop @change="toggleTaskSelection(task)" /></td>
                 <td class="p-3"><p class="font-bold text-task-ink">{{ task[0] }}</p><p class="mt-1 max-w-64 truncate text-[11px] text-task-muted">{{ task[7] || 'Team task' }}</p></td>
                 <td class="p-3"><span class="inline-flex rounded-full bg-task-lavender px-2.5 py-1 text-[11px] font-semibold text-[#8057D5]">{{ task[7] || 'General' }}</span></td>
                 <td class="p-3"><div class="flex items-center gap-2"><span class="grid h-7 w-7 shrink-0 place-items-center overflow-hidden rounded-full bg-task-blueSoft text-[9px] font-bold text-task-blue"><img v-if="taskAssigneeDetailsOf(task)[0]?.avatar" :src="taskAssigneeDetailsOf(task)[0]?.avatar" :alt="String(task[1])" class="h-full w-full object-cover" /><span v-else>{{ initials(String(task[1])) }}</span></span><span class="max-w-36 truncate text-task-ink">{{ task[1] }}</span></div></td>
@@ -3407,20 +3571,33 @@ const iconPath = (name: string) => {
           </div>
         </section>
 
-        <section v-else-if="activePage === 'analytics'" class="space-y-4">
-          <div class="tf-panel grid gap-4 p-4 sm:grid-cols-2 xl:grid-cols-4">
-            <div v-for="(item, index) in analyticsStats" :key="String(item[1])" :class="['relative h-40 overflow-hidden rounded-[18px] border bg-gradient-to-br p-5', dashboardStatStyles[index]?.card]">
-              <div class="flex items-start gap-4"><span :class="['grid h-12 w-12 shrink-0 place-items-center rounded-full bg-white/85 shadow-sm ring-1', dashboardStatStyles[index]?.icon]"><svg viewBox="0 0 24 24" class="h-6 w-6" fill="none" stroke="currentColor" stroke-width="1.8"><path :d="index === 0 ? 'M8 12l3 3 5-6M12 22a10 10 0 1 1 0-20 10 10 0 0 1 0 20Z' : index === 1 ? 'M8 2h8M8 22h8M9 2v5l3 3 3-3V2M9 22v-5l3-3 3 3v5' : index === 2 ? 'M12 13 16 9M5.6 19a8 8 0 1 1 12.8 0M12 5v2M5 12H3m18 0h-2' : iconPath('projects')" /></svg></span><div><p :class="['text-3xl font-bold', index === 0 ? 'text-task-blue' : index === 1 ? 'text-[#8057D5]' : index === 2 ? 'text-task-success' : 'text-task-danger']">{{ item[0] }}</p><p class="mt-1 text-sm font-medium text-task-muted">{{ item[1] }}</p><span :class="['mt-2 inline-flex rounded-full px-2.5 py-1 text-[10px] font-bold', index === 0 ? 'bg-task-blueSoft text-task-blue' : index === 1 ? 'bg-task-lavender text-[#8057D5]' : index === 2 ? 'bg-task-successSoft text-task-success' : 'bg-task-dangerSoft text-task-danger']">Live vs last month</span></div></div>
-              <svg viewBox="0 0 120 25" :class="['absolute bottom-3 left-4 right-4 h-7 w-[calc(100%-2rem)] opacity-80', dashboardStatStyles[index]?.line]" fill="none" preserveAspectRatio="none"><path d="M2 18 12 15l10 5 12-6 10 4 14-9 12 6 10-3 12 4 12-8 14 6" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" /></svg>
+        <section v-else-if="activePage === 'analytics'" class="grid items-start gap-4 xl:grid-cols-[minmax(0,1fr)_300px] 2xl:grid-cols-[minmax(0,1fr)_320px]">
+          <div class="tf-analytics-main min-w-0 space-y-3">
+          <div :class="['tf-analytics-filter-panel tf-panel p-3', openDropdown?.startsWith('analytics') ? 'is-dropdown-open' : '']">
+            <div class="tf-analytics-filter-grid grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
+              <div class="text-xs font-bold text-task-muted">Department<div class="tf-dropdown mt-2"><button type="button" class="tf-analytics-filter-button" @click="openDropdown = openDropdown === 'analyticsDepartment' ? null : 'analyticsDepartment'"><span class="truncate">{{ memberDepartmentOptions.find(item => item.id === analyticsFilters.department)?.name || 'All departments' }}</span><svg viewBox="0 0 20 20" :class="['h-4 w-4 shrink-0 transition-transform', openDropdown === 'analyticsDepartment' ? 'rotate-180' : '']" fill="none" stroke="currentColor" stroke-width="2"><path d="m5 7.5 5 5 5-5" /></svg></button><div v-if="openDropdown === 'analyticsDepartment'" class="tf-dropdown-menu max-h-56 overflow-y-auto"><button type="button" class="tf-dropdown-option" @click="analyticsFilters.department = ''; openDropdown = null">All departments</button><button v-for="item in memberDepartmentOptions" :key="item.id" type="button" class="tf-dropdown-option" @click="analyticsFilters.department = item.id; openDropdown = null"><span>{{ item.name }}</span><span v-if="analyticsFilters.department === item.id">✓</span></button></div></div></div>
+              <div class="text-xs font-bold text-task-muted">Employee<div class="tf-dropdown mt-2"><button type="button" class="tf-analytics-filter-button" @click="openDropdown = openDropdown === 'analyticsEmployee' ? null : 'analyticsEmployee'"><span class="truncate">{{ team.find(item => String(item[9] || item[7] || '') === analyticsFilters.employee)?.[0] || 'All staff' }}</span><svg viewBox="0 0 20 20" :class="['h-4 w-4 shrink-0 transition-transform', openDropdown === 'analyticsEmployee' ? 'rotate-180' : '']" fill="none" stroke="currentColor" stroke-width="2"><path d="m5 7.5 5 5 5-5" /></svg></button><div v-if="openDropdown === 'analyticsEmployee'" class="tf-dropdown-menu max-h-56 overflow-y-auto"><button type="button" class="tf-dropdown-option" @click="analyticsFilters.employee = ''; openDropdown = null">All staff</button><button v-for="item in team" :key="String(item[9] || item[7] || item[0])" type="button" class="tf-dropdown-option" @click="analyticsFilters.employee = String(item[9] || item[7] || ''); openDropdown = null"><span>{{ item[0] }}</span><span v-if="analyticsFilters.employee === String(item[9] || item[7] || '')">✓</span></button></div></div></div>
+              <div class="text-xs font-bold text-task-muted">Priority<div class="tf-dropdown mt-2"><button type="button" class="tf-analytics-filter-button" @click="openDropdown = openDropdown === 'analyticsPriority' ? null : 'analyticsPriority'"><span class="capitalize">{{ analyticsFilters.priority || 'All priorities' }}</span><svg viewBox="0 0 20 20" :class="['h-4 w-4 transition-transform', openDropdown === 'analyticsPriority' ? 'rotate-180' : '']" fill="none" stroke="currentColor" stroke-width="2"><path d="m5 7.5 5 5 5-5" /></svg></button><div v-if="openDropdown === 'analyticsPriority'" class="tf-dropdown-menu"><button v-for="item in [['','All priorities'],['low','Low'],['medium','Medium'],['high','High']]" :key="item[0]" type="button" class="tf-dropdown-option" @click="analyticsFilters.priority = item[0]; openDropdown = null"><span>{{ item[1] }}</span><span v-if="analyticsFilters.priority === item[0]">✓</span></button></div></div></div>
+              <div class="text-xs font-bold text-task-muted">Status<div class="tf-dropdown mt-2"><button type="button" class="tf-analytics-filter-button" @click="openDropdown = openDropdown === 'analyticsStatus' ? null : 'analyticsStatus'"><span>{{ analyticsFilters.status ? analyticsFilters.status.split('_').map(word => word[0].toUpperCase() + word.slice(1)).join(' ') : 'All statuses' }}</span><svg viewBox="0 0 20 20" :class="['h-4 w-4 transition-transform', openDropdown === 'analyticsStatus' ? 'rotate-180' : '']" fill="none" stroke="currentColor" stroke-width="2"><path d="m5 7.5 5 5 5-5" /></svg></button><div v-if="openDropdown === 'analyticsStatus'" class="tf-dropdown-menu"><button v-for="item in [['','All statuses'],['backlog','Backlog'],['not_started','Not started'],['in_progress','In progress'],['on_hold','On hold'],['completed','Completed']]" :key="item[0]" type="button" class="tf-dropdown-option" @click="analyticsFilters.status = item[0]; openDropdown = null"><span>{{ item[1] }}</span><span v-if="analyticsFilters.status === item[0]">✓</span></button></div></div></div>
+              <label class="tf-analytics-date-filter text-xs font-bold text-task-muted">Start date<div class="tf-analytics-date-input"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path :d="iconPath('calendar')" /></svg><input v-model="analyticsFilters.start_date" type="date" /></div></label>
+              <label class="tf-analytics-date-filter text-xs font-bold text-task-muted">End date<div class="tf-analytics-date-input"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path :d="iconPath('calendar')" /></svg><input v-model="analyticsFilters.end_date" type="date" /></div></label>
+              <div class="tf-analytics-date-filter text-xs font-bold text-task-muted">Granularity<div class="tf-dropdown mt-2"><button type="button" class="tf-analytics-filter-button" @click="openDropdown = openDropdown === 'analyticsGranularity' ? null : 'analyticsGranularity'"><span class="capitalize">{{ analyticsFilters.granularity }}ly</span><svg viewBox="0 0 20 20" :class="['h-4 w-4 transition-transform', openDropdown === 'analyticsGranularity' ? 'rotate-180' : '']" fill="none" stroke="currentColor" stroke-width="2"><path d="m5 7.5 5 5 5-5" /></svg></button><div v-if="openDropdown === 'analyticsGranularity'" class="tf-dropdown-menu"><button v-for="item in [['day','Daily'],['week','Weekly'],['month','Monthly']]" :key="item[0]" type="button" class="tf-dropdown-option" @click="analyticsFilters.granularity = item[0]; openDropdown = null"><span>{{ item[1] }}</span><span v-if="analyticsFilters.granularity === item[0]">✓</span></button></div></div></div>
+            </div>
+            <div class="mt-3 flex min-h-5 items-center justify-between gap-3 text-xs"><p v-if="analyticsFilterError" class="font-semibold text-task-danger">{{ analyticsFilterError }}</p><p v-else class="text-task-muted">{{ analyticsLoading ? 'Updating analytics…' : 'Filters are applied automatically.' }}</p><button type="button" class="font-bold text-task-blue" @click="Object.assign(analyticsFilters, { department: '', employee: '', priority: '', status: '', days: '30', start_date: '', end_date: '', granularity: 'day' })">Reset filters</button></div>
+          </div>
+          <div class="grid gap-3 sm:grid-cols-2 xl:grid-cols-5">
+            <div v-for="(item, index) in analyticsStats" :key="String(item[1])" :class="['tf-panel relative min-h-[112px] overflow-hidden p-4', dashboardStatStyles[index % dashboardStatStyles.length]?.card]">
+              <div class="flex flex-col items-start gap-2"><span :class="['grid h-10 w-10 shrink-0 place-items-center rounded-[12px] bg-white/85 shadow-sm ring-1', dashboardStatStyles[index % dashboardStatStyles.length]?.icon]"><svg viewBox="0 0 24 24" class="h-5 w-5" fill="none" stroke="currentColor" stroke-width="1.8"><path :d="index === 0 ? 'M8 12l3 3 5-6M12 22a10 10 0 1 1 0-20 10 10 0 0 1 0 20Z' : index === 1 ? 'M8 2h8M8 22h8M9 2v5l3 3 3-3V2M9 22v-5l3-3 3 3v5' : index === 2 ? 'M12 13 16 9M5.6 19a8 8 0 1 1 12.8 0M12 5v2M5 12H3m18 0h-2' : iconPath('projects')" /></svg></span><div class="min-w-0 w-full"><p class="whitespace-normal text-[11px] font-bold leading-4 text-task-muted">{{ item[1] }}</p><p class="mt-1 text-2xl font-extrabold text-task-ink">{{ item[0] }}</p><span class="mt-1 inline-flex text-[9px] font-bold text-task-success">↗ Live data</span></div></div>
+              <svg viewBox="0 0 120 25" :class="['absolute bottom-3 right-3 h-7 w-20 opacity-80', dashboardStatStyles[index % dashboardStatStyles.length]?.line]" fill="none" preserveAspectRatio="none"><path d="M2 18 12 15l10 5 12-6 10 4 14-9 12 6 10-3 12 4 12-8 14 6" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" /></svg>
             </div>
           </div>
 
-          <div class="grid gap-4 lg:grid-cols-2">
-            <div class="tf-panel p-6">
-              <div class="mb-5 flex items-start justify-between">
+          <div class="grid gap-3 xl:grid-cols-[1.55fr_.85fr]">
+            <div class="tf-panel p-4">
+              <div class="mb-2 flex items-start justify-between">
                 <div>
-                  <h2 class="text-xl font-bold leading-tight">Monthly Progress</h2>
-                  <p class="mt-3 text-base text-task-muted">Task completion trends over 6 months</p>
+                  <h2 class="text-xl font-bold leading-tight">Task Completion Trend</h2>
+                  <p class="mt-1 text-xs text-task-muted">Created tasks · Completed tasks</p>
                 </div>
                 <div class="relative">
                   <button type="button" class="tf-icon-button h-12 w-12 rounded-full" @click="toggleActionMenu('monthly-progress-actions')">
@@ -3433,7 +3610,7 @@ const iconPath = (name: string) => {
                   </div>
                 </div>
               </div>
-              <div class="relative h-[300px] overflow-hidden" @mouseleave="hoveredMonthlyMonth = null">
+              <div class="relative h-[220px] overflow-hidden" @mouseleave="hoveredMonthlyMonth = null">
                 <div class="absolute left-0 top-[36px] z-10 grid h-[180px] grid-rows-5 text-base text-task-muted">
                   <span v-for="tick in yAxisTicks" :key="tick">{{ tick }}</span>
                 </div>
@@ -3477,11 +3654,11 @@ const iconPath = (name: string) => {
               </div>
             </div>
 
-            <div class="tf-panel p-6">
-              <div class="mb-5 flex items-start justify-between">
+            <div class="tf-panel p-4">
+              <div class="mb-2 flex items-start justify-between">
                 <div>
                   <h2 class="text-xl font-bold leading-tight">Team Efficiency Trend</h2>
-                  <p class="mt-3 text-base text-task-muted">Overall efficiency percentage over time</p>
+                  <p class="mt-1 text-xs text-task-muted">Overall efficiency over time</p>
                 </div>
                 <div class="relative">
                   <button type="button" class="tf-icon-button h-12 w-12 rounded-full" @click="toggleActionMenu('efficiency-actions')">
@@ -3494,7 +3671,7 @@ const iconPath = (name: string) => {
                   </div>
                 </div>
               </div>
-              <div class="relative h-[300px] overflow-hidden" @mouseleave="hoveredEfficiencyMonth = null">
+              <div class="relative h-[220px] overflow-hidden" @mouseleave="hoveredEfficiencyMonth = null">
                 <div class="absolute left-0 top-[36px] z-10 grid h-[180px] grid-rows-5 text-base text-task-muted">
                   <span v-for="tick in yAxisTicks" :key="tick">{{ tick }}</span>
                 </div>
@@ -3531,7 +3708,30 @@ const iconPath = (name: string) => {
             </div>
           </div>
 
-          <div :class="['grid gap-4', productivityTrendData.length ? 'lg:grid-cols-3' : 'lg:grid-cols-2']">
+          <div class="grid gap-3 xl:grid-cols-3">
+            <section class="tf-panel p-5">
+              <h2 class="text-base font-extrabold text-task-ink">Task Status</h2>
+              <div class="mt-5 flex items-center gap-5"><div class="relative h-36 w-36 shrink-0 rounded-full" :style="{ background: analyticsStatusGradient }"><div class="absolute inset-7 grid place-items-center rounded-full bg-white text-center"><div><b class="block text-2xl text-task-ink">{{ tasks.length }}</b><small class="text-task-muted">Tasks</small></div></div></div><div class="min-w-0 flex-1 space-y-3"><div v-for="row in analyticsStatusRows" :key="row.label" class="flex items-center gap-2 text-xs"><i class="h-2.5 w-2.5 rounded-full" :style="{ background: row.color }" /><span class="min-w-0 flex-1 truncate text-task-muted">{{ row.label }}</span><b>{{ row.count }} ({{ row.percent }}%)</b></div></div></div>
+            </section>
+            <section class="tf-panel p-5">
+              <h2 class="text-base font-extrabold text-task-ink">Department Performance</h2>
+              <div class="mt-5 space-y-4"><div v-for="row in analyticsDepartmentRows" :key="row.name" class="grid grid-cols-[130px_1fr_48px] items-center gap-3 text-xs"><span class="truncate font-semibold text-task-muted">{{ row.name }}</span><div class="h-2 overflow-hidden rounded-full bg-slate-200"><div class="h-full rounded-full" :style="{ width: `${row.percent}%`, background: row.color }" /></div><b class="text-right">{{ row.percent }}%</b></div><p v-if="!analyticsDepartmentRows.length" class="py-12 text-center text-sm text-task-muted">No department performance data.</p></div>
+            </section>
+            <section class="tf-panel p-5">
+              <div class="flex items-center justify-between"><h2 class="text-base font-extrabold text-task-ink">Team Workload</h2><span class="tf-pill bg-task-blueSoft text-task-blue">By Staff</span></div>
+              <div class="mt-4 overflow-x-auto"><table class="w-full min-w-[560px] text-left text-xs"><thead class="text-task-muted"><tr><th class="pb-3">Staff</th><th>Active Tasks</th><th>Overdue</th><th>Completed</th><th>Workload</th></tr></thead><tbody class="divide-y divide-task-line"><tr v-for="row in analyticsWorkloadRows" :key="row.name"><td class="py-3 font-bold text-task-ink">{{ row.name }}</td><td>{{ row.active }}</td><td :class="row.overdue ? 'font-bold text-task-danger' : 'text-task-success'">{{ row.overdue }}</td><td>{{ row.completed }}</td><td class="w-36"><div class="h-2 overflow-hidden rounded-full bg-slate-200"><div class="h-full rounded-full bg-task-blue" :style="{ width: `${Math.min(100, row.efficiency)}%` }" /></div></td></tr></tbody></table></div>
+            </section>
+            <section class="tf-panel p-5">
+              <h2 class="text-base font-extrabold text-task-ink">Tasks by Priority</h2>
+              <div class="mt-5 flex items-center gap-5"><div class="relative h-36 w-36 shrink-0 rounded-full" :style="{ background: analyticsPriorityGradient }"><div class="absolute inset-7 grid place-items-center rounded-full bg-white text-center"><div><b class="block text-2xl text-task-ink">{{ tasks.length }}</b><small class="text-task-muted">Tasks</small></div></div></div><div class="min-w-0 flex-1 space-y-3"><div v-for="row in analyticsPriorityRows" :key="row.label" class="flex items-center gap-2 text-xs"><i class="h-2.5 w-2.5 rounded-full" :style="{ background: row.color }" /><span class="min-w-0 flex-1 truncate text-task-muted">{{ row.label }}</span><b>{{ row.count }} ({{ row.percent }}%)</b></div></div></div>
+            </section>
+            <section class="tf-panel p-5">
+              <div class="flex items-center justify-between"><div><h2 class="text-base font-extrabold text-task-ink">Overdue Tasks Trend</h2><p class="mt-1 text-xs text-task-muted">Current overdue workload by staff</p></div><span class="tf-pill bg-task-dangerSoft text-task-danger">{{ overdueTaskRows.length }} overdue</span></div>
+              <div class="mt-6 flex h-44 items-end gap-3 border-b border-task-line px-2"><div v-for="group in analyticsOverdueByStaff.slice(0, 10)" :key="group.name" class="group flex h-full min-w-0 flex-1 flex-col justify-end"><div class="relative mx-auto w-full max-w-12 rounded-t-md bg-gradient-to-t from-task-danger to-[#ff899d] transition hover:opacity-80" :style="{ height: `${Math.max(8, Math.min(100, group.rows.length / Math.max(overdueTaskRows.length, 1) * 100))}%` }"><span class="absolute -top-5 left-1/2 -translate-x-1/2 text-[10px] font-bold text-task-danger">{{ group.rows.length }}</span></div><span class="mt-2 truncate text-center text-[9px] text-task-muted">{{ group.name.split(' ')[0] }}</span></div><p v-if="!analyticsOverdueByStaff.length" class="m-auto text-sm text-task-muted">No overdue tasks.</p></div>
+            </section>
+          </div>
+
+          <div v-if="false" :class="['grid gap-4', productivityTrendData.length ? 'lg:grid-cols-3' : 'lg:grid-cols-2']">
             <div class="tf-panel p-5">
               <div class="flex items-center justify-between"><h2 class="text-lg font-bold">Tasks by Category</h2><span class="grid h-9 w-9 place-items-center rounded-full bg-task-blueSoft text-task-blue"><svg viewBox="0 0 24 24" class="h-4 w-4" fill="none" stroke="currentColor" stroke-width="1.8"><path :d="iconPath('chart')" /></svg></span></div>
               <div class="mt-6 flex flex-col items-center gap-5 sm:flex-row lg:flex-col xl:flex-row"><div class="relative h-36 w-36 shrink-0 rounded-full bg-[conic-gradient(#2567AD_0_72%,#C9DAF7_72%_100%)]"><div class="absolute inset-7 grid place-items-center rounded-full bg-white text-center"><div><b class="block text-2xl">{{ tasks.length }}</b><span class="text-xs text-task-muted">Total</span></div></div></div><div class="w-full min-w-0 space-y-3"><div v-for="cat in categoryTrendData.slice(0, 4)" :key="cat.name" class="group relative"><div class="flex items-center justify-between gap-3 text-xs"><span class="flex min-w-0 items-center gap-2 text-task-muted"><i class="h-2 w-2 shrink-0 rounded-full bg-task-blue" /><span class="truncate">{{ cat.name }}</span></span><b>{{ cat.growth }}</b></div><div class="mt-1.5 h-1.5 overflow-hidden rounded-full bg-slate-100"><div class="h-full rounded-full bg-task-blue" :style="{ width: `${cat.value}%` }" /></div><span class="tf-chart-tooltip"><b>{{ cat.name }}</b><span>{{ cat.growth }}</span></span></div><p v-if="!categoryTrendData.length" class="text-sm text-task-muted">No category data.</p></div></div>
@@ -3570,6 +3770,31 @@ const iconPath = (name: string) => {
               </div>
             </div>
           </div>
+          </div>
+
+          <aside class="tf-analytics-overdue tf-panel overflow-hidden p-0 xl:sticky xl:top-4">
+            <header class="flex items-start justify-between border-b border-task-line px-4 py-4">
+              <div><h2 class="font-extrabold text-task-ink">Overdue Tasks</h2><p class="mt-1 text-[11px] text-task-muted">Requires immediate attention</p></div>
+              <span class="grid h-9 w-9 place-items-center rounded-[11px] bg-task-dangerSoft text-task-danger"><svg viewBox="0 0 24 24" class="h-5 w-5" fill="none" stroke="currentColor" stroke-width="1.9"><path d="M12 9v4m0 4h.01M4.5 19h15L12 4 4.5 19Z" /></svg></span>
+            </header>
+            <div class="tf-analytics-overdue-summary border-b border-task-line px-4 py-4">
+              <div class="flex items-end gap-2"><b class="text-3xl leading-none text-task-danger">{{ overdueTaskRows.length }}</b><span class="pb-0.5 text-xs font-bold text-task-ink">overdue tasks</span></div>
+              <p class="mt-1 text-[10px] text-task-muted">Across {{ analyticsOverdueByStaff.length }} staff members</p>
+            </div>
+            <div class="p-3">
+              <h3 class="px-1 pb-2 text-[10px] font-extrabold uppercase tracking-[.12em] text-task-muted">Overdue by staff</h3>
+              <div class="space-y-2">
+                <section v-for="group in analyticsOverdueByStaff.slice(0, 5)" :key="group.name" class="overflow-hidden rounded-[12px] border border-task-line">
+                  <div class="flex items-center gap-2 bg-slate-50 px-3 py-2.5"><span class="grid h-7 w-7 shrink-0 place-items-center rounded-full bg-task-dangerSoft text-[9px] font-extrabold text-task-danger">{{ initials(group.name) }}</span><b class="min-w-0 flex-1 truncate text-xs text-task-ink">{{ group.name }}</b><span class="shrink-0 text-[10px] font-bold text-task-danger">{{ group.rows.length }} overdue</span></div>
+                  <button v-for="task in group.rows.slice(0, 3)" :key="String(task[6] || task[0])" type="button" class="flex w-full items-start gap-2 border-t border-task-line px-3 py-2.5 text-left transition hover:bg-task-dangerSoft/40" @click="openTaskFromCard(task)">
+                    <i class="mt-1.5 h-2 w-2 shrink-0 rounded-full bg-task-danger" /><span class="min-w-0 flex-1"><b class="line-clamp-2 text-[11px] leading-4 text-task-ink">{{ task[0] }}</b><small class="mt-1 block text-[9px] text-task-muted">Due {{ task[4] || '—' }}</small></span><span class="shrink-0 text-[9px] font-bold text-task-danger">{{ analyticsOverdueDays(task) }}d</span>
+                  </button>
+                </section>
+                <div v-if="!analyticsOverdueByStaff.length" class="rounded-[12px] border border-dashed border-task-line px-4 py-10 text-center"><p class="text-sm font-bold text-task-ink">All caught up</p><p class="mt-1 text-xs text-task-muted">No overdue tasks.</p></div>
+              </div>
+              <button v-if="overdueTaskRows.length" type="button" class="mt-3 h-10 w-full rounded-[11px] bg-task-blueSoft text-xs font-bold text-task-blue transition hover:bg-task-blue hover:text-white" @click="showAttentionTasks('overdue')">View all overdue tasks →</button>
+            </div>
+          </aside>
         </section>
 
         <section v-else-if="activePage === 'calendar'" class="tf-calendar-layout grid gap-4 xl:grid-cols-[minmax(0,1fr)_340px]">
@@ -4188,10 +4413,10 @@ const iconPath = (name: string) => {
 
     <button v-if="supportWidgetOpen" type="button" class="fixed inset-0 z-[65] bg-slate-950/30 backdrop-blur-[1px]" aria-label="Close help support" @click="!feedbackSending && (supportWidgetOpen = false)" />
     <div ref="supportWidgetRoot" class="fixed bottom-5 right-5 z-[70] h-14 w-14" :style="supportWidgetStyle" @paste="handleFeedbackPaste">
-      <div v-if="supportWidgetOpen" :class="['tf-panel tf-support-panel absolute w-[390px] max-w-[calc(100vw-40px)] overflow-hidden p-5 shadow-2xl', supportPanelPlacement]">
+      <div v-if="supportWidgetOpen" class="tf-panel tf-support-panel fixed left-1/2 top-1/2 max-h-[calc(100dvh-32px)] w-[390px] max-w-[calc(100vw-32px)] -translate-x-1/2 -translate-y-1/2 overflow-x-hidden overflow-y-auto overscroll-contain p-5 shadow-2xl">
         <div class="flex touch-none items-start justify-between gap-4" :class="supportWidgetDragging ? 'cursor-grabbing' : 'cursor-move'" @pointerdown="startSupportDrag">
           <div class="flex select-none items-center gap-3">
-            <span class="grid h-14 w-14 shrink-0 place-items-center overflow-hidden rounded-[16px] bg-white shadow-sm ring-1 ring-task-blue/15"><img src="/images/taskly-assistant-new.jpg" alt="Taskly feedback assistant" class="h-full w-full scale-[1.35] object-cover" /></span>
+            <span class="grid h-14 w-14 shrink-0 place-items-center rounded-[16px] bg-gradient-to-br from-task-blueSoft to-white p-0.5 shadow-sm ring-1 ring-task-blue/15"><img src="/images/tiko-assistant-v2.png" alt="Tiko feedback assistant" class="h-full w-full object-contain" /></span>
             <div><h2 class="text-lg font-extrabold text-task-ink">Taskly</h2><p class="mt-0.5 text-xs font-medium text-task-muted">Feedback Assistant</p></div>
           </div>
           <button type="button" class="tf-icon-button h-8 w-8 shrink-0 cursor-pointer disabled:cursor-not-allowed disabled:opacity-50" :disabled="feedbackSending" aria-label="Close support" title="Close" @pointerdown.stop @click="supportWidgetOpen = false">
@@ -4232,7 +4457,8 @@ const iconPath = (name: string) => {
         </button>
       </div>
       <button type="button" :class="['tf-support-launcher touch-none select-none', supportWidgetDragging ? 'cursor-grabbing scale-105' : 'cursor-grab']" aria-label="Open or move Taskly support" title="Drag to move · Click to open" @dragstart.prevent @pointerdown="startSupportDrag" @click="toggleSupportWidget">
-        <img src="/images/taskly-assistant-new.jpg" alt="Taskly feedback assistant" draggable="false" class="pointer-events-none h-[62px] w-[62px] max-w-none select-none rounded-full object-cover drop-shadow-[0_8px_12px_rgba(7,40,91,.35)]" />
+        <span class="tf-support-greeting" aria-hidden="true"><b>Hi! I'm Tiko 👋</b><small>Ask Tiko <i>✦</i></small></span>
+        <img src="/images/tiko-assistant-v2.png" alt="Tiko feedback assistant" draggable="false" class="pointer-events-none h-[66px] w-[66px] max-w-none select-none object-contain drop-shadow-[0_8px_12px_rgba(7,40,91,.38)]" />
       </button>
     </div>
 
