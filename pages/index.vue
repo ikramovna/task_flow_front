@@ -135,16 +135,29 @@ const canManageDepartment = computed(() => ['owner', 'admin', 'manager'].include
 const canManageMembers = computed(() => currentUserActive.value && ['owner', 'admin', 'manager'].includes(normalizedRole.value))
 const canAddTask = computed(() => currentUserActive.value && ['owner', 'admin', 'manager'].includes(normalizedRole.value))
 const canCreateEvent = computed(() => canAddTask.value)
+const canCreateTaskInAnyDepartment = computed(() => currentUserActive.value && normalizedRole.value === 'manager')
 const canChooseDepartment = computed(() =>
   ['owner', 'manager'].includes(normalizedRole.value) &&
   (currentUserHasAllDepartmentsAccess.value || currentUserAccessibleDepartmentIds.value.length > 1 || !currentDepartmentId.value)
 )
+const canChooseTaskDepartment = computed(() => canCreateTaskInAnyDepartment.value || canChooseDepartment.value)
 const effectiveDepartmentId = computed(() => {
   if (currentDepartmentId.value) return currentDepartmentId.value
   const ownMembership = team.value.find((member) => String(member[2] || '').trim().toLowerCase() === savedProfile.email.trim().toLowerCase())
   return String(ownMembership?.[11] || '')
 })
-const departmentTeam = computed(() => team.value.filter((member) => !effectiveDepartmentId.value || String(member[11] || '') === effectiveDepartmentId.value))
+const visibleDepartmentIds = computed(() => new Set(
+  currentUserHasAllDepartmentsAccess.value
+    ? []
+    : currentUserAccessibleDepartmentIds.value.length
+      ? currentUserAccessibleDepartmentIds.value
+      : [effectiveDepartmentId.value].filter(Boolean)
+))
+const visibleTeam = computed(() => {
+  if (currentUserHasAllDepartmentsAccess.value) return team.value
+  return team.value.filter((member) => visibleDepartmentIds.value.has(String(member[11] || '')))
+})
+const departmentTeam = computed(() => visibleTeam.value.filter((member) => !effectiveDepartmentId.value || String(member[11] || '') === effectiveDepartmentId.value))
 const taskSearchInput = ref('')
 const taskSearch = ref('')
 const taskScope = ref<'all' | 'mine' | 'archived'>('all')
@@ -463,6 +476,17 @@ const memberDepartmentOptions = computed(() => {
   const allowed = new Set(currentUserAccessibleDepartmentIds.value)
   return options.filter((department) => allowed.has(department.id))
 })
+const taskDepartmentOptions = computed(() => {
+  if (!canCreateTaskInAnyDepartment.value) return memberDepartmentOptions.value
+  const options = [...memberDepartments.value]
+  dashboardDepartments.value.forEach((department) => {
+    const id = String(department.department_id || department.id || '')
+    if (id && !options.some((option) => option.id === id)) {
+      options.push({ id, name: String(department.department_name || department.name || 'Unnamed department') })
+    }
+  })
+  return options
+})
 const editingProjectId = ref('')
 const editingProjectDepartment = ref('')
 const editingProjectMembers = ref<string[]>([])
@@ -607,7 +631,7 @@ const unassignedTaskRows = computed(() => tasks.value.filter(task => !String(tas
 const backlogTasks = computed(() => filteredTasks.value.filter((task) => String(task[3]).toLowerCase() === 'backlog'))
 const filteredProjects = computed(() => projects.value.filter((project) => includesQuery(project, projectSearch.value) && (projectPriorityFilter.value === 'All Priorities' || String(project[2]) === projectPriorityFilter.value)))
 const filteredTeam = computed(() => {
-  const rows = team.value.filter((member) =>
+  const rows = visibleTeam.value.filter((member) =>
     Number(member[4] || 0) <= workloadFilter.value &&
     (teamDepartmentFilter.value === 'all' || String(member[11] || '') === teamDepartmentFilter.value) &&
     (teamRoleFilter.value === 'all' || String(member[14] || '').toLowerCase() === teamRoleFilter.value)
@@ -1217,7 +1241,7 @@ const setPage = (key: PageKey) => {
     taskPage.value = 1
     if (taskScope.value === 'archived') taskScope.value = 'all'
   }
-  if (key === 'analytics') sidebarCollapsed.value = true
+  sidebarCollapsed.value = key === 'analytics'
   activePage.value = key
   pageCookie.value = key
   if (import.meta.client) {
@@ -1855,7 +1879,7 @@ const openModal = (value: Exclude<ModalKey, null>) => {
     taskMainAssigneeId.value = ''
     taskAssigneeSearch.value = ''
     taskAssigneeOptions.value = [...departmentTeam.value]
-    if (canChooseDepartment.value) void loadModalDepartments()
+    if (canChooseTaskDepartment.value) void loadModalDepartments()
     void loadTaskAssignees()
   }
   if (value === 'member') {
@@ -1918,19 +1942,16 @@ const assignTaskTo = (member: string) => {
 
 const loadTaskAssignees = async () => {
   taskAssigneesLoading.value = true
-  const department = modalDepartment.value || effectiveDepartmentId.value
   try {
     const response = await taskFlowApi.listMembers({
-      department: department || undefined,
       is_active: true,
       page_size: 200
     })
     taskAssigneeOptions.value = taskFlowApi.listItems(response)
       .map(taskFlowApi.mapMember)
-      .filter((member) => !department || String(member[11] || '') === department)
   } catch (error) {
     console.error('Task assignees load failed.', error)
-    taskAssigneeOptions.value = team.value.filter((member) => !department || String(member[11] || '') === department)
+    taskAssigneeOptions.value = [...team.value]
     notifyError(taskFlowApiErrorMessage(error, 'Could not load team members'))
   } finally {
     taskAssigneesLoading.value = false
@@ -1947,10 +1968,11 @@ const taskMainAssigneeOf = (task: Array<string | number>): ProjectCardMember | n
 }
 
 const loadModalDepartments = async () => {
-  if (!canChooseDepartment.value) return
+  if (modal.value === 'task' ? !canChooseTaskDepartment.value : !canChooseDepartment.value) return
   await loadMemberDepartments()
-  if (!modalDepartment.value && memberDepartmentOptions.value.length === 1) {
-    modalDepartment.value = memberDepartmentOptions.value[0].id
+  const options = modal.value === 'task' ? taskDepartmentOptions.value : memberDepartmentOptions.value
+  if (!modalDepartment.value && options.length === 1) {
+    modalDepartment.value = options[0].id
   }
 }
 
@@ -1973,7 +1995,8 @@ const currentMemberId = computed(() => {
   return member ? teamMemberId(member) : ''
 })
 const modalDepartmentName = computed(() =>
-  memberDepartmentOptions.value.find((department) => department.id === modalDepartment.value)?.name || 'Select department'
+  (modal.value === 'task' ? taskDepartmentOptions.value : memberDepartmentOptions.value)
+    .find((department) => department.id === modalDepartment.value)?.name || 'Select department'
 )
 const canChangeTaskStatus = (task: Array<string | number>) => {
   const mainAssigneeId = taskMainAssigneeIdOf(task)
@@ -4040,7 +4063,17 @@ const iconPath = (name: string) => {
             <label class="mb-5 mt-4 flex items-center justify-between gap-4 rounded-ui border border-task-line px-4 py-3 text-sm font-semibold"><span><span class="block">Active member</span><span class="mt-0.5 block text-xs font-normal text-task-muted">Allow this member to sign in immediately.</span></span><input v-model="memberIsActive" type="checkbox" class="h-5 w-5 accent-task-blue" /></label>
           </template>
           <template v-else-if="modal === 'task'">
-            <label v-if="canChooseDepartment" class="mb-4 block text-sm font-semibold">
+            <div v-if="taskModalMode === 'view' && openedTask" class="mb-4 rounded-[12px] border border-task-line bg-slate-50 px-4 py-3">
+              <p class="text-xs font-semibold uppercase tracking-wide text-task-muted">Created by</p>
+              <div class="mt-2 flex items-center gap-3">
+                <span class="grid h-9 w-9 shrink-0 place-items-center overflow-hidden rounded-full bg-task-blueSoft text-xs font-bold text-task-blue">
+                  <img v-if="taskCreatorAvatarOf(openedTask)" :src="taskCreatorAvatarOf(openedTask)" :alt="taskCreatorNameOf(openedTask)" class="h-full w-full object-cover" />
+                  <span v-else>{{ initials(taskCreatorNameOf(openedTask)) }}</span>
+                </span>
+                <span class="font-semibold text-task-ink">{{ taskCreatorNameOf(openedTask) }}</span>
+              </div>
+            </div>
+            <label v-if="canChooseTaskDepartment" class="mb-4 block text-sm font-semibold">
               Task Department <span class="text-task-danger">*</span>
               <div class="tf-dropdown mt-2">
                 <button
@@ -4053,14 +4086,14 @@ const iconPath = (name: string) => {
                   <svg viewBox="0 0 20 20" :class="['h-4 w-4 shrink-0 text-task-muted transition-transform', openDropdown === 'modalDepartment' ? 'rotate-180' : '']" fill="none" stroke="currentColor" stroke-width="2"><path d="m5 7.5 5 5 5-5" /></svg>
                 </button>
                 <div v-if="openDropdown === 'modalDepartment' && taskModalMode !== 'view'" class="tf-dropdown-menu max-h-56 overflow-y-auto">
-                  <button v-for="department in memberDepartmentOptions" :key="department.id" type="button" class="tf-dropdown-option" @click="selectModalDepartment(department.id)">
+                  <button v-for="department in taskDepartmentOptions" :key="department.id" type="button" class="tf-dropdown-option" @click="selectModalDepartment(department.id)">
                     <span>{{ department.name }}</span>
                     <span v-if="modalDepartment === department.id" class="text-task-blue">✓</span>
                   </button>
-                  <p v-if="!memberDepartmentsLoading && !memberDepartmentOptions.length" class="px-3 py-3 text-sm font-normal text-task-muted">No accessible departments available</p>
+                  <p v-if="!memberDepartmentsLoading && !taskDepartmentOptions.length" class="px-3 py-3 text-sm font-normal text-task-muted">No departments available</p>
                 </div>
               </div>
-              <span class="mt-1.5 block text-xs font-normal text-task-muted">You can assign members from your department or an accessible department.</span>
+              <span class="mt-1.5 block text-xs font-normal text-task-muted">Select any department, then assign one or more of its members.</span>
             </label>
             <label class="block text-sm font-semibold">
               Task Title
