@@ -199,14 +199,17 @@ body {
     @apply absolute right-0 top-[calc(100%+6px)] z-[75] min-w-36 overflow-hidden rounded-ui border border-task-line bg-white py-1 shadow-xl;
   }
 
+  .tf-action-menu--up {
+    top: auto;
+    bottom: calc(100% + 6px);
+  }
+
 .tf-action-item {
     @apply block w-full px-3 py-2 text-left text-sm font-medium text-task-ink transition hover:bg-task-blueSoft hover:text-task-blue;
 }
 
-/* Keep row actions visible when a team search leaves only one short row. */
-.tf-panel:has(table.min-w-\[940px\] tbody .tf-action-menu) > .overflow-x-auto {
-  padding-bottom: 10rem;
-}
+.tf-task-list-table tbody tr:has(.tf-action-menu) { position: relative; z-index: 90; }
+.tf-task-list-table .tf-action-menu { z-index: 120; }
 
   .tf-action-danger {
     @apply text-task-danger hover:bg-task-dangerSoft hover:text-task-danger;
@@ -1434,10 +1437,10 @@ body {
   align-items: center;
   justify-content: center;
   border-radius: 12px;
-  border: 1px solid #dfe6ef;
-  background: #ffffff;
-  color: #59677a;
-  box-shadow: 0 5px 14px -10px rgb(15 23 42 / 0.5);
+  border: 1px solid #9fc4ed;
+  background: #edf5ff;
+  color: #2877d4;
+  box-shadow: 0 6px 16px -9px rgb(37 103 173 / 0.65);
   transition: transform 180ms ease, border-color 180ms ease, background-color 180ms ease, color 180ms ease;
 }
 
@@ -1467,15 +1470,17 @@ body {
 }
 
 .tf-search-highlight {
-  border-radius: 3px;
-  padding: 0 1px;
-  background: #dbeafe;
-  color: #1d4f91;
+  border-radius: 4px;
+  padding: 0 2px;
+  background: #fde047;
+  color: #713f12;
+  box-shadow: inset 0 0 0 1px rgb(202 138 4 / 0.18);
 }
 
 .tf-dark .tf-search-highlight {
-  background: transparent;
-  color: inherit;
+  background: #facc15;
+  color: #422006;
+  box-shadow: inset 0 0 0 1px rgb(253 224 71 / 0.28);
 }
 
 .tf-sidebar-user {

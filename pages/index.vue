@@ -512,7 +512,7 @@ const selectedCalendarEvent = ref<CalendarEvent | null>(null)
 const reportType = ref('Productivity')
 const reportStatus = ref('All Statuses')
 const reportTypeOptions = ['Productivity', 'Team Performance', 'Project Status', 'Time Tracking']
-const openProjectDatePicker = ref<'startDate' | 'dueDate' | null>(null)
+const openProjectDatePicker = ref<'startDate' | 'dueDate' | 'analyticsStart' | 'analyticsEnd' | null>(null)
 const datePickerView = reactive({
   year: currentYear,
   month: currentMonthIndex
@@ -917,8 +917,10 @@ const calendarEvents = computed<CalendarEvent[]>(() =>
 )
 const currentMonthEvents = computed(() => calendarEvents.value.filter((event) => event.year === calendarYear.value && event.month === calendarMonthIndex.value))
 const selectedDayEvents = computed(() => {
-  if (!selectedCalendarDay.value) return currentMonthEvents.value
-  return currentMonthEvents.value.filter((event) => event.day === selectedCalendarDay.value)
+  const rows = selectedCalendarDay.value
+    ? currentMonthEvents.value.filter((event) => event.day === selectedCalendarDay.value)
+    : currentMonthEvents.value
+  return rows
 })
 const eventDays = computed(() => new Set(currentMonthEvents.value.map((event) => event.day)))
 const isTodayCell = (day: number | null) => day === currentDay && calendarMonthIndex.value === currentMonthIndex && calendarYear.value === currentYear
@@ -1241,7 +1243,7 @@ const setPage = (key: PageKey) => {
     taskPage.value = 1
     if (taskScope.value === 'archived') taskScope.value = 'all'
   }
-  sidebarCollapsed.value = key === 'analytics'
+  // Keep the user's sidebar choice unchanged while navigating.
   activePage.value = key
   pageCookie.value = key
   if (import.meta.client) {
@@ -1608,11 +1610,16 @@ const projectDatePickerDays = computed(() => {
   }
 })
 
-const openDatePicker = (field: 'startDate' | 'dueDate') => {
+const openDatePicker = (field: 'startDate' | 'dueDate' | 'analyticsStart' | 'analyticsEnd') => {
   openProjectDatePicker.value = openProjectDatePicker.value === field ? null : field
   if (!openProjectDatePicker.value) return
 
-  const parsed = parseProjectDate(form[field])
+  const rawValue = field === 'analyticsStart'
+    ? analyticsFilters.start_date
+    : field === 'analyticsEnd'
+      ? analyticsFilters.end_date
+      : form[field]
+  const parsed = parseProjectDate(rawValue)
   const baseDate = parsed ? new Date(`${parsed}T00:00:00`) : new Date()
   const safeDate = Number.isNaN(baseDate.getTime()) ? new Date() : baseDate
   datePickerView.year = safeDate.getFullYear()
@@ -1637,7 +1644,10 @@ const moveDatePickerMonth = (direction: number) => {
 const selectProjectDate = (day: number | null, month?: number, year?: number) => {
   if (!day || month === undefined || year === undefined || !openProjectDatePicker.value) return
   const date = new Date(year, month, day)
-  form[openProjectDatePicker.value] = formatProjectDateInput(date)
+  const isoDate = `${year}-${String(month + 1).padStart(2, '0')}-${String(day).padStart(2, '0')}`
+  if (openProjectDatePicker.value === 'analyticsStart') analyticsFilters.start_date = isoDate
+  else if (openProjectDatePicker.value === 'analyticsEnd') analyticsFilters.end_date = isoDate
+  else form[openProjectDatePicker.value] = formatProjectDateInput(date)
   openProjectDatePicker.value = null
 }
 
@@ -3296,24 +3306,23 @@ const iconPath = (name: string) => {
             <section class="tf-panel tf-dashboard-list overflow-hidden p-0"><header class="tf-dashboard-list-header"><h2 class="flex items-center gap-2 font-bold"><span class="tf-section-icon">▣</span>Today’s Schedule</h2><div class="flex items-center gap-3"><span class="tf-pill bg-task-blueSoft text-task-blue">{{ dashboardTodayEvents.length }}</span><button type="button" class="text-xs font-bold text-task-blue" @click="setPage('calendar')">View all</button></div></header><div class="tf-dashboard-list-body divide-y divide-task-line"><button v-for="event in dashboardTodayEvents" :key="String(event.id)" type="button" class="tf-dashboard-list-row w-full text-left transition hover:bg-task-blueSoft focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-task-blue" @click="openDashboardEvent(event)"><time class="tf-event-date grid h-11 min-w-14 place-items-center rounded-[9px] bg-task-blueSoft px-2 text-xs font-bold text-task-blue">{{ dashboardDateTime(event.starts_at, 'time') }}</time><div class="min-w-0 flex-1"><p class="truncate text-sm font-bold">{{ event.title }}</p><p class="mt-1 truncate text-xs text-task-muted">{{ event.department?.name || 'No department' }} · {{ event.location || 'Online' }}</p></div><span class="text-xs text-task-muted">›</span></button><div v-if="!dashboardTodayEvents.length" class="tf-empty-events"><EmptyCalendarArt /><p>No events scheduled for today.</p><small>Enjoy your free time! 🎉</small></div></div></section>
             <section class="tf-panel tf-dashboard-list overflow-hidden p-0"><header class="tf-dashboard-list-header"><h2 class="font-bold">Upcoming Deadlines</h2><div class="flex items-center gap-3"><span class="tf-pill bg-task-blueSoft text-task-blue">{{ dashboardDeadlines.length }}</span><button type="button" class="text-xs font-bold text-task-blue" @click="setPage('tasks')">View all</button></div></header><div class="tf-dashboard-list-body divide-y divide-task-line"><button v-for="task in dashboardDeadlines" :key="String(task.id)" type="button" class="tf-dashboard-list-row w-full text-left transition hover:bg-task-blueSoft focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-task-blue" @click="openDashboardTask(task)"><span :class="['h-2.5 w-2.5 shrink-0 rounded-full', task.priority === 'high' ? 'bg-task-danger' : task.priority === 'medium' ? 'bg-task-warning' : 'bg-task-success']" /><div class="min-w-0 flex-1"><p class="truncate text-sm font-bold">{{ task.title }}</p><p class="mt-1 truncate text-xs text-task-muted">{{ task.department?.name || 'No department' }}</p></div><div class="text-right"><p class="text-xs font-bold">{{ dashboardDateTime(task.due_date) }}</p><p class="mt-1 text-[10px] font-semibold text-task-warning">{{ task.days_remaining }} days left</p></div></button><div v-if="!dashboardDeadlines.length" class="tf-empty-events"><p>No upcoming deadlines.</p><small>You are all caught up.</small></div></div></section>
           </div>
-          <div class="grid items-stretch gap-4 xl:grid-cols-[0.8fr_1.2fr]">
-            <section class="tf-panel flex h-full min-h-[320px] flex-col overflow-hidden p-0">
-              <header class="border-b border-task-line px-5 py-4">
-                <h2 class="flex items-center gap-2 font-bold"><span class="tf-section-icon">◴</span>Tasks by Department</h2>
-                <p class="mt-1 text-xs text-task-muted">Role-filtered task distribution</p>
+          <div class="grid items-stretch gap-4 xl:h-[360px] xl:grid-cols-[1.2fr_0.8fr]">
+            <section class="tf-panel order-2 flex h-full min-h-[330px] flex-col overflow-hidden p-0 xl:min-h-0">
+              <header class="flex items-center justify-between gap-3 border-b border-task-line px-5 py-4">
+                <div><h2 class="flex items-center gap-2 font-bold"><span class="grid h-8 w-8 place-items-center rounded-[10px] bg-task-blueSoft text-task-blue"><svg viewBox="0 0 24 24" class="h-4 w-4" fill="none" stroke="currentColor" stroke-width="1.9"><path d="M4 20V10h4v10m2 0V4h4v16m2 0v-7h4v7" /></svg></span>Tasks by Department</h2><p class="mt-1 text-xs text-task-muted">Active workload distribution</p></div>
+                <span class="rounded-full bg-task-blueSoft px-3 py-1.5 text-xs font-extrabold text-task-blue">{{ dashboardDepartments.length }} teams</span>
               </header>
-              <div v-if="dashboardDepartments.length" class="grid flex-1 gap-4 p-5 sm:grid-cols-[140px_minmax(0,1fr)]">
-                <div class="flex min-h-[150px] flex-col items-center justify-center rounded-[16px] border border-task-line bg-slate-50 p-4">
-                  <div class="tf-department-donut" :style="{ background: dashboardDepartmentGradient }"><span><b>{{ dashboardDepartmentTotal }}</b><small>Total active<br />task</small></span></div>
-                  <p class="mt-3 text-center text-[11px] font-semibold text-task-muted">{{ dashboardDepartments.length }} {{ dashboardDepartments.length === 1 ? 'department' : 'departments' }}</p>
+              <div v-if="dashboardDepartments.length" class="flex min-h-0 flex-1 flex-col bg-gradient-to-br from-white via-task-blueSoft/20 to-slate-50">
+                <div class="mx-4 mt-4 flex items-center gap-3 rounded-[15px] border border-task-blue/10 bg-white/90 px-4 py-3 shadow-sm">
+                  <span class="grid h-11 w-11 shrink-0 place-items-center rounded-[13px] bg-gradient-to-br from-task-blue to-task-blueDark text-white shadow-button"><b class="text-lg">{{ dashboardDepartmentTotal }}</b></span>
+                  <span class="min-w-0 flex-1"><b class="block text-sm text-task-ink">Total active tasks</b><small class="mt-0.5 block text-[10px] text-task-muted">Across every visible department</small></span>
+                  <span class="text-right"><b class="block text-sm text-task-ink">{{ Number(dashboardDepartments[0]?.percentage || 0).toFixed(0) }}%</b><small class="text-[9px] font-bold uppercase tracking-wide text-task-muted">Top share</small></span>
                 </div>
-                <div class="grid min-w-0 gap-2.5" :style="{ gridTemplateRows: `repeat(${dashboardDepartments.length}, minmax(66px, 1fr))` }">
-                  <div v-for="(department, index) in dashboardDepartments" :key="String(department.department_id)" class="flex min-w-0 flex-col justify-center rounded-[14px] border border-task-line bg-slate-50 px-3.5 py-2.5 transition hover:border-task-blue/30 hover:bg-task-blueSoft/40">
-                    <div class="mb-2 flex items-center justify-between gap-3 text-xs">
-                      <span class="flex min-w-0 items-center gap-2 font-semibold"><i class="h-2.5 w-2.5 shrink-0 rounded-full" :style="{ backgroundColor: dashboardDepartmentColor(index) }" /><span class="truncate">{{ department.department_name }}</span></span>
-                      <span class="shrink-0"><b class="text-task-ink">{{ department.task_count }}</b> <span class="text-task-muted">({{ Number(department.percentage).toFixed(0) }}%)</span></span>
-                    </div>
-                    <div class="h-2 overflow-hidden rounded-full bg-slate-200"><div class="h-full rounded-full transition-all" :style="{ width: `${Math.min(100, Number(department.percentage))}%`, backgroundColor: dashboardDepartmentColor(index) }" /></div>
+                <div class="min-h-0 flex-1 space-y-2 overflow-y-auto px-4 py-3">
+                  <div v-for="(department, index) in dashboardDepartments" :key="String(department.department_id)" class="group grid min-w-0 grid-cols-[32px_minmax(0,1fr)_auto] items-center gap-3 rounded-[13px] border border-transparent bg-white/75 px-3 py-2.5 transition hover:border-task-blue/15 hover:bg-white hover:shadow-sm">
+                    <span :class="['grid h-8 w-8 place-items-center rounded-[10px] text-[11px] font-extrabold', index === 0 ? 'bg-task-blue text-white shadow-sm' : 'bg-slate-100 text-task-muted']">{{ index + 1 }}</span>
+                    <span class="min-w-0"><span class="flex items-center gap-2"><i class="h-2 w-2 shrink-0 rounded-full" :style="{ backgroundColor: dashboardDepartmentColor(index) }" /><b class="truncate text-xs text-task-ink">{{ department.department_name }}</b></span><span class="mt-2 block h-1.5 overflow-hidden rounded-full bg-slate-100"><i class="block h-full rounded-full transition-all duration-500" :style="{ width: `${Math.min(100, Number(department.percentage))}%`, backgroundColor: dashboardDepartmentColor(index) }" /></span></span>
+                    <span class="min-w-[52px] text-right"><b class="block text-sm text-task-ink">{{ department.task_count }}</b><small class="text-[9px] font-semibold text-task-muted">{{ Number(department.percentage).toFixed(0) }}%</small></span>
                   </div>
                 </div>
               </div>
@@ -3474,15 +3483,15 @@ const iconPath = (name: string) => {
           <table class="tf-task-list-table w-full min-w-[940px] text-left text-sm">
             <thead><tr><th class="w-12 p-3"><input type="checkbox" class="tf-task-checkbox" :checked="currentTaskPageAllSelected" :indeterminate="currentTaskPageSomeSelected" aria-label="Select all tasks on this page" @click.stop @change="toggleCurrentTaskPageSelection" /></th><th class="p-3">Task</th><th class="p-3">Project</th><th class="p-3">Assignee</th><th class="p-3">Priority</th><th class="p-3">Due Date</th><th class="p-3">Status</th><th class="p-3 text-right">Actions</th></tr></thead>
             <tbody class="divide-y divide-task-line">
-              <tr v-for="task in taskListPageTasks" :key="String(task[6] || `${task[0]}-${task[4]}`)" :class="['cursor-pointer', isTaskSelected(task) ? 'is-selected' : '']" @click="openTaskFromCard(task)">
+              <tr v-for="(task, taskIndex) in taskListPageTasks" :key="String(task[6] || `${task[0]}-${task[4]}`)" :class="['cursor-pointer', isTaskSelected(task) ? 'is-selected' : '']" @click="openTaskFromCard(task)">
                 <td class="p-3"><input type="checkbox" class="tf-task-checkbox" :checked="isTaskSelected(task)" :aria-label="`Select ${task[0]}`" @click.stop @change="toggleTaskSelection(task)" /></td>
-                <td class="p-3"><p class="font-bold text-task-ink">{{ task[0] }}</p><p class="mt-1 max-w-64 truncate text-[11px] text-task-muted">{{ task[7] || 'Team task' }}</p></td>
+                <td class="p-3"><p class="font-bold text-task-ink"><template v-if="taskSearch.trim()">{{ highlightedSearchText(String(task[0]), taskSearch).before }}<mark v-if="highlightedSearchText(String(task[0]), taskSearch).match" class="tf-search-highlight">{{ highlightedSearchText(String(task[0]), taskSearch).match }}</mark>{{ highlightedSearchText(String(task[0]), taskSearch).after }}</template><template v-else>{{ task[0] }}</template></p><p class="mt-1 max-w-64 truncate text-[11px] text-task-muted">{{ task[7] || 'Team task' }}</p></td>
                 <td class="p-3"><span class="inline-flex rounded-full bg-task-lavender px-2.5 py-1 text-[11px] font-semibold text-[#8057D5]">{{ task[7] || 'General' }}</span></td>
                 <td class="p-3"><div class="flex items-center gap-2"><span class="grid h-7 w-7 shrink-0 place-items-center overflow-hidden rounded-full bg-task-blueSoft text-[9px] font-bold text-task-blue"><img v-if="taskAssigneeDetailsOf(task)[0]?.avatar" :src="taskAssigneeDetailsOf(task)[0]?.avatar" :alt="String(task[1])" class="h-full w-full object-cover" /><span v-else>{{ initials(String(task[1])) }}</span></span><span class="max-w-36 truncate text-task-ink">{{ task[1] }}</span></div></td>
                 <td class="p-3"><span :class="['tf-pill', badgeClass(String(task[2]))]">{{ task[2] }}</span></td>
                 <td class="p-3"><p class="font-medium text-task-ink">{{ task[4] }}</p><p class="mt-1 text-[10px] text-task-muted">Due date</p></td>
                 <td class="p-3"><span :class="['tf-pill', badgeClass(String(task[3]))]">{{ task[3] }}</span></td>
-                <td class="relative p-3 text-right"><div class="relative inline-flex"><button type="button" class="tf-icon-button border-0 bg-transparent shadow-none" @click.stop="toggleActionMenu(`task-${task[0]}`)"><svg viewBox="0 0 24 24" class="h-4 w-4" fill="none" stroke="currentColor" stroke-width="2"><path :d="iconPath('dots')" /></svg></button><div v-if="actionMenu === `task-${task[0]}`" class="tf-action-menu"><button type="button" class="tf-action-item" @click="actionMenu = null; openTaskFromCard(task)">View</button><button type="button" class="tf-action-item" @click="runAction('edit', 'task', String(task[0]))">Edit</button><button type="button" class="tf-action-item" @click="runAction('duplicate', 'task', String(task[0]))">Duplicate</button><button type="button" class="tf-action-item tf-action-danger" @click="runAction('delete', 'task', String(task[0]))">Delete</button></div></div></td>
+                <td class="relative p-3 text-right"><div class="relative inline-flex"><button type="button" class="tf-icon-button border-0 bg-transparent shadow-none" @click.stop="toggleActionMenu(`task-${task[0]}`)"><svg viewBox="0 0 24 24" class="h-4 w-4" fill="none" stroke="currentColor" stroke-width="2"><path :d="iconPath('dots')" /></svg></button><div v-if="actionMenu === `task-${task[0]}`" :class="['tf-action-menu', taskIndex >= taskListPageTasks.length - 2 ? 'tf-action-menu--up' : '']"><button type="button" class="tf-action-item" @click="actionMenu = null; openTaskFromCard(task)">View</button><button type="button" class="tf-action-item" @click="runAction('edit', 'task', String(task[0]))">Edit</button><button type="button" class="tf-action-item" @click="runAction('duplicate', 'task', String(task[0]))">Duplicate</button><button type="button" class="tf-action-item tf-action-danger" @click="runAction('delete', 'task', String(task[0]))">Delete</button></div></div></td>
               </tr>
             </tbody>
           </table>
@@ -3511,7 +3520,7 @@ const iconPath = (name: string) => {
                     <span class="tf-kanban-status-dot" />
                     <div class="min-w-0"><h3 class="text-[15px] font-bold tracking-[-0.01em] text-task-ink">{{ column.label }}</h3><p class="mt-0.5 truncate text-[10px] font-medium text-task-muted">{{ column.description }}</p></div>
                 </div>
-                <div class="flex items-center gap-2"><span class="tf-kanban-count">{{ column.tasks.length }}</span><button type="button" class="tf-kanban-add" aria-label="Column menu"><svg viewBox="0 0 24 24" class="h-4 w-4" fill="none" stroke="currentColor" stroke-width="2"><path :d="iconPath('dots')" /></svg></button></div>
+                <span class="tf-kanban-count">{{ column.tasks.length }}</span>
               </header>
               <div class="tf-kanban-column-scroll space-y-2.5">
                 <article
@@ -3523,7 +3532,7 @@ const iconPath = (name: string) => {
                   @dragend="draggedTaskId = ''"
                   @click="openTaskFromCard(task)"
                 >
-                  <div class="flex items-start justify-between gap-3"><div class="min-w-0"><h4 :class="['line-clamp-2 text-[13px] font-bold leading-[1.4] tracking-[-0.01em] text-task-ink', column.key === 'completed' ? 'line-through opacity-65' : '']">{{ task[0] }}</h4><span v-if="taskIsHiddenOf(task)" class="tf-hidden-badge mt-2"><svg viewBox="0 0 24 24" class="h-3 w-3" fill="none" stroke="currentColor" stroke-width="2"><rect x="5" y="10" width="14" height="11" rx="2" /><path d="M8 10V7a4 4 0 0 1 8 0v3" /></svg>Hidden</span></div><button type="button" class="tf-kanban-add" aria-label="Task menu" @click.stop="toggleActionMenu(`kanban-${task[6] || task[0]}`)"><svg viewBox="0 0 24 24" class="h-4 w-4" fill="none" stroke="currentColor" stroke-width="2"><path :d="iconPath('dots')" /></svg></button></div>
+                  <div class="flex items-start justify-between gap-3"><div class="min-w-0"><h4 :class="['line-clamp-2 text-[13px] font-bold leading-[1.4] tracking-[-0.01em] text-task-ink', column.key === 'completed' ? 'line-through opacity-65' : '']"><template v-if="taskSearch.trim()">{{ highlightedSearchText(String(task[0]), taskSearch).before }}<mark v-if="highlightedSearchText(String(task[0]), taskSearch).match" class="tf-search-highlight">{{ highlightedSearchText(String(task[0]), taskSearch).match }}</mark>{{ highlightedSearchText(String(task[0]), taskSearch).after }}</template><template v-else>{{ task[0] }}</template></h4><span v-if="taskIsHiddenOf(task)" class="tf-hidden-badge mt-2"><svg viewBox="0 0 24 24" class="h-3 w-3" fill="none" stroke="currentColor" stroke-width="2"><rect x="5" y="10" width="14" height="11" rx="2" /><path d="M8 10V7a4 4 0 0 1 8 0v3" /></svg>Hidden</span></div></div>
                   <p v-if="task[7]" class="mt-2 inline-flex max-w-full items-center gap-1.5 truncate text-xs font-medium text-slate-500"><svg viewBox="0 0 24 24" class="h-3.5 w-3.5 shrink-0 text-task-blue" fill="none" stroke="currentColor" stroke-width="1.8"><path :d="iconPath('folder')" /></svg>{{ task[7] }}</p>
 
                   <div v-if="column.key !== 'in_progress'" class="mt-4 flex items-center gap-3 border-t border-slate-100 pt-3">
@@ -3603,8 +3612,8 @@ const iconPath = (name: string) => {
               <div class="tf-analytics-filter-label">Employee<div class="tf-dropdown mt-2"><button type="button" class="tf-analytics-filter-button" @click="openDropdown = openDropdown === 'analyticsEmployee' ? null : 'analyticsEmployee'"><span class="tf-analytics-filter-leading"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path :d="iconPath('users')" /></svg></span><span class="min-w-0 flex-1 truncate text-left">{{ team.find(item => String(item[9] || item[7] || '') === analyticsFilters.employee)?.[0] || 'All staff' }}</span><svg viewBox="0 0 20 20" :class="['h-4 w-4 shrink-0 transition-transform', openDropdown === 'analyticsEmployee' ? 'rotate-180' : '']" fill="none" stroke="currentColor" stroke-width="2"><path d="m5 7.5 5 5 5-5" /></svg></button><div v-if="openDropdown === 'analyticsEmployee'" class="tf-dropdown-menu max-h-56 overflow-y-auto"><button type="button" class="tf-dropdown-option" @click="analyticsFilters.employee = ''; openDropdown = null">All staff</button><button v-for="item in team" :key="String(item[9] || item[7] || item[0])" type="button" class="tf-dropdown-option" @click="analyticsFilters.employee = String(item[9] || item[7] || ''); openDropdown = null"><span>{{ item[0] }}</span><span v-if="analyticsFilters.employee === String(item[9] || item[7] || '')">✓</span></button></div></div></div>
               <div class="tf-analytics-filter-label">Priority<div class="tf-dropdown mt-2"><button type="button" class="tf-analytics-filter-button" @click="openDropdown = openDropdown === 'analyticsPriority' ? null : 'analyticsPriority'"><span class="tf-analytics-filter-leading"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M6 21V4m0 1h11l-2 4 2 4H6" /></svg></span><span class="min-w-0 flex-1 truncate text-left capitalize">{{ analyticsFilters.priority || 'All priorities' }}</span><svg viewBox="0 0 20 20" :class="['h-4 w-4 shrink-0 transition-transform', openDropdown === 'analyticsPriority' ? 'rotate-180' : '']" fill="none" stroke="currentColor" stroke-width="2"><path d="m5 7.5 5 5 5-5" /></svg></button><div v-if="openDropdown === 'analyticsPriority'" class="tf-dropdown-menu"><button v-for="item in [['','All priorities'],['low','Low'],['medium','Medium'],['high','High']]" :key="item[0]" type="button" class="tf-dropdown-option" @click="analyticsFilters.priority = item[0]; openDropdown = null"><span>{{ item[1] }}</span><span v-if="analyticsFilters.priority === item[0]">✓</span></button></div></div></div>
               <div class="tf-analytics-filter-label">Status<div class="tf-dropdown mt-2"><button type="button" class="tf-analytics-filter-button" @click="openDropdown = openDropdown === 'analyticsStatus' ? null : 'analyticsStatus'"><span class="tf-analytics-filter-leading"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M12 7v5l3 2m7-2a10 10 0 1 1-20 0 10 10 0 0 1 20 0Z" /></svg></span><span class="min-w-0 flex-1 truncate text-left">{{ analyticsFilters.status === 'backlog' ? 'Postponed' : analyticsFilters.status ? analyticsFilters.status.split('_').map(word => word[0].toUpperCase() + word.slice(1)).join(' ') : 'All statuses' }}</span><svg viewBox="0 0 20 20" :class="['h-4 w-4 shrink-0 transition-transform', openDropdown === 'analyticsStatus' ? 'rotate-180' : '']" fill="none" stroke="currentColor" stroke-width="2"><path d="m5 7.5 5 5 5-5" /></svg></button><div v-if="openDropdown === 'analyticsStatus'" class="tf-dropdown-menu"><button v-for="item in [['','All statuses'],['backlog','Postponed'],['not_started','Not started'],['in_progress','In progress'],['on_hold','On hold'],['completed','Completed']]" :key="item[0]" type="button" class="tf-dropdown-option" @click="analyticsFilters.status = item[0]; openDropdown = null"><span>{{ item[1] }}</span><span v-if="analyticsFilters.status === item[0]">✓</span></button></div></div></div>
-              <label class="tf-analytics-filter-label tf-analytics-date-filter">Start date<div class="tf-analytics-date-input"><span class="tf-analytics-filter-leading"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path :d="iconPath('calendar')" /></svg></span><input v-model="analyticsFilters.start_date" type="date" /></div></label>
-              <label class="tf-analytics-filter-label tf-analytics-date-filter">End date<div class="tf-analytics-date-input"><span class="tf-analytics-filter-leading"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path :d="iconPath('calendar')" /></svg></span><input v-model="analyticsFilters.end_date" type="date" /></div></label>
+              <label class="tf-analytics-filter-label tf-analytics-date-filter">Start date<div class="tf-date-picker"><button type="button" class="tf-analytics-date-input w-full" @click="openDatePicker('analyticsStart')"><span class="tf-analytics-filter-leading"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path :d="iconPath('calendar')" /></svg></span><span>{{ analyticsFilters.start_date || 'Select date' }}</span></button><div v-if="openProjectDatePicker === 'analyticsStart'" class="tf-date-popover"><div class="mb-3 flex items-center justify-between"><b>{{ projectDatePickerDays.label }}</b><span><button type="button" class="px-2" @click.stop="moveDatePickerMonth(-1)">‹</button><button type="button" class="px-2" @click.stop="moveDatePickerMonth(1)">›</button></span></div><div class="mb-2 grid grid-cols-7 text-center text-[11px] text-task-muted"><span v-for="day in ['Mo','Tu','We','Th','Fr','Sa','Su']" :key="day">{{ day }}</span></div><div class="grid grid-cols-7 gap-1"><button v-for="cell in projectDatePickerDays.cells" :key="cell.key" type="button" :class="['h-8 rounded-[8px] text-sm', cell.day ? 'hover:bg-task-blueSoft' : 'pointer-events-none']" @click="selectProjectDate(cell.day, cell.month, cell.year)">{{ cell.day || '' }}</button></div></div></div></label>
+              <label class="tf-analytics-filter-label tf-analytics-date-filter">End date<div class="tf-date-picker"><button type="button" class="tf-analytics-date-input w-full" @click="openDatePicker('analyticsEnd')"><span class="tf-analytics-filter-leading"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path :d="iconPath('calendar')" /></svg></span><span>{{ analyticsFilters.end_date || 'Select date' }}</span></button><div v-if="openProjectDatePicker === 'analyticsEnd'" class="tf-date-popover"><div class="mb-3 flex items-center justify-between"><b>{{ projectDatePickerDays.label }}</b><span><button type="button" class="px-2" @click.stop="moveDatePickerMonth(-1)">‹</button><button type="button" class="px-2" @click.stop="moveDatePickerMonth(1)">›</button></span></div><div class="mb-2 grid grid-cols-7 text-center text-[11px] text-task-muted"><span v-for="day in ['Mo','Tu','We','Th','Fr','Sa','Su']" :key="day">{{ day }}</span></div><div class="grid grid-cols-7 gap-1"><button v-for="cell in projectDatePickerDays.cells" :key="cell.key" type="button" :class="['h-8 rounded-[8px] text-sm', cell.day ? 'hover:bg-task-blueSoft' : 'pointer-events-none']" @click="selectProjectDate(cell.day, cell.month, cell.year)">{{ cell.day || '' }}</button></div></div></div></label>
               <div class="tf-analytics-filter-label tf-analytics-date-filter">Granularity<div class="tf-dropdown mt-2"><button type="button" class="tf-analytics-filter-button" @click="openDropdown = openDropdown === 'analyticsGranularity' ? null : 'analyticsGranularity'"><span class="tf-analytics-filter-leading"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M3 15h3l2-7 4 12 3-10 2 5h4" /></svg></span><span class="min-w-0 flex-1 text-left capitalize">{{ analyticsFilters.granularity }}ly</span><svg viewBox="0 0 20 20" :class="['h-4 w-4 shrink-0 transition-transform', openDropdown === 'analyticsGranularity' ? 'rotate-180' : '']" fill="none" stroke="currentColor" stroke-width="2"><path d="m5 7.5 5 5 5-5" /></svg></button><div v-if="openDropdown === 'analyticsGranularity'" class="tf-dropdown-menu"><button v-for="item in [['day','Daily'],['week','Weekly'],['month','Monthly']]" :key="item[0]" type="button" class="tf-dropdown-option" @click="analyticsFilters.granularity = item[0]; openDropdown = null"><span>{{ item[1] }}</span><span v-if="analyticsFilters.granularity === item[0]">✓</span></button></div></div></div>
             </div>
             <div class="mt-4 flex min-h-7 items-center justify-between gap-3 text-xs"><p v-if="analyticsFilterError" class="font-semibold text-task-danger">{{ analyticsFilterError }}</p><p v-else class="text-task-muted">{{ analyticsLoading ? 'Updating analytics…' : 'Filters are applied automatically.' }}</p><button type="button" class="tf-analytics-reset-button" @click="Object.assign(analyticsFilters, { department: '', employee: '', priority: '', status: '', days: '30', start_date: '', end_date: '', granularity: 'day' })"><svg viewBox="0 0 24 24" class="tf-analytics-reset-icon" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M20 6v5h-5" /><path d="M19 11a7.5 7.5 0 1 0 .15 4.5" /></svg>Reset filters</button></div>
@@ -3622,16 +3631,6 @@ const iconPath = (name: string) => {
                 <div>
                   <h2 class="text-xl font-bold leading-tight">Task Completion Trend</h2>
                   <p class="mt-1 text-xs text-task-muted">Created tasks · Completed tasks</p>
-                </div>
-                <div class="relative">
-                  <button type="button" class="tf-icon-button h-12 w-12 rounded-full" @click="toggleActionMenu('monthly-progress-actions')">
-                    <svg viewBox="0 0 24 24" class="h-5 w-5" fill="none" stroke="currentColor" stroke-width="2"><path :d="iconPath('dots')" /></svg>
-                  </button>
-                  <div v-if="actionMenu === 'monthly-progress-actions'" class="tf-action-menu">
-                    <button type="button" class="tf-action-item" @click="actionMenu = null">View Details</button>
-                    <button type="button" class="tf-action-item" @click="actionMenu = null">Change Date Range</button>
-                    <button type="button" class="tf-action-item" @click="actionMenu = null">Refresh</button>
-                  </div>
                 </div>
               </div>
               <div class="relative h-[220px] overflow-hidden" @mouseleave="hoveredMonthlyMonth = null">
@@ -3683,16 +3682,6 @@ const iconPath = (name: string) => {
                 <div>
                   <h2 class="text-xl font-bold leading-tight">Team Efficiency Trend</h2>
                   <p class="mt-1 text-xs text-task-muted">Overall efficiency over time</p>
-                </div>
-                <div class="relative">
-                  <button type="button" class="tf-icon-button h-12 w-12 rounded-full" @click="toggleActionMenu('efficiency-actions')">
-                    <svg viewBox="0 0 24 24" class="h-5 w-5" fill="none" stroke="currentColor" stroke-width="2"><path :d="iconPath('dots')" /></svg>
-                  </button>
-                  <div v-if="actionMenu === 'efficiency-actions'" class="tf-action-menu">
-                    <button type="button" class="tf-action-item" @click="actionMenu = null">View Details</button>
-                    <button type="button" class="tf-action-item" @click="actionMenu = null">Change Date Range</button>
-                    <button type="button" class="tf-action-item" @click="actionMenu = null">Refresh</button>
-                  </div>
                 </div>
               </div>
               <div class="relative h-[220px] overflow-hidden" @mouseleave="hoveredEfficiencyMonth = null">
@@ -3787,7 +3776,7 @@ const iconPath = (name: string) => {
           <aside class="tf-analytics-overdue tf-panel overflow-hidden p-0 xl:sticky xl:top-4">
             <header class="flex items-start justify-between border-b border-task-line px-4 py-4">
               <div><h2 class="font-extrabold text-task-ink">Overdue Tasks</h2><p class="mt-1 text-[11px] text-task-muted">Requires immediate attention</p></div>
-              <span class="grid h-9 w-9 place-items-center rounded-[11px] bg-task-dangerSoft text-task-danger"><svg viewBox="0 0 24 24" class="h-5 w-5" fill="none" stroke="currentColor" stroke-width="1.9"><path d="M12 9v4m0 4h.01M4.5 19h15L12 4 4.5 19Z" /></svg></span>
+              <span class="grid h-10 w-10 place-items-center rounded-[13px] bg-gradient-to-br from-rose-100 to-orange-50 text-task-danger shadow-sm ring-1 ring-rose-200"><svg viewBox="0 0 24 24" class="h-5 w-5" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="8.5"/><path d="M12 7.5v5l3 1.8M18.5 5.5l-2-2M5.5 5.5l2-2"/></svg></span>
             </header>
             <div class="tf-analytics-overdue-summary border-b border-task-line px-4 py-4">
               <div class="flex items-end gap-2"><b class="text-3xl leading-none text-task-danger">{{ overdueTaskRows.length }}</b><span class="pb-0.5 text-xs font-bold text-task-ink">overdue tasks</span></div>
@@ -4287,10 +4276,9 @@ const iconPath = (name: string) => {
             </div>
             <div class="tf-event-attendee-picker relative mt-3">
               <p class="text-sm font-semibold">Attendees</p>
-              <button type="button" class="tf-input mt-2 flex h-11 w-full items-center justify-between text-left" @click="eventAttendeePickerOpen = !eventAttendeePickerOpen"><span class="text-task-muted">Search and select attendees</span><span class="text-xl text-task-blue">+</span></button>
+              <div class="relative mt-2"><svg viewBox="0 0 24 24" class="pointer-events-none absolute left-3.5 top-1/2 h-4 w-4 -translate-y-1/2 text-task-muted" fill="none" stroke="currentColor" stroke-width="1.8"><path :d="iconPath('search')" /></svg><input v-model="eventAttendeeSearch" class="tf-input h-11 w-full pl-10 pr-10" placeholder="Search attendees by name or email..." autocomplete="off" @focus="eventAttendeePickerOpen = true" @input="eventAttendeePickerOpen = true" /><button v-if="eventAttendeeSearch" type="button" class="tf-search-clear" aria-label="Clear attendee search" @click="eventAttendeeSearch = ''">×</button></div>
               <div v-if="eventAttendeePickerOpen" class="absolute left-0 right-0 top-[72px] z-[90] rounded-ui border border-task-line bg-white p-3 shadow-xl">
-                <input v-model="eventAttendeeSearch" class="tf-input w-full" placeholder="Search by name or email..." />
-                <div class="mt-2 max-h-52 overflow-y-auto">
+                <div class="max-h-52 overflow-y-auto">
                   <p v-if="eventAttendeesLoading" class="p-3 text-sm text-task-muted">Loading users...</p>
                   <button v-for="member in availableEventAttendees" :key="teamMemberId(member)" type="button" :class="['tf-dropdown-option gap-3', eventAttendeeIds.includes(teamMemberId(member)) ? 'bg-task-blueSoft' : '']" @click="selectEventAttendee(member)">
                     <span class="flex min-w-0 items-center gap-2.5"><span :class="['grid h-8 w-8 shrink-0 place-items-center rounded-full text-[10px] font-bold', eventAttendeeIds.includes(teamMemberId(member)) ? 'bg-task-blue text-white' : 'bg-task-blueSoft text-task-blue']">{{ initials(teamMemberName(member)) }}</span><span class="min-w-0 text-left"><span class="block truncate font-semibold">{{ teamMemberName(member) }}</span><span class="block truncate text-[11px] font-normal text-task-muted">{{ teamMemberEmail(member) }}</span></span></span>

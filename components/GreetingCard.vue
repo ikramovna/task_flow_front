@@ -197,4 +197,8 @@ onBeforeUnmount(() => {
 .greeting-card__background{transform:none!important;object-fit:cover!important}
 .is-dark .greeting-card__background{filter:brightness(.48) saturate(.88) contrast(1.08)}
 .is-dark .greeting-card__veil{display:block!important;opacity:1!important;background:linear-gradient(90deg,#06162b 0%,rgb(6 22 43/.96) 34%,rgb(6 22 43/.72) 52%,rgb(6 22 43/.12) 74%,transparent 100%)!important}
+/* Slotted theme control should be as bright as the nested notification control. */
+.greeting-card__actions>:deep(.tf-theme-button){border-color:#d8e1ec!important;background:#fff!important;color:#52647b!important;box-shadow:0 8px 22px -12px rgb(15 23 42/.45),inset 0 1px 0 rgb(255 255 255/.98)!important;backdrop-filter:blur(16px) saturate(145%)}
+.greeting-card__actions>:deep(.tf-theme-button:hover){border-color:#9fc4ed!important;background:#fff!important;color:#1d5fa8!important}
+.is-dark .greeting-card__actions>:deep(.tf-theme-button){border-color:#38506f!important;background:#102b4c!important;color:#f8c85a!important;box-shadow:0 10px 28px -13px rgb(0 0 0/.9),inset 0 1px 0 rgb(255 255 255/.08)!important}
 </style>
