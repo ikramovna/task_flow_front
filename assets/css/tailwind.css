@@ -2539,13 +2539,13 @@ body {
   justify-content: space-between;
   gap: 10px;
   border: 1px solid #dbe4ef;
-  border-radius: 14px;
-  background: linear-gradient(180deg, #fff 0%, #f9fbfd 100%);
+  border-radius: 12px;
+  background: #fff;
   padding: 0 14px;
   color: #172033;
   font-size: 13px;
   font-weight: 700;
-  box-shadow: 0 4px 12px -10px rgb(15 23 42 / .45);
+  box-shadow: 0 3px 12px -10px rgb(15 23 42 / .45);
   transition: border-color .18s ease, box-shadow .18s ease, transform .18s ease;
 }
 
@@ -2554,6 +2554,43 @@ body {
   z-index: 40;
   overflow: visible;
   transform: none !important;
+  border-color: #e2eaf4;
+  background: color-mix(in srgb, var(--tf-surface) 98%, #f7faff);
+  box-shadow: 0 16px 42px -34px rgb(15 23 42 / .5);
+}
+
+.tf-analytics-filter-label {
+  position: relative;
+  z-index: 1;
+  min-width: 0;
+  color: var(--tf-muted);
+  font-size: 11px;
+  font-weight: 800;
+  line-height: 1.25;
+}
+
+/* Lift the entire active grid cell. Raising only the nested dropdown is not
+   enough because later CSS-grid items are painted above its menu. */
+.tf-analytics-filter-label:has(.tf-dropdown-menu) {
+  z-index: 250;
+}
+
+.tf-analytics-filter-leading {
+  display: grid;
+  height: 24px;
+  width: 24px;
+  flex: none;
+  place-items: center;
+  border-radius: 7px;
+  background: #edf5ff;
+  color: #2877ed;
+}
+
+.tf-analytics-filter-leading svg {
+  display: block;
+  width: 17px;
+  height: 17px;
+  stroke: currentColor;
 }
 
 .tf-analytics-filter-panel:hover,
@@ -2570,11 +2607,11 @@ body {
    this, controls rendered later in the grid (for example Granularity) paint
    above an earlier dropdown menu such as Status. */
 .tf-analytics-filter-panel .tf-dropdown:has(.tf-dropdown-menu) {
-  z-index: 140;
+  z-index: 260;
 }
 
 .tf-analytics-filter-panel .tf-dropdown-menu {
-  z-index: 150;
+  z-index: 270;
 }
 
 .tf-analytics-filter-panel .tf-dropdown-menu {
@@ -2595,9 +2632,49 @@ body {
 }
 
 .tf-analytics-date-input { margin-top: 8px; justify-content: flex-start; }
-.tf-analytics-date-input > svg { width: 18px; height: 18px; flex: none; color: #2877ed; }
 .tf-analytics-date-input input { min-width: 0; flex: 1; border: 0; outline: 0; background: transparent; color: inherit; font: inherit; }
 .tf-analytics-date-input input::-webkit-calendar-picker-indicator { cursor: pointer; opacity: .55; }
+
+.tf-analytics-reset-button {
+  display: inline-flex;
+  flex: none;
+  align-items: center;
+  gap: 7px;
+  border-radius: 9px;
+  padding: 7px 9px;
+  color: #2877ed;
+  font-weight: 800;
+  transition: background-color .18s ease, color .18s ease;
+}
+
+.tf-analytics-reset-button:hover {
+  background: #edf5ff;
+  color: #175ec7;
+}
+
+.tf-analytics-reset-icon {
+  display: block;
+  width: 17px;
+  height: 17px;
+  flex: none;
+  overflow: visible;
+  transform-origin: center;
+}
+
+.tf-analytics-reset-button:hover .tf-analytics-reset-icon {
+  animation: tf-analytics-reset-spin .65s cubic-bezier(.4, 0, .2, 1);
+}
+
+@keyframes tf-analytics-reset-spin {
+  from { transform: rotate(0deg); }
+  to { transform: rotate(-360deg); }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .tf-analytics-reset-button:hover .tf-analytics-reset-icon {
+    animation: none;
+  }
+}
 
 .tf-dark .tf-analytics-filter-button,
 .tf-dark .tf-analytics-date-input {
@@ -2610,10 +2687,24 @@ body {
 .tf-dark .tf-analytics-filter-button:hover,
 .tf-dark .tf-analytics-date-input:hover { border-color: #4d78a8; background: #1b2b43; }
 
+.tf-dark .tf-analytics-filter-panel {
+  border-color: #2d3d55;
+  background: #121f32;
+}
+
+.tf-dark .tf-analytics-filter-leading {
+  background: #17345a;
+  color: #7eb8ff;
+}
+
+.tf-dark .tf-analytics-reset-button:hover {
+  background: #17345a;
+  color: #7eb8ff;
+}
+
 @media (min-width: 1280px) {
   .tf-analytics-kpis { grid-template-columns: repeat(5, minmax(145px, 1fr)); }
   .tf-analytics-details { grid-template-columns: repeat(3, minmax(0, 1fr)); }
-  .tf-analytics-date-filter:first-of-type { grid-column-start: 2; }
 }
 
 @media (min-width: 1760px) {
