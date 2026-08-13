@@ -245,7 +245,8 @@ const archivedTaskCount = ref(0)
 const dashboardStats = computed(() => {
   const total = Number(stats.value[0]?.[0] || 0)
   const archivedPercent = total ? Math.round((archivedTaskCount.value / total) * 100) : 0
-  return [...stats.value, [String(archivedTaskCount.value), 'Archived Tasks', archivedPercent]]
+  const renamedStats = stats.value.map(item => item[1] === 'Completed Tasks' ? [item[0], 'Submitted Tasks', item[2]] : item)
+  return [...renamedStats, [String(archivedTaskCount.value), 'Completed Tasks', archivedPercent]]
 })
 const taskViewMode = ref<'list' | 'kanban'>('kanban')
 const taskBoardSection = ref<'board' | 'backlog'>('board')
@@ -579,7 +580,7 @@ const taskOverviewCards = computed(() => [
   { label: 'To Do', value: tasks.value.filter((task) => String(task[3]).toLowerCase() === 'not started').length, color: 'slate', status: 'all' },
   { label: 'In Progress', value: tasks.value.filter((task) => String(task[3]).toLowerCase() === 'in progress').length, color: 'blue', status: 'all' },
   { label: 'On Hold', value: tasks.value.filter((task) => String(task[3]).toLowerCase() === 'on hold').length, color: 'amber', status: 'on_hold' },
-  { label: 'Completed', value: tasks.value.filter((task) => String(task[3]).toLowerCase() === 'completed').length, color: 'green', status: 'all' },
+  { label: 'Submitted', value: tasks.value.filter((task) => String(task[3]).toLowerCase() === 'completed').length, color: 'green', status: 'all' },
   { label: 'Overdue', value: tasks.value.filter(isTaskOverdue).length, color: 'rose', status: 'overdue' },
   { label: 'Archived', value: archivedTaskCount.value, color: 'slate', status: 'archived' }
 ])
@@ -657,7 +658,7 @@ const kanbanColumns = computed(() => [
   { key: 'not_started', label: 'To Do', description: 'Ready to start', color: '#8B96A7', softColor: '#F3F5F7', tasks: paginatedTasks.value.filter((task) => String(task[3]).toLowerCase() === 'not started') },
   { key: 'in_progress', label: 'In Progress', description: 'Being worked on', color: '#3B82F6', softColor: '#EEF5FF', tasks: paginatedTasks.value.filter((task) => String(task[3]).toLowerCase() === 'in progress') },
   { key: 'on_hold', label: 'On Hold', description: 'Temporarily paused', color: '#F59E0B', softColor: '#FFFBEB', tasks: paginatedTasks.value.filter((task) => String(task[3]).toLowerCase() === 'on hold') },
-  { key: 'completed', label: 'Completed', description: 'Finished', color: '#18A875', softColor: '#ECF9F4', tasks: paginatedTasks.value.filter((task) => String(task[3]).toLowerCase() === 'completed') }
+  { key: 'completed', label: 'Submitted', description: 'Finished', color: '#18A875', softColor: '#ECF9F4', tasks: paginatedTasks.value.filter((task) => String(task[3]).toLowerCase() === 'completed') }
 ])
 const paginatedProjects = computed(() => paginate(filteredProjects.value, projectPage.value))
 const paginatedTeam = computed(() => paginate(filteredTeam.value, teamPage.value))
@@ -3392,19 +3393,21 @@ const iconPath = (name: string) => {
 
           <div class="tf-panel flex flex-col gap-3 border p-2 shadow-none lg:flex-row lg:items-center lg:justify-between">
             <div class="flex min-w-0 overflow-x-auto" role="tablist" aria-label="Task views">
-              <button type="button" :class="['inline-flex h-12 shrink-0 items-center gap-2 border-b-2 px-5 text-sm font-semibold transition', taskBoardSection === 'backlog' ? 'border-task-blue text-task-blue' : 'border-transparent text-task-muted hover:text-task-blue']" @click="taskBoardSection = 'backlog'"><svg viewBox="0 0 24 24" class="h-4 w-4" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M4 5h16v14H4V5Zm4 4h8m-8 4h8" /></svg>Postponed <span class="rounded-full bg-slate-100 px-1.5 py-0.5 text-[9px]">{{ backlogTasks.length }}</span></button>
-              <button type="button" :class="['inline-flex h-12 shrink-0 items-center gap-2 border-b-2 px-5 text-sm font-semibold transition', taskBoardSection === 'board' && taskViewMode === 'list' && taskScope !== 'archived' ? 'border-task-blue text-task-blue' : 'border-transparent text-task-muted hover:text-task-blue']" @click="taskBoardSection = 'board'; taskViewMode = 'list'; taskScope === 'archived' && loadTaskScope('all')"><svg viewBox="0 0 20 20" class="h-4 w-4" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M6 5h11M6 10h11M6 15h11M3 5h.01M3 10h.01M3 15h.01" /></svg>List</button>
-              <button type="button" :class="['inline-flex h-12 shrink-0 items-center gap-2 border-b-2 px-5 text-sm font-semibold transition', taskBoardSection === 'board' && taskViewMode === 'kanban' && taskScope !== 'archived' ? 'border-task-blue text-task-blue' : 'border-transparent text-task-muted hover:text-task-blue']" @click="taskBoardSection = 'board'; taskViewMode = 'kanban'; taskScope === 'archived' && loadTaskScope('all')"><svg viewBox="0 0 20 20" class="h-4 w-4" fill="none" stroke="currentColor" stroke-width="1.7"><rect x="2.5" y="3" width="4" height="14" rx="1.2" /><rect x="8" y="3" width="4" height="9" rx="1.2" /><rect x="13.5" y="3" width="4" height="12" rx="1.2" /></svg>Kanban</button>
-              <button v-if="canManageDepartment" type="button" :class="['inline-flex h-12 shrink-0 items-center gap-2 border-b-2 px-5 text-sm font-semibold transition', taskScope === 'archived' ? 'border-task-blue text-task-blue' : 'border-transparent text-task-muted hover:text-task-blue']" @click="loadTaskScope('archived')"><svg viewBox="0 0 24 24" class="h-4 w-4" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M4 7h16v13H4V7Zm-1-4h18v4H3V3Zm6 9h6" /></svg>Archive</button>
+              <button type="button" :class="['inline-flex h-12 shrink-0 items-center gap-2 border-b-2 px-5 text-sm font-semibold transition', taskBoardSection === 'backlog' && taskScope !== 'archived' ? 'border-task-blue text-task-blue' : 'border-transparent text-task-muted hover:text-task-blue']" @click="taskBoardSection = 'backlog'; taskScope === 'archived' && loadTaskScope('all')"><svg viewBox="0 0 24 24" class="h-4 w-4" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M4 5h16v14H4V5Zm4 4h8m-8 4h8" /></svg>Postponed <span class="rounded-full bg-slate-100 px-1.5 py-0.5 text-[9px]">{{ backlogTasks.length }}</span></button>
+              <button v-if="canManageDepartment" type="button" :class="['inline-flex h-12 shrink-0 items-center gap-2 border-b-2 px-5 text-sm font-semibold transition', taskScope === 'archived' ? 'border-task-blue text-task-blue' : 'border-transparent text-task-muted hover:text-task-blue']" @click="taskBoardSection = 'board'; loadTaskScope('archived')"><svg viewBox="0 0 24 24" class="h-4 w-4" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M4 7h16v13H4V7Zm-1-4h18v4H3V3Zm6 9h6" /></svg>Archive <span class="rounded-full bg-slate-100 px-1.5 py-0.5 text-[9px]">{{ archivedTaskCount }}</span></button>
             </div>
-            <button v-if="canAddTask && taskScope !== 'archived'" class="tf-primary h-11 shrink-0 rounded-[11px] px-5" type="button" @click="openModal('task')"><svg viewBox="0 0 24 24" class="h-4 w-4" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 5v14M5 12h14" /></svg>New Task</button>
+            <div class="flex shrink-0 items-center gap-1 overflow-x-auto">
+              <button type="button" :class="['inline-flex h-11 shrink-0 items-center gap-2 rounded-[10px] px-4 text-sm font-semibold transition', taskBoardSection === 'board' && taskViewMode === 'list' && taskScope !== 'archived' ? 'bg-task-blueSoft text-task-blue' : 'text-task-muted hover:text-task-blue']" @click="taskBoardSection = 'board'; taskViewMode = 'list'; taskScope === 'archived' && loadTaskScope('all')"><svg viewBox="0 0 20 20" class="h-4 w-4" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M6 5h11M6 10h11M6 15h11M3 5h.01M3 10h.01M3 15h.01" /></svg>List</button>
+              <button type="button" :class="['inline-flex h-11 shrink-0 items-center gap-2 rounded-[10px] px-4 text-sm font-semibold transition', taskBoardSection === 'board' && taskViewMode === 'kanban' && taskScope !== 'archived' ? 'bg-task-blueSoft text-task-blue' : 'text-task-muted hover:text-task-blue']" @click="taskBoardSection = 'board'; taskViewMode = 'kanban'; taskScope === 'archived' && loadTaskScope('all')"><svg viewBox="0 0 20 20" class="h-4 w-4" fill="none" stroke="currentColor" stroke-width="1.7"><rect x="2.5" y="3" width="4" height="14" rx="1.2" /><rect x="8" y="3" width="4" height="9" rx="1.2" /><rect x="13.5" y="3" width="4" height="12" rx="1.2" /></svg>Kanban</button>
+              <button v-if="canAddTask && taskScope !== 'archived'" class="tf-primary ml-3 h-11 shrink-0 rounded-[11px] px-5" type="button" @click="openModal('task')"><svg viewBox="0 0 24 24" class="h-4 w-4" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 5v14M5 12h14" /></svg>New Task</button>
+            </div>
           </div>
 
           <div data-task-board class="tf-panel relative scroll-mt-4 p-4 sm:p-5">
             <div class="mb-5 flex flex-col gap-3 xl:flex-row xl:items-center xl:justify-between">
               <div class="flex flex-wrap items-center gap-2"><h2 class="text-lg font-bold">{{ taskScope === 'archived' ? 'Archived Tasks' : taskBoardSection === 'backlog' ? 'Postponed Tasks' : taskViewMode === 'kanban' ? 'Kanban Board' : 'All Active Tasks' }}</h2><span class="rounded-full bg-task-blueSoft px-2.5 py-1 text-[10px] font-extrabold text-task-blue">{{ filteredTasks.length }} tasks</span><span v-if="selectedTaskKeys.length && taskViewMode === 'list'" class="rounded-full bg-task-successSoft px-2.5 py-1 text-[10px] font-extrabold text-task-success">{{ selectedTaskKeys.length }} selected</span><button v-if="taskAttentionFilter !== 'all'" type="button" class="rounded-full bg-task-dangerSoft px-3 py-1 text-[10px] font-bold uppercase text-task-danger" @click="clearTaskAttentionFilter">{{ taskAttentionFilter.replace('_', ' ') }} ×</button></div>
               <div class="flex flex-col gap-2 sm:flex-row sm:flex-wrap sm:items-center">
-                <div class="inline-flex h-11 items-center rounded-[11px] border border-task-line bg-slate-50 p-1"><button type="button" :class="['h-9 rounded-[8px] px-3 text-xs font-bold transition', taskScope === 'all' ? 'bg-task-blue text-white shadow-sm' : 'text-task-muted hover:text-task-blue']" @click="loadTaskScope('all')">All Tasks</button><button type="button" :class="['h-9 rounded-[8px] px-3 text-xs font-bold transition', taskScope === 'mine' ? 'bg-task-blue text-white shadow-sm' : 'text-task-muted hover:text-task-blue']" @click="loadTaskScope('mine')">My Tasks</button></div>
+                <div class="inline-flex h-11 items-center rounded-[11px] border border-task-line bg-slate-50 p-1"><button type="button" :class="['h-9 rounded-[8px] px-3 text-xs font-bold transition', taskScope === 'all' ? 'bg-task-blue text-white shadow-sm' : 'text-task-muted hover:text-task-blue']" @click="loadTaskScope('all')">All Tasks</button><button type="button" :class="['h-9 rounded-[8px] border px-3 text-xs font-bold transition', taskScope === 'mine' ? 'border-task-danger bg-task-danger text-white shadow-sm' : 'border-task-danger/20 bg-task-dangerSoft text-task-danger hover:border-task-danger hover:bg-task-danger hover:text-white']" @click="loadTaskScope('mine')">My Tasks</button></div>
                 <label class="relative w-full sm:w-auto">
                 <svg viewBox="0 0 24 24" class="pointer-events-none absolute left-3.5 top-1/2 h-4 w-4 -translate-y-1/2 text-task-muted" fill="none" stroke="currentColor" stroke-width="1.8"><path :d="iconPath('search')" /></svg>
                 <input v-model="taskSearchInput" class="tf-input h-11 w-full pl-10 pr-10 sm:w-64" placeholder="Search tasks..." />
@@ -3529,7 +3532,7 @@ const iconPath = (name: string) => {
                     <option value="not_started">Not Started</option>
                     <option value="in_progress">In Progress</option>
                     <option value="on_hold">On Hold</option>
-                    <option value="completed">Completed</option>
+                    <option value="completed">Submitted</option>
                   </select>
                   <button v-if="column.key === 'completed' && canManageDepartment" type="button" class="mt-3 inline-flex h-8 w-full items-center justify-center gap-2 rounded-[9px] border border-slate-200 bg-slate-50 text-xs font-bold text-slate-600 transition hover:border-task-blue hover:bg-task-blueSoft hover:text-task-blue" @click.stop="archiveTask(task)"><svg viewBox="0 0 24 24" class="h-4 w-4" fill="none" stroke="currentColor" stroke-width="1.9"><path d="M4 7h16v13H4V7Zm-1-4h18v4H3V3Zm6 9h6" /></svg>Archive</button>
                 </article>
@@ -4139,12 +4142,12 @@ const iconPath = (name: string) => {
                 Status
                 <div class="tf-dropdown mt-2">
                   <button type="button" class="tf-dropdown-button h-12 disabled:cursor-not-allowed disabled:opacity-60" :disabled="!openedTaskCanChangeStatus" @click="openDropdown = openDropdown === 'taskStatus' ? null : 'taskStatus'">
-                    <span>{{ taskFormStatus }}</span>
+                    <span>{{ taskFormStatus === 'Completed' ? 'Submitted' : taskFormStatus }}</span>
                     <svg viewBox="0 0 20 20" class="h-4 w-4 shrink-0 text-task-muted transition" fill="none" stroke="currentColor" stroke-width="2"><path d="m5 7.5 5 5 5-5" /></svg>
                   </button>
                   <div v-if="openDropdown === 'taskStatus'" class="tf-dropdown-menu">
                     <button v-for="option in taskStatusOptions" :key="option" type="button" class="tf-dropdown-option" @click="taskFormStatus = option; openDropdown = null">
-                      <span>{{ option }}</span>
+                      <span>{{ option === 'Completed' ? 'Submitted' : option }}</span>
                       <span v-if="taskFormStatus === option">✓</span>
                     </button>
                   </div>
