@@ -34,6 +34,7 @@ export interface TaskFlowState {
   currentRole: string
   currentUserActive: boolean
   currentUserHasAllDepartmentsAccess: boolean
+  currentUserAccessibleDepartmentIds: string[]
   loaded: boolean
 }
 
@@ -71,7 +72,8 @@ const createEmptyState = (): TaskFlowState => ({
   currentDepartmentId: '',
   currentRole: '',
   currentUserActive: false,
-  currentUserHasAllDepartmentsAccess: false
+  currentUserHasAllDepartmentsAccess: false,
+  currentUserAccessibleDepartmentIds: []
 })
 
 export const useTaskFlowStore = () => {
@@ -106,7 +108,7 @@ export const useTaskFlowStore = () => {
             [String(metric('completed_tasks').count), 'Completed Tasks', metric('completed_tasks').percentage],
             [String(metric('in_progress_tasks').count), 'In Progress', metric('in_progress_tasks').percentage],
             [String(metric('not_started_tasks').count), 'Not Started', metric('not_started_tasks').percentage],
-            [String(metric('backlog_tasks').count), 'Backlog', metric('backlog_tasks').percentage],
+            [String(metric('backlog_tasks').count), 'Postponed', metric('backlog_tasks').percentage],
             [String(metric('on_hold_tasks').count), 'On Hold', metric('on_hold_tasks').percentage],
             [String(metric('overdue_tasks').count), 'Overdue Tasks', metric('overdue_tasks').percentage]
           ],
@@ -120,7 +122,11 @@ export const useTaskFlowStore = () => {
           currentDepartmentId: String(profile.department || membership?.department || ''),
           currentRole: String(profile.role || membership?.role || '').trim().toLowerCase(),
           currentUserActive: profile.is_active !== false && membership?.is_active !== false,
-          currentUserHasAllDepartmentsAccess: profile.has_all_departments_access === true || membership?.has_all_departments_access === true
+          currentUserHasAllDepartmentsAccess: profile.has_all_departments_access === true || membership?.has_all_departments_access === true,
+          currentUserAccessibleDepartmentIds: Array.from(new Set([
+            String(profile.department || membership?.department || ''),
+            ...(profile.accessible_departments || membership?.accessible_departments || []).map((department: any) => String(typeof department === 'object' ? department?.id || '' : department || ''))
+          ].filter(Boolean)))
         }
       })
 
@@ -149,7 +155,7 @@ export const useTaskFlowStore = () => {
           [String(dashboardMetric('completed_tasks').count), 'Completed Tasks', dashboardMetric('completed_tasks').percentage],
           [String(dashboardMetric('in_progress_tasks').count), 'In Progress', dashboardMetric('in_progress_tasks').percentage],
           [String(dashboardMetric('not_started_tasks').count), 'Not Started', dashboardMetric('not_started_tasks').percentage],
-          [String(dashboardMetric('backlog_tasks').count), 'Backlog', dashboardMetric('backlog_tasks').percentage],
+          [String(dashboardMetric('backlog_tasks').count), 'Postponed', dashboardMetric('backlog_tasks').percentage],
           [String(dashboardMetric('on_hold_tasks').count), 'On Hold', dashboardMetric('on_hold_tasks').percentage],
           [String(dashboardMetric('overdue_tasks').count), 'Overdue Tasks', dashboardMetric('overdue_tasks').percentage]
         ] : [],
@@ -190,7 +196,8 @@ export const useTaskFlowStore = () => {
         currentDepartmentId: backend.currentDepartmentId,
         currentRole: backend.currentRole,
         currentUserActive: backend.currentUserActive,
-        currentUserHasAllDepartmentsAccess: backend.currentUserHasAllDepartmentsAccess
+        currentUserHasAllDepartmentsAccess: backend.currentUserHasAllDepartmentsAccess,
+        currentUserAccessibleDepartmentIds: backend.currentUserAccessibleDepartmentIds
       }
     } catch (error) {
       console.warn('TaskFlow API load failed.', error)
@@ -208,7 +215,11 @@ export const useTaskFlowStore = () => {
           currentDepartmentId: String(profile.department || membership?.department || ''),
           currentRole: String(profile.role || membership?.role || '').trim().toLowerCase(),
           currentUserActive: profile.is_active !== false && membership?.is_active !== false,
-          currentUserHasAllDepartmentsAccess: profile.has_all_departments_access === true || membership?.has_all_departments_access === true
+          currentUserHasAllDepartmentsAccess: profile.has_all_departments_access === true || membership?.has_all_departments_access === true,
+          currentUserAccessibleDepartmentIds: Array.from(new Set([
+            String(profile.department || membership?.department || ''),
+            ...(profile.accessible_departments || membership?.accessible_departments || []).map((department: any) => String(typeof department === 'object' ? department?.id || '' : department || ''))
+          ].filter(Boolean)))
         }
       } catch (profileError) {
         console.warn('TaskFlow profile load failed.', profileError)
@@ -249,6 +260,7 @@ export const useTaskFlowStore = () => {
     currentRole: computed(() => state.value.currentRole),
     currentUserActive: computed(() => state.value.currentUserActive),
     currentUserHasAllDepartmentsAccess: computed(() => state.value.currentUserHasAllDepartmentsAccess),
+    currentUserAccessibleDepartmentIds: computed(() => state.value.currentUserAccessibleDepartmentIds),
     apiError: computed(() => apiError.value)
   }
 }

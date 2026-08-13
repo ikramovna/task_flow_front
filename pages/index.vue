@@ -129,7 +129,7 @@ watch([activePage, () => ({ ...analyticsFilters })], () => {
 
 void taskFlowStore.loadBackendData()
 
-const { state, pages, stats, projectStats, analyticsStats, monthlyProgress, tasksByCategory, tasks, projects, team, workload, reports, events, messages, heatmap, currentUserId, currentDepartmentId, currentRole, currentUserActive, currentUserHasAllDepartmentsAccess, apiError, dashboardTodayEvents, dashboardUpcomingEvents, dashboardDeadlines, dashboardDepartments, dashboardRecentTasks, dashboardGeneratedAt } = taskFlowStore
+const { state, pages, stats, projectStats, analyticsStats, monthlyProgress, tasksByCategory, tasks, projects, team, workload, reports, events, messages, heatmap, currentUserId, currentDepartmentId, currentRole, currentUserActive, currentUserHasAllDepartmentsAccess, currentUserAccessibleDepartmentIds, apiError, dashboardTodayEvents, dashboardUpcomingEvents, dashboardDeadlines, dashboardDepartments, dashboardRecentTasks, dashboardGeneratedAt } = taskFlowStore
 const normalizedRole = computed(() => currentRole.value.trim().toLowerCase())
 const canManageDepartment = computed(() => ['owner', 'admin', 'manager'].includes(normalizedRole.value))
 const canManageMembers = computed(() => currentUserActive.value && ['owner', 'admin', 'manager'].includes(normalizedRole.value))
@@ -137,7 +137,7 @@ const canAddTask = computed(() => currentUserActive.value && ['owner', 'admin', 
 const canCreateEvent = computed(() => canAddTask.value)
 const canChooseDepartment = computed(() =>
   ['owner', 'manager'].includes(normalizedRole.value) &&
-  (currentUserHasAllDepartmentsAccess.value || !currentDepartmentId.value)
+  (currentUserHasAllDepartmentsAccess.value || currentUserAccessibleDepartmentIds.value.length > 1 || !currentDepartmentId.value)
 )
 const effectiveDepartmentId = computed(() => {
   if (currentDepartmentId.value) return currentDepartmentId.value
@@ -385,7 +385,7 @@ const form = reactive({
   description: ''
 })
 const eventTypeOptions = ['Meeting', 'Review', 'Workshop']
-const taskStatusOptions = ['Backlog', 'Not Started', 'In Progress', 'On Hold', 'Completed']
+const taskStatusOptions = ['Postponed', 'Not Started', 'In Progress', 'On Hold', 'Completed']
 const taskFormStatus = ref('Not Started')
 const taskIsHidden = ref(false)
 const taskAssigneeIds = ref<string[]>([])
@@ -458,7 +458,9 @@ const memberDepartmentOptions = computed(() => {
   if (effectiveDepartmentId.value && !options.some((department) => department.id === effectiveDepartmentId.value)) {
     options.unshift({ id: effectiveDepartmentId.value, name: 'Current department' })
   }
-  return options
+  if (currentUserHasAllDepartmentsAccess.value || !currentUserAccessibleDepartmentIds.value.length) return options
+  const allowed = new Set(currentUserAccessibleDepartmentIds.value)
+  return options.filter((department) => allowed.has(department.id))
 })
 const editingProjectId = ref('')
 const editingProjectDepartment = ref('')
@@ -1018,7 +1020,7 @@ const categoryTrendData = computed(() => {
 const analyticsStatusRows = computed(() => {
   const definitions = [
     ['Completed', 'completed', '#20B486'], ['In Progress', 'in progress', '#2F80ED'],
-    ['Not Started', 'not started', '#8057D5'], ['On Hold', 'on hold', '#F59E0B'], ['Backlog', 'backlog', '#94A3B8']
+    ['Not Started', 'not started', '#8057D5'], ['On Hold', 'on hold', '#F59E0B'], ['Postponed', 'backlog', '#94A3B8']
   ]
   const total = Math.max(tasks.value.length, 1)
   return definitions.map(([label, status, color]) => {
@@ -1244,7 +1246,10 @@ const archiveOpenedTask = async () => {
   modal.value = null
 }
 
-const dashboardStatus = (value: unknown) => String(value || '').split('_').map((word) => word.charAt(0).toUpperCase() + word.slice(1)).join(' ')
+const dashboardStatus = (value: unknown) => {
+  const status = String(value || '').split('_').map((word) => word.charAt(0).toUpperCase() + word.slice(1)).join(' ')
+  return status.toLowerCase() === 'backlog' ? 'Postponed' : status
+}
 
 const setPage = (key: PageKey) => {
   if (isComingSoonPage(key)) {
@@ -1443,6 +1448,11 @@ watch(apiError, (message) => {
 watch(isDarkTheme, syncRootThemeClass)
 
 onMounted(() => {
+  // The app scrolls inside `.tf-content`; never restore document-level
+  // horizontal scrolling after a production reload.
+  window.scrollTo({ left: 0, top: 0 })
+  document.documentElement.scrollLeft = 0
+  document.body.scrollLeft = 0
   document.addEventListener('pointerdown', closeFloatingMenus, true)
   document.addEventListener('keydown', handleGlobalKeydown)
   window.addEventListener('hashchange', restoreActivePage)
@@ -1581,6 +1591,8 @@ const toggleTeamSort = (column: 'name' | 'department' | 'role' | 'efficiency') =
 }
 const payloadMemberId = (id: string) => (/^\d+$/.test(id) ? Number(id) : id)
 const projectEnum = (value: string) => value.toLowerCase().replace(/\s+/g, '_')
+const taskStatusApiValue = (value: string) => value.trim().toLowerCase() === 'postponed' ? 'backlog' : projectEnum(value)
+const taskStatusDisplay = (value: unknown) => String(value || '').trim().toLowerCase() === 'backlog' ? 'Postponed' : String(value || '')
 const projectDisplayStatus = (value: string) => value.split('_').map((part) => part.charAt(0).toUpperCase() + part.slice(1)).join(' ')
 const todayIsoDate = () => new Date().toISOString().slice(0, 10)
 const formatProjectDateInput = (date: Date) =>
@@ -1891,6 +1903,7 @@ const openModal = (value: Exclude<ModalKey, null>) => {
     taskMainAssigneeId.value = ''
     taskAssigneeSearch.value = ''
     taskAssigneeOptions.value = [...departmentTeam.value]
+    if (canChooseDepartment.value) void loadModalDepartments()
     void loadTaskAssignees()
   }
   if (value === 'member') {
@@ -1953,15 +1966,19 @@ const assignTaskTo = (member: string) => {
 
 const loadTaskAssignees = async () => {
   taskAssigneesLoading.value = true
+  const department = modalDepartment.value || effectiveDepartmentId.value
   try {
     const response = await taskFlowApi.listMembers({
+      department: department || undefined,
       is_active: true,
       page_size: 200
     })
-    taskAssigneeOptions.value = taskFlowApi.listItems(response).map(taskFlowApi.mapMember)
+    taskAssigneeOptions.value = taskFlowApi.listItems(response)
+      .map(taskFlowApi.mapMember)
+      .filter((member) => !department || String(member[11] || '') === department)
   } catch (error) {
     console.error('Task assignees load failed.', error)
-    taskAssigneeOptions.value = [...team.value]
+    taskAssigneeOptions.value = team.value.filter((member) => !department || String(member[11] || '') === department)
     notifyError(taskFlowApiErrorMessage(error, 'Could not load team members'))
   } finally {
     taskAssigneesLoading.value = false
@@ -1989,6 +2006,13 @@ const selectModalDepartment = (departmentId: string) => {
   modalDepartment.value = departmentId
   openDropdown.value = null
   if (modal.value === 'event') void loadEventAttendees()
+  if (modal.value === 'task') {
+    taskAssigneeIds.value = []
+    taskAssigneeLabels.value = []
+    taskMainAssigneeId.value = ''
+    form.assignee = ''
+    void loadTaskAssignees()
+  }
 }
 const currentMemberId = computed(() => {
   const email = savedProfile.email.trim().toLowerCase()
@@ -2269,10 +2293,11 @@ const openTask = async (task: Array<string | number>, mode: 'view' | 'edit', fro
     taskModalMode.value = mode
     form.title = String(mapped[0] || '')
     form.priority = String(mapped[2] || 'Medium')
-    taskFormStatus.value = String(mapped[3] || 'Not Started')
+    taskFormStatus.value = taskStatusDisplay(mapped[3] || 'Not Started')
     taskIsHidden.value = taskIsHiddenOf(mapped)
     form.description = String(mapped[10] || '')
     form.category = String(mapped[11] || '')
+    modalDepartment.value = String(mapped[8] || effectiveDepartmentId.value || '')
     const rawDueDate = String(mapped[12] || '')
     form.dueDate = rawDueDate ? formatProjectDateInput(new Date(`${rawDueDate}T00:00:00`)) : ''
     const assigneeDetails = taskAssigneeDetailsOf(mapped)
@@ -2593,8 +2618,9 @@ const submitModal = async () => {
       notifyError('Only active owners, admins, and managers can add tasks')
       return
     }
-    const status = projectEnum(taskFormStatus.value)
+    const status = taskStatusApiValue(taskFormStatus.value)
     const payload = {
+      department: modalDepartment.value || effectiveDepartmentId.value || undefined,
       title,
       description: form.description.trim(),
       status,
@@ -3126,7 +3152,7 @@ const badgeClass = (value: string) => {
   if (value === 'Medium' || value === 'Processing') return 'bg-task-warningSoft text-task-warning'
   if (value === 'Low' || value === 'Completed' || value === 'Ready') return 'bg-task-successSoft text-task-success'
   if (value === 'Not Started') return 'bg-slate-100 text-task-muted'
-  if (value === 'Backlog') return 'bg-slate-200 text-slate-600'
+  if (value === 'Backlog' || value === 'Postponed') return 'bg-slate-200 text-slate-600'
   if (value === 'On Hold') return 'tf-status-on-hold'
   return 'bg-task-blueSoft text-task-blue'
 }
@@ -3190,7 +3216,7 @@ const iconPath = (name: string) => {
           <section v-for="(group, groupIndex) in sidebarGroups" :key="group.label" :class="['tf-sidebar-group', groupIndex ? 'mt-5 border-t border-task-line pt-5' : '']">
             <p v-if="!sidebarCollapsed" class="tf-sidebar-group-label">{{ group.label }}</p>
             <div :key="`${group.label}-${activePage}`" class="mt-2 space-y-1.5">
-              <button v-for="item in group.items" :key="item.key" type="button" :disabled="isComingSoonPage(item.key)" :class="['tf-nav-item relative flex h-11 w-full items-center rounded-[12px] text-left text-sm transition', sidebarCollapsed ? 'justify-center px-2' : 'gap-3 px-3', isComingSoonPage(item.key) ? 'cursor-not-allowed text-slate-400' : activePage === item.key ? 'is-active font-semibold text-task-blue' : 'text-task-muted hover:bg-slate-50 hover:text-task-ink']" :title="isComingSoonPage(item.key) ? `${item.label} — Coming soon` : sidebarCollapsed ? item.label : undefined" @click="setPage(item.key)">
+              <button v-for="item in group.items" :key="item.key" type="button" :disabled="isComingSoonPage(item.key)" :aria-current="activePage === item.key ? 'page' : undefined" :class="['tf-nav-item relative flex h-11 w-full items-center rounded-[12px] text-left text-sm transition', sidebarCollapsed ? 'justify-center px-2' : 'gap-3 px-3', isComingSoonPage(item.key) ? 'cursor-not-allowed text-slate-400' : activePage === item.key ? 'is-active font-semibold text-task-blue' : 'text-task-muted hover:bg-slate-50 hover:text-task-ink']" :title="isComingSoonPage(item.key) ? `${item.label} — Coming soon` : sidebarCollapsed ? item.label : undefined" @click="setPage(item.key)">
                 <span class="grid h-7 w-7 shrink-0 place-items-center"><svg viewBox="0 0 24 24" class="h-[19px] w-[19px]" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path :d="iconPath(item.icon)" /></svg></span>
                 <span v-if="!sidebarCollapsed" class="min-w-0 flex-1 truncate">{{ item.label }}</span>
                 <span v-if="isComingSoonPage(item.key) && !sidebarCollapsed" class="rounded-full bg-slate-100 px-2 py-1 text-[9px] font-bold uppercase tracking-wide text-slate-400">Soon</span>
@@ -3303,7 +3329,7 @@ const iconPath = (name: string) => {
               </header>
               <div v-if="dashboardDepartments.length" class="grid flex-1 gap-4 p-5 sm:grid-cols-[140px_minmax(0,1fr)]">
                 <div class="flex min-h-[150px] flex-col items-center justify-center rounded-[16px] border border-task-line bg-slate-50 p-4">
-                  <div class="tf-department-donut" :style="{ background: dashboardDepartmentGradient }"><span><b>{{ dashboardDepartmentTotal }}</b><small>Total tasks</small></span></div>
+                  <div class="tf-department-donut" :style="{ background: dashboardDepartmentGradient }"><span><b>{{ dashboardDepartmentTotal }}</b><small>Total active<br />task</small></span></div>
                   <p class="mt-3 text-center text-[11px] font-semibold text-task-muted">{{ dashboardDepartments.length }} {{ dashboardDepartments.length === 1 ? 'department' : 'departments' }}</p>
                 </div>
                 <div class="grid min-w-0 gap-2.5" :style="{ gridTemplateRows: `repeat(${dashboardDepartments.length}, minmax(66px, 1fr))` }">
@@ -3415,7 +3441,7 @@ const iconPath = (name: string) => {
 
           <div class="tf-panel flex flex-col gap-3 border p-2 shadow-none lg:flex-row lg:items-center lg:justify-between">
             <div class="flex min-w-0 overflow-x-auto" role="tablist" aria-label="Task views">
-              <button type="button" :class="['inline-flex h-12 shrink-0 items-center gap-2 border-b-2 px-5 text-sm font-semibold transition', taskBoardSection === 'backlog' ? 'border-task-blue text-task-blue' : 'border-transparent text-task-muted hover:text-task-blue']" @click="taskBoardSection = 'backlog'"><svg viewBox="0 0 24 24" class="h-4 w-4" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M4 5h16v14H4V5Zm4 4h8m-8 4h8" /></svg>Backlog <span class="rounded-full bg-slate-100 px-1.5 py-0.5 text-[9px]">{{ backlogTasks.length }}</span></button>
+              <button type="button" :class="['inline-flex h-12 shrink-0 items-center gap-2 border-b-2 px-5 text-sm font-semibold transition', taskBoardSection === 'backlog' ? 'border-task-blue text-task-blue' : 'border-transparent text-task-muted hover:text-task-blue']" @click="taskBoardSection = 'backlog'"><svg viewBox="0 0 24 24" class="h-4 w-4" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M4 5h16v14H4V5Zm4 4h8m-8 4h8" /></svg>Postponed <span class="rounded-full bg-slate-100 px-1.5 py-0.5 text-[9px]">{{ backlogTasks.length }}</span></button>
               <button type="button" :class="['inline-flex h-12 shrink-0 items-center gap-2 border-b-2 px-5 text-sm font-semibold transition', taskBoardSection === 'board' && taskViewMode === 'list' && taskScope !== 'archived' ? 'border-task-blue text-task-blue' : 'border-transparent text-task-muted hover:text-task-blue']" @click="taskBoardSection = 'board'; taskViewMode = 'list'; taskScope === 'archived' && loadTaskScope('all')"><svg viewBox="0 0 20 20" class="h-4 w-4" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M6 5h11M6 10h11M6 15h11M3 5h.01M3 10h.01M3 15h.01" /></svg>List</button>
               <button type="button" :class="['inline-flex h-12 shrink-0 items-center gap-2 border-b-2 px-5 text-sm font-semibold transition', taskBoardSection === 'board' && taskViewMode === 'kanban' && taskScope !== 'archived' ? 'border-task-blue text-task-blue' : 'border-transparent text-task-muted hover:text-task-blue']" @click="taskBoardSection = 'board'; taskViewMode = 'kanban'; taskScope === 'archived' && loadTaskScope('all')"><svg viewBox="0 0 20 20" class="h-4 w-4" fill="none" stroke="currentColor" stroke-width="1.7"><rect x="2.5" y="3" width="4" height="14" rx="1.2" /><rect x="8" y="3" width="4" height="9" rx="1.2" /><rect x="13.5" y="3" width="4" height="12" rx="1.2" /></svg>Kanban</button>
               <button v-if="canManageDepartment" type="button" :class="['inline-flex h-12 shrink-0 items-center gap-2 border-b-2 px-5 text-sm font-semibold transition', taskScope === 'archived' ? 'border-task-blue text-task-blue' : 'border-transparent text-task-muted hover:text-task-blue']" @click="loadTaskScope('archived')"><svg viewBox="0 0 24 24" class="h-4 w-4" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M4 7h16v13H4V7Zm-1-4h18v4H3V3Zm6 9h6" /></svg>Archive</button>
@@ -3425,9 +3451,9 @@ const iconPath = (name: string) => {
 
           <div data-task-board class="tf-panel relative scroll-mt-4 p-4 sm:p-5">
             <div class="mb-5 flex flex-col gap-3 xl:flex-row xl:items-center xl:justify-between">
-              <div class="flex flex-wrap items-center gap-2"><h2 class="text-lg font-bold">{{ taskScope === 'archived' ? 'Archived Tasks' : taskBoardSection === 'backlog' ? 'Task Backlog' : taskViewMode === 'kanban' ? 'Kanban Board' : 'All Active Tasks' }}</h2><span class="rounded-full bg-task-blueSoft px-2.5 py-1 text-[10px] font-extrabold text-task-blue">{{ filteredTasks.length }} tasks</span><span v-if="selectedTaskKeys.length && taskViewMode === 'list'" class="rounded-full bg-task-successSoft px-2.5 py-1 text-[10px] font-extrabold text-task-success">{{ selectedTaskKeys.length }} selected</span><button v-if="taskAttentionFilter !== 'all'" type="button" class="rounded-full bg-task-dangerSoft px-3 py-1 text-[10px] font-bold uppercase text-task-danger" @click="clearTaskAttentionFilter">{{ taskAttentionFilter.replace('_', ' ') }} ×</button></div>
+              <div class="flex flex-wrap items-center gap-2"><h2 class="text-lg font-bold">{{ taskScope === 'archived' ? 'Archived Tasks' : taskBoardSection === 'backlog' ? 'Postponed Tasks' : taskViewMode === 'kanban' ? 'Kanban Board' : 'All Active Tasks' }}</h2><span class="rounded-full bg-task-blueSoft px-2.5 py-1 text-[10px] font-extrabold text-task-blue">{{ filteredTasks.length }} tasks</span><span v-if="selectedTaskKeys.length && taskViewMode === 'list'" class="rounded-full bg-task-successSoft px-2.5 py-1 text-[10px] font-extrabold text-task-success">{{ selectedTaskKeys.length }} selected</span><button v-if="taskAttentionFilter !== 'all'" type="button" class="rounded-full bg-task-dangerSoft px-3 py-1 text-[10px] font-bold uppercase text-task-danger" @click="clearTaskAttentionFilter">{{ taskAttentionFilter.replace('_', ' ') }} ×</button></div>
               <div class="flex flex-col gap-2 sm:flex-row sm:flex-wrap sm:items-center">
-                <div class="inline-flex h-11 items-center rounded-[11px] border border-task-line bg-slate-50 p-1"><button type="button" :class="['h-9 rounded-[8px] px-3 text-xs font-bold', taskScope === 'all' ? 'bg-white text-task-blue shadow-sm' : 'text-task-muted']" @click="loadTaskScope('all')">All Tasks</button><button type="button" :class="['h-9 rounded-[8px] px-3 text-xs font-bold', taskScope === 'mine' ? 'bg-white text-task-blue shadow-sm' : 'text-task-muted']" @click="loadTaskScope('mine')">My Tasks</button></div>
+                <div class="inline-flex h-11 items-center rounded-[11px] border border-task-line bg-slate-50 p-1"><button type="button" :class="['h-9 rounded-[8px] px-3 text-xs font-bold', taskScope === 'all' ? 'bg-white text-task-blue shadow-sm' : 'text-task-muted']" @click="loadTaskScope('all')">All Tasks</button><button type="button" :class="['tf-my-tasks-button relative h-9 rounded-[8px] px-3 text-xs font-extrabold', taskScope === 'mine' ? 'is-active' : '']" @click="loadTaskScope('mine')"><span class="relative z-10">My Tasks</span><i v-if="taskScope !== 'mine'" class="tf-my-tasks-pulse" aria-hidden="true" /></button></div>
                 <label class="relative w-full sm:w-auto">
                 <svg viewBox="0 0 24 24" class="pointer-events-none absolute left-3.5 top-1/2 h-4 w-4 -translate-y-1/2 text-task-muted" fill="none" stroke="currentColor" stroke-width="1.8"><path :d="iconPath('search')" /></svg>
                 <input v-model="taskSearchInput" class="tf-input h-11 w-full pl-10 pr-10 sm:w-64" placeholder="Search tasks..." />
@@ -3458,14 +3484,14 @@ const iconPath = (name: string) => {
             <div v-if="!paginatedTasks.length" class="col-span-full rounded-[16px] border border-dashed border-task-line py-16 text-center"><p class="font-semibold text-task-ink">Archive is empty</p><p class="mt-1 text-sm text-task-muted">Completed tasks can be archived here.</p></div>
           </div>
           <div v-else-if="taskBoardSection === 'backlog'" class="tf-backlog-panel rounded-[16px] border p-4 sm:p-5">
-            <div class="mb-4 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between"><div><h3 class="font-bold text-task-ink">Backlog</h3><p class="mt-1 text-xs text-task-muted">Ideas and tasks planned for later. Move a task to To Do when it is ready.</p></div><button v-if="canAddTask" type="button" class="tf-primary h-10 rounded-[11px]" @click="openModal('task')"><span class="text-lg leading-none">+</span>New Task</button></div>
+            <div class="mb-4 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between"><div><h3 class="font-bold text-task-ink">Postponed</h3><p class="mt-1 text-xs text-task-muted">Ideas and tasks planned for later. Move a task to To Do when it is ready.</p></div><button v-if="canAddTask" type="button" class="tf-primary h-10 rounded-[11px]" @click="openModal('task')"><span class="text-lg leading-none">+</span>New Task</button></div>
             <div v-if="backlogTasks.length" class="grid gap-3 sm:grid-cols-2 xl:grid-cols-3">
               <article v-for="task in backlogTasks" :key="String(task[6] || `${task[0]}-${task[4]}`)" class="tf-kanban-card cursor-pointer" @click="openTaskFromCard(task)">
                 <div class="flex items-start justify-between gap-3"><div class="min-w-0"><span class="inline-flex rounded-full bg-slate-200 px-2 py-1 text-[10px] font-bold uppercase tracking-wide text-slate-600">For later</span><h4 class="mt-2 line-clamp-2 text-sm font-bold text-task-ink">{{ task[0] }}</h4></div><span :class="['tf-pill shrink-0', badgeClass(String(task[2]))]">{{ task[2] }}</span></div>
                 <div class="mt-4 flex items-center justify-between border-t border-task-line pt-3 text-xs text-task-muted"><span>{{ task[4] }}</span><button type="button" class="font-bold text-task-blue transition hover:text-task-blueDark" :disabled="updatingTaskId === String(task[6]) || !task[6]" @click.stop="updateTaskStatus(task, 'not_started')">Move to To Do →</button></div>
               </article>
             </div>
-            <div v-else class="rounded-[14px] border border-dashed border-task-line px-5 py-14 text-center"><p class="font-semibold text-task-ink">Backlog is empty</p><p class="mt-1 text-sm text-task-muted">Tasks planned for later will appear here.</p></div>
+            <div v-else class="rounded-[14px] border border-dashed border-task-line px-5 py-14 text-center"><p class="font-semibold text-task-ink">Postponed is empty</p><p class="mt-1 text-sm text-task-muted">Tasks planned for later will appear here.</p></div>
           </div>
           <div v-else-if="taskViewMode === 'list'" class="overflow-x-auto">
           <table class="tf-task-list-table w-full min-w-[940px] text-left text-sm">
@@ -3548,7 +3574,7 @@ const iconPath = (name: string) => {
                   </div>
 
                   <select class="tf-kanban-status-select" :value="column.key" :disabled="updatingTaskId === String(task[6]) || !task[6] || !canChangeTaskStatus(task)" aria-label="Change task status" @click.stop @change="updateTaskStatus(task, ($event.target as HTMLSelectElement).value)">
-                    <option value="backlog">Backlog</option>
+                    <option value="backlog">Postponed</option>
                     <option value="not_started">Not Started</option>
                     <option value="in_progress">In Progress</option>
                     <option value="on_hold">On Hold</option>
@@ -3562,8 +3588,8 @@ const iconPath = (name: string) => {
             </section>
             </div>
             <button v-if="backlogTasks.length" type="button" class="mt-3 flex w-full items-center justify-between rounded-[12px] border border-task-line bg-task-blueSoft px-4 py-3 text-left text-sm transition hover:border-task-blue" @click="taskBoardSection = 'backlog'">
-              <span><b class="text-task-ink">{{ backlogTasks.length }} {{ backlogTasks.length === 1 ? 'task is' : 'tasks are' }} in Backlog</b><span class="ml-2 text-task-muted">Planned for later and not shown in workflow columns.</span></span>
-              <span class="shrink-0 font-bold text-task-blue">Open Backlog →</span>
+              <span><b class="text-task-ink">{{ backlogTasks.length }} {{ backlogTasks.length === 1 ? 'task is' : 'tasks are' }} Postponed</b><span class="ml-2 text-task-muted">Planned for later and not shown in workflow columns.</span></span>
+              <span class="shrink-0 font-bold text-task-blue">Open Postponed →</span>
             </button>
           </div>
           <p v-if="!filteredTasks.length" class="py-8 text-center text-sm text-task-muted">No tasks matched your filters.</p>
@@ -3599,7 +3625,7 @@ const iconPath = (name: string) => {
               <div class="text-xs font-bold text-task-muted">Department<div class="tf-dropdown mt-2"><button type="button" class="tf-analytics-filter-button" @click="openDropdown = openDropdown === 'analyticsDepartment' ? null : 'analyticsDepartment'"><span class="truncate">{{ memberDepartmentOptions.find(item => item.id === analyticsFilters.department)?.name || 'All departments' }}</span><svg viewBox="0 0 20 20" :class="['h-4 w-4 shrink-0 transition-transform', openDropdown === 'analyticsDepartment' ? 'rotate-180' : '']" fill="none" stroke="currentColor" stroke-width="2"><path d="m5 7.5 5 5 5-5" /></svg></button><div v-if="openDropdown === 'analyticsDepartment'" class="tf-dropdown-menu max-h-56 overflow-y-auto"><button type="button" class="tf-dropdown-option" @click="analyticsFilters.department = ''; openDropdown = null">All departments</button><button v-for="item in memberDepartmentOptions" :key="item.id" type="button" class="tf-dropdown-option" @click="analyticsFilters.department = item.id; openDropdown = null"><span>{{ item.name }}</span><span v-if="analyticsFilters.department === item.id">✓</span></button></div></div></div>
               <div class="text-xs font-bold text-task-muted">Employee<div class="tf-dropdown mt-2"><button type="button" class="tf-analytics-filter-button" @click="openDropdown = openDropdown === 'analyticsEmployee' ? null : 'analyticsEmployee'"><span class="truncate">{{ team.find(item => String(item[9] || item[7] || '') === analyticsFilters.employee)?.[0] || 'All staff' }}</span><svg viewBox="0 0 20 20" :class="['h-4 w-4 shrink-0 transition-transform', openDropdown === 'analyticsEmployee' ? 'rotate-180' : '']" fill="none" stroke="currentColor" stroke-width="2"><path d="m5 7.5 5 5 5-5" /></svg></button><div v-if="openDropdown === 'analyticsEmployee'" class="tf-dropdown-menu max-h-56 overflow-y-auto"><button type="button" class="tf-dropdown-option" @click="analyticsFilters.employee = ''; openDropdown = null">All staff</button><button v-for="item in team" :key="String(item[9] || item[7] || item[0])" type="button" class="tf-dropdown-option" @click="analyticsFilters.employee = String(item[9] || item[7] || ''); openDropdown = null"><span>{{ item[0] }}</span><span v-if="analyticsFilters.employee === String(item[9] || item[7] || '')">✓</span></button></div></div></div>
               <div class="text-xs font-bold text-task-muted">Priority<div class="tf-dropdown mt-2"><button type="button" class="tf-analytics-filter-button" @click="openDropdown = openDropdown === 'analyticsPriority' ? null : 'analyticsPriority'"><span class="capitalize">{{ analyticsFilters.priority || 'All priorities' }}</span><svg viewBox="0 0 20 20" :class="['h-4 w-4 transition-transform', openDropdown === 'analyticsPriority' ? 'rotate-180' : '']" fill="none" stroke="currentColor" stroke-width="2"><path d="m5 7.5 5 5 5-5" /></svg></button><div v-if="openDropdown === 'analyticsPriority'" class="tf-dropdown-menu"><button v-for="item in [['','All priorities'],['low','Low'],['medium','Medium'],['high','High']]" :key="item[0]" type="button" class="tf-dropdown-option" @click="analyticsFilters.priority = item[0]; openDropdown = null"><span>{{ item[1] }}</span><span v-if="analyticsFilters.priority === item[0]">✓</span></button></div></div></div>
-              <div class="text-xs font-bold text-task-muted">Status<div class="tf-dropdown mt-2"><button type="button" class="tf-analytics-filter-button" @click="openDropdown = openDropdown === 'analyticsStatus' ? null : 'analyticsStatus'"><span>{{ analyticsFilters.status ? analyticsFilters.status.split('_').map(word => word[0].toUpperCase() + word.slice(1)).join(' ') : 'All statuses' }}</span><svg viewBox="0 0 20 20" :class="['h-4 w-4 transition-transform', openDropdown === 'analyticsStatus' ? 'rotate-180' : '']" fill="none" stroke="currentColor" stroke-width="2"><path d="m5 7.5 5 5 5-5" /></svg></button><div v-if="openDropdown === 'analyticsStatus'" class="tf-dropdown-menu"><button v-for="item in [['','All statuses'],['backlog','Backlog'],['not_started','Not started'],['in_progress','In progress'],['on_hold','On hold'],['completed','Completed']]" :key="item[0]" type="button" class="tf-dropdown-option" @click="analyticsFilters.status = item[0]; openDropdown = null"><span>{{ item[1] }}</span><span v-if="analyticsFilters.status === item[0]">✓</span></button></div></div></div>
+              <div class="text-xs font-bold text-task-muted">Status<div class="tf-dropdown mt-2"><button type="button" class="tf-analytics-filter-button" @click="openDropdown = openDropdown === 'analyticsStatus' ? null : 'analyticsStatus'"><span>{{ analyticsFilters.status === 'backlog' ? 'Postponed' : analyticsFilters.status ? analyticsFilters.status.split('_').map(word => word[0].toUpperCase() + word.slice(1)).join(' ') : 'All statuses' }}</span><svg viewBox="0 0 20 20" :class="['h-4 w-4 transition-transform', openDropdown === 'analyticsStatus' ? 'rotate-180' : '']" fill="none" stroke="currentColor" stroke-width="2"><path d="m5 7.5 5 5 5-5" /></svg></button><div v-if="openDropdown === 'analyticsStatus'" class="tf-dropdown-menu"><button v-for="item in [['','All statuses'],['backlog','Postponed'],['not_started','Not started'],['in_progress','In progress'],['on_hold','On hold'],['completed','Completed']]" :key="item[0]" type="button" class="tf-dropdown-option" @click="analyticsFilters.status = item[0]; openDropdown = null"><span>{{ item[1] }}</span><span v-if="analyticsFilters.status === item[0]">✓</span></button></div></div></div>
               <label class="tf-analytics-date-filter text-xs font-bold text-task-muted">Start date<div class="tf-analytics-date-input"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path :d="iconPath('calendar')" /></svg><input v-model="analyticsFilters.start_date" type="date" /></div></label>
               <label class="tf-analytics-date-filter text-xs font-bold text-task-muted">End date<div class="tf-analytics-date-input"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path :d="iconPath('calendar')" /></svg><input v-model="analyticsFilters.end_date" type="date" /></div></label>
               <div class="tf-analytics-date-filter text-xs font-bold text-task-muted">Granularity<div class="tf-dropdown mt-2"><button type="button" class="tf-analytics-filter-button" @click="openDropdown = openDropdown === 'analyticsGranularity' ? null : 'analyticsGranularity'"><span class="capitalize">{{ analyticsFilters.granularity }}ly</span><svg viewBox="0 0 20 20" :class="['h-4 w-4 transition-transform', openDropdown === 'analyticsGranularity' ? 'rotate-180' : '']" fill="none" stroke="currentColor" stroke-width="2"><path d="m5 7.5 5 5 5-5" /></svg></button><div v-if="openDropdown === 'analyticsGranularity'" class="tf-dropdown-menu"><button v-for="item in [['day','Daily'],['week','Weekly'],['month','Monthly']]" :key="item[0]" type="button" class="tf-dropdown-option" @click="analyticsFilters.granularity = item[0]; openDropdown = null"><span>{{ item[1] }}</span><span v-if="analyticsFilters.granularity === item[0]">✓</span></button></div></div></div>

@@ -37,9 +37,10 @@ type MeProfile = {
   role?: string
   is_active?: boolean
   has_all_departments_access?: boolean
-  membership?: { role?: string; department?: string; is_active?: boolean; has_all_departments_access?: boolean }
-  department_membership?: { role?: string; department?: string; is_active?: boolean; has_all_departments_access?: boolean }
-  memberships?: Array<{ role?: string; department?: string; is_active?: boolean; has_all_departments_access?: boolean }>
+  accessible_departments?: Array<string | number | ApiDepartment>
+  membership?: { role?: string; department?: string; is_active?: boolean; has_all_departments_access?: boolean; accessible_departments?: Array<string | number | ApiDepartment> }
+  department_membership?: { role?: string; department?: string; is_active?: boolean; has_all_departments_access?: boolean; accessible_departments?: Array<string | number | ApiDepartment> }
+  memberships?: Array<{ role?: string; department?: string; is_active?: boolean; has_all_departments_access?: boolean; accessible_departments?: Array<string | number | ApiDepartment> }>
 }
 
 type ApiTask = {
@@ -776,6 +777,11 @@ export const useTaskFlowApi = () => {
     const profileMembership = profile.department_membership || profile.membership || profile.memberships?.[0]
     const profileRole = String(profile.role || profileMembership?.role || '').trim().toLowerCase()
     const profileDepartment = String(profile.department || profileMembership?.department || '')
+    const accessibleDepartments = (profile.accessible_departments || profileMembership?.accessible_departments || [])
+      .map((department) => typeof department === 'object'
+        ? String(department.id || '')
+        : String(department || ''))
+      .filter(Boolean)
     const profileIsActive = profile.is_active !== false && profileMembership?.is_active !== false
 
     const [tasksResult, membersResult, eventsResult, analyticsResult, projectsResult, reportsResult] = await secondaryDataPromise
@@ -806,6 +812,7 @@ export const useTaskFlowApi = () => {
       currentRole: profileRole,
       currentUserActive: profileIsActive,
       currentUserHasAllDepartmentsAccess: profile.has_all_departments_access === true || profileMembership?.has_all_departments_access === true,
+      currentUserAccessibleDepartmentIds: Array.from(new Set([profileDepartment, ...accessibleDepartments].filter(Boolean))),
       dashboard,
       analytics,
       tasks,
