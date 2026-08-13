@@ -1,2 +1,0 @@
-<script setup lang="ts">import { greetingConfig } from '~/constants/greetings'; import type { GreetingCardProps } from '~/types/greeting'; withDefaults(defineProps<GreetingCardProps>(),{subtitle:undefined,notificationCount:0,showActions:true,interactive:true}); defineEmits<{notification:[];theme:[]}>(); const config=greetingConfig('evening','dark')</script>
-<template><GreetingCard v-bind="$props" :config="config" @notification="$emit('notification')" @theme="$emit('theme')"><template #actions><slot name="actions" /></template></GreetingCard></template>

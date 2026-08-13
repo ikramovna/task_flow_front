@@ -12,5 +12,6 @@ export const greetingConfig = (period: GreetingPeriod, theme: GreetingTheme): Gr
   period,
   theme,
   ...copy[period],
-  background: `/greeting-cards/${period}-${theme}-panorama-v4-1440.webp`
+  // One optimized source image per period; dark mode is applied in CSS.
+  background: `/greeting-cards/${period}-light-panorama-v4-1440.webp`
 })

@@ -314,5 +314,4 @@ const toggleMute = () => {
 .focus-radio__panel.is-dark-mode .focus-radio__transport button{color:#a9b9cc}
 .focus-radio__panel.is-dark-mode .focus-radio__volume{color:#a9b9cc}
 .focus-radio__volume button{display:grid;width:27px;height:27px;flex:none;place-items:center;border-radius:8px;transition:.18s}.focus-radio__volume button:hover{background:#eff6ff;color:#2567ad}.focus-radio__volume span{width:28px;flex:none;text-align:right;font-size:8px;font-weight:700;font-variant-numeric:tabular-nums}.focus-radio__panel.is-dark-mode .focus-radio__volume button:hover{background:#17304f;color:#7dd3fc}.focus-radio__panel.is-dark-mode .focus-radio__session-progress{background:#203653}
-.focus-radio__youtube{margin:0 18px 12px;overflow:hidden;border:1px solid #dbe4ef;border-radius:12px;background:#020617}.focus-radio__youtube iframe{display:block;width:100%;min-height:200px;border:0}.focus-radio__panel.is-dark-mode .focus-radio__youtube{border-color:#2b405d}
 </style>

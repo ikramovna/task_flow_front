@@ -1017,44 +1017,6 @@ const categoryTrendData = computed(() => {
     growth: `${Number(item[2] || item[1] || 0)} tasks`
   }))
 })
-const analyticsStatusRows = computed(() => {
-  const definitions = [
-    ['Completed', 'completed', '#20B486'], ['In Progress', 'in progress', '#2F80ED'],
-    ['Not Started', 'not started', '#8057D5'], ['On Hold', 'on hold', '#F59E0B'], ['Postponed', 'backlog', '#94A3B8']
-  ]
-  const total = Math.max(tasks.value.length, 1)
-  return definitions.map(([label, status, color]) => {
-    const count = tasks.value.filter(task => String(task[3] || '').toLowerCase() === status).length
-    return { label, count, color, percent: Math.round(count / total * 100) }
-  })
-})
-const analyticsStatusGradient = computed(() => {
-  let cursor = 0
-  const segments = analyticsStatusRows.value.map(row => {
-    const start = cursor
-    cursor += row.percent
-    return `${row.color} ${start}% ${cursor}%`
-  })
-  return `conic-gradient(${segments.join(',')})`
-})
-const analyticsPriorityRows = computed(() => {
-  const definitions = [['High', 'high', '#EF4444'], ['Medium', 'medium', '#F59E0B'], ['Low', 'low', '#2F80ED']]
-  const total = Math.max(tasks.value.length, 1)
-  const rows = definitions.map(([label, priority, color]) => {
-    const count = tasks.value.filter(task => String(task[2] || '').toLowerCase() === priority).length
-    return { label, count, color, percent: Math.round(count / total * 100) }
-  })
-  const counted = rows.reduce((sum, row) => sum + row.count, 0)
-  rows.push({ label: 'No Priority', count: Math.max(0, tasks.value.length - counted), color: '#94A3B8', percent: Math.round(Math.max(0, tasks.value.length - counted) / total * 100) })
-  return rows
-})
-const analyticsPriorityGradient = computed(() => {
-  let cursor = 0
-  return `conic-gradient(${analyticsPriorityRows.value.map(row => { const start = cursor; cursor += row.percent; return `${row.color} ${start}% ${cursor}%` }).join(',')})`
-})
-const analyticsDepartmentRows = computed(() => dashboardDepartments.value.slice(0, 6).map((department, index) => ({
-  name: String(department.department_name || 'Department'), count: Number(department.task_count || 0), percent: Math.round(Number(department.percentage || 0)), color: dashboardDepartmentColor(index)
-})))
 const analyticsWorkloadRows = computed(() => team.value.slice(0, 5).map(member => ({
   name: String(member[0] || 'Member'), active: Number(member[6] || 0), completed: Number(member[5] || 0), efficiency: Number(member[4] || 0), overdue: tasks.value.filter(task => isTaskOverdue(task) && String(task[1] || '') === String(member[0] || '')).length
 })))
@@ -1088,17 +1050,6 @@ const openDashboardTask = async (task: { id: string; title: string; priority: st
   setPage('tasks')
   const taskRow = state.value.tasks.find((item) => String(item[6] || '') === String(task.id)) || [task.title, '', task.priority, task.status, '', 0, task.id]
   await openTaskFromCard(taskRow)
-}
-
-const openAnalyticsTask = async (task: { id: string; title: string; priority?: string; status?: string; due_date?: string }) => {
-  const taskRow = state.value.tasks.find((item) => String(item[6] || '') === String(task.id)) || [task.title, '', task.priority || '', task.status || '', task.due_date || '', 0, task.id]
-  await openTaskFromCard(taskRow)
-}
-
-const openAnalyticsEvent = (event: { id: string; starts_at: string }) => {
-  const calendarEvent = calendarEvents.value.find(item => item.backendId === String(event.id) || item.id === String(event.id))
-  if (calendarEvent) return openEventDetails(calendarEvent)
-  openDashboardEvent(event)
 }
 
 const pageCopy: Record<PageKey, { title: string; subtitle: string; eyebrow?: string }> = {
@@ -3453,7 +3404,7 @@ const iconPath = (name: string) => {
             <div class="mb-5 flex flex-col gap-3 xl:flex-row xl:items-center xl:justify-between">
               <div class="flex flex-wrap items-center gap-2"><h2 class="text-lg font-bold">{{ taskScope === 'archived' ? 'Archived Tasks' : taskBoardSection === 'backlog' ? 'Postponed Tasks' : taskViewMode === 'kanban' ? 'Kanban Board' : 'All Active Tasks' }}</h2><span class="rounded-full bg-task-blueSoft px-2.5 py-1 text-[10px] font-extrabold text-task-blue">{{ filteredTasks.length }} tasks</span><span v-if="selectedTaskKeys.length && taskViewMode === 'list'" class="rounded-full bg-task-successSoft px-2.5 py-1 text-[10px] font-extrabold text-task-success">{{ selectedTaskKeys.length }} selected</span><button v-if="taskAttentionFilter !== 'all'" type="button" class="rounded-full bg-task-dangerSoft px-3 py-1 text-[10px] font-bold uppercase text-task-danger" @click="clearTaskAttentionFilter">{{ taskAttentionFilter.replace('_', ' ') }} ×</button></div>
               <div class="flex flex-col gap-2 sm:flex-row sm:flex-wrap sm:items-center">
-                <div class="inline-flex h-11 items-center rounded-[11px] border border-task-line bg-slate-50 p-1"><button type="button" :class="['h-9 rounded-[8px] px-3 text-xs font-bold', taskScope === 'all' ? 'bg-white text-task-blue shadow-sm' : 'text-task-muted']" @click="loadTaskScope('all')">All Tasks</button><button type="button" :class="['tf-my-tasks-button relative h-9 rounded-[8px] px-3 text-xs font-extrabold', taskScope === 'mine' ? 'is-active' : '']" @click="loadTaskScope('mine')"><span class="relative z-10">My Tasks</span><i v-if="taskScope !== 'mine'" class="tf-my-tasks-pulse" aria-hidden="true" /></button></div>
+                <div class="inline-flex h-11 items-center rounded-[11px] border border-task-line bg-slate-50 p-1"><button type="button" :class="['h-9 rounded-[8px] px-3 text-xs font-bold transition', taskScope === 'all' ? 'bg-task-blue text-white shadow-sm' : 'text-task-muted hover:text-task-blue']" @click="loadTaskScope('all')">All Tasks</button><button type="button" :class="['h-9 rounded-[8px] px-3 text-xs font-bold transition', taskScope === 'mine' ? 'bg-task-blue text-white shadow-sm' : 'text-task-muted hover:text-task-blue']" @click="loadTaskScope('mine')">My Tasks</button></div>
                 <label class="relative w-full sm:w-auto">
                 <svg viewBox="0 0 24 24" class="pointer-events-none absolute left-3.5 top-1/2 h-4 w-4 -translate-y-1/2 text-task-muted" fill="none" stroke="currentColor" stroke-width="1.8"><path :d="iconPath('search')" /></svg>
                 <input v-model="taskSearchInput" class="tf-input h-11 w-full pl-10 pr-10 sm:w-64" placeholder="Search tasks..." />
@@ -3632,40 +3583,14 @@ const iconPath = (name: string) => {
             </div>
             <div class="mt-3 flex min-h-5 items-center justify-between gap-3 text-xs"><p v-if="analyticsFilterError" class="font-semibold text-task-danger">{{ analyticsFilterError }}</p><p v-else class="text-task-muted">{{ analyticsLoading ? 'Updating analytics…' : 'Filters are applied automatically.' }}</p><button type="button" class="font-bold text-task-blue" @click="Object.assign(analyticsFilters, { department: '', employee: '', priority: '', status: '', days: '30', start_date: '', end_date: '', granularity: 'day' })">Reset filters</button></div>
           </div>
-          <div class="grid gap-3 sm:grid-cols-2 xl:grid-cols-5">
+          <div :class="['grid gap-3 sm:grid-cols-2', analyticsStats.length >= 5 ? 'xl:grid-cols-5' : 'xl:grid-cols-4']">
             <div v-for="(item, index) in analyticsStats" :key="String(item[1])" :class="['tf-panel relative min-h-[112px] overflow-hidden p-4', dashboardStatStyles[index % dashboardStatStyles.length]?.card]">
               <div class="flex flex-col items-start gap-2"><span :class="['grid h-10 w-10 shrink-0 place-items-center rounded-[12px] bg-white/85 shadow-sm ring-1', dashboardStatStyles[index % dashboardStatStyles.length]?.icon]"><svg viewBox="0 0 24 24" class="h-5 w-5" fill="none" stroke="currentColor" stroke-width="1.8"><path :d="index === 0 ? 'M8 12l3 3 5-6M12 22a10 10 0 1 1 0-20 10 10 0 0 1 0 20Z' : index === 1 ? 'M8 2h8M8 22h8M9 2v5l3 3 3-3V2M9 22v-5l3-3 3 3v5' : index === 2 ? 'M12 13 16 9M5.6 19a8 8 0 1 1 12.8 0M12 5v2M5 12H3m18 0h-2' : iconPath('projects')" /></svg></span><div class="min-w-0 w-full"><p class="whitespace-normal text-[11px] font-bold leading-4 text-task-muted">{{ item[1] }}</p><p class="mt-1 text-2xl font-extrabold text-task-ink">{{ item[0] }}</p><span class="mt-1 inline-flex text-[9px] font-bold text-task-success">↗ Live data</span></div></div>
               <svg viewBox="0 0 120 25" :class="['absolute bottom-3 right-3 h-7 w-20 opacity-80', dashboardStatStyles[index % dashboardStatStyles.length]?.line]" fill="none" preserveAspectRatio="none"><path d="M2 18 12 15l10 5 12-6 10 4 14-9 12 6 10-3 12 4 12-8 14 6" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" /></svg>
             </div>
           </div>
 
-          <div class="grid gap-3 lg:grid-cols-3">
-            <section class="tf-panel overflow-hidden p-0">
-              <header class="flex items-center justify-between border-b border-task-line px-4 py-3.5"><div><h2 class="text-sm font-extrabold text-task-ink">Recent Tasks</h2><p class="mt-0.5 text-[10px] text-task-muted">Click to open task details</p></div><span class="tf-pill bg-task-blueSoft text-task-blue">{{ dashboardRecentTasks.length }}</span></header>
-              <div class="divide-y divide-task-line">
-                <button v-for="task in dashboardRecentTasks.slice(0, 4)" :key="String(task.id)" type="button" class="flex min-h-[62px] w-full items-center gap-3 px-4 py-3 text-left transition hover:bg-task-blueSoft/50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-task-blue" @click="openAnalyticsTask(task)"><span class="grid h-9 w-9 shrink-0 place-items-center rounded-[10px] bg-task-blueSoft text-task-blue"><svg viewBox="0 0 24 24" class="h-4 w-4" fill="none" stroke="currentColor" stroke-width="1.9"><path d="M6 4h12v16H6V4Zm3 5h6m-6 4h6" /></svg></span><span class="min-w-0 flex-1"><b class="block truncate text-xs text-task-ink">{{ task.title }}</b><small class="mt-1 block truncate text-[10px] text-task-muted">{{ task.department?.name || 'No department' }} · {{ dashboardStatus(task.status) }}</small></span><span class="text-task-muted">›</span></button>
-                <p v-if="!dashboardRecentTasks.length" class="px-4 py-8 text-center text-xs text-task-muted">No recent tasks.</p>
-              </div>
-            </section>
-
-            <section class="tf-panel overflow-hidden p-0">
-              <header class="flex items-center justify-between border-b border-task-line px-4 py-3.5"><div><h2 class="text-sm font-extrabold text-task-ink">Upcoming Deadlines</h2><p class="mt-0.5 text-[10px] text-task-muted">Click to open deadline task</p></div><span class="tf-pill bg-task-warningSoft text-task-warning">{{ dashboardDeadlines.length }}</span></header>
-              <div class="divide-y divide-task-line">
-                <button v-for="task in dashboardDeadlines.slice(0, 4)" :key="String(task.id)" type="button" class="flex min-h-[62px] w-full items-center gap-3 px-4 py-3 text-left transition hover:bg-task-warningSoft/50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-task-warning" @click="openAnalyticsTask(task)"><span :class="['h-2.5 w-2.5 shrink-0 rounded-full', task.priority === 'high' ? 'bg-task-danger' : task.priority === 'medium' ? 'bg-task-warning' : 'bg-task-success']" /><span class="min-w-0 flex-1"><b class="block truncate text-xs text-task-ink">{{ task.title }}</b><small class="mt-1 block truncate text-[10px] text-task-muted">{{ task.department?.name || 'No department' }}</small></span><span class="shrink-0 text-right"><b class="block text-[10px] text-task-ink">{{ dashboardDateTime(task.due_date) }}</b><small class="mt-1 block text-[9px] font-bold text-task-warning">{{ task.days_remaining }} days</small></span></button>
-                <p v-if="!dashboardDeadlines.length" class="px-4 py-8 text-center text-xs text-task-muted">No upcoming deadlines.</p>
-              </div>
-            </section>
-
-            <section class="tf-panel overflow-hidden p-0">
-              <header class="flex items-center justify-between border-b border-task-line px-4 py-3.5"><div><h2 class="text-sm font-extrabold text-task-ink">Upcoming Events</h2><p class="mt-0.5 text-[10px] text-task-muted">Click to open event details</p></div><span class="tf-pill bg-task-successSoft text-task-success">{{ dashboardUpcomingEvents.length }}</span></header>
-              <div class="divide-y divide-task-line">
-                <button v-for="event in dashboardUpcomingEvents.slice(0, 4)" :key="String(event.id)" type="button" class="flex min-h-[62px] w-full items-center gap-3 px-4 py-3 text-left transition hover:bg-task-successSoft/40 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-task-success" @click="openAnalyticsEvent(event)"><time class="grid h-9 min-w-11 shrink-0 place-items-center rounded-[10px] bg-task-successSoft px-2 text-[10px] font-extrabold text-task-success">{{ dashboardDateTime(event.starts_at, 'date') }}</time><span class="min-w-0 flex-1"><b class="block truncate text-xs text-task-ink">{{ event.title }}</b><small class="mt-1 block truncate text-[10px] text-task-muted">{{ dashboardDateTime(event.starts_at, 'time') }} · {{ event.location || 'Online' }}</small></span><span class="text-task-muted">›</span></button>
-                <p v-if="!dashboardUpcomingEvents.length" class="px-4 py-8 text-center text-xs text-task-muted">No upcoming events.</p>
-              </div>
-            </section>
-          </div>
-
-          <div class="grid gap-3 xl:grid-cols-[1.55fr_.85fr]">
+          <div class="grid gap-3 xl:grid-cols-2">
             <div class="tf-panel p-4">
               <div class="mb-2 flex items-start justify-between">
                 <div>
@@ -3781,24 +3706,12 @@ const iconPath = (name: string) => {
             </div>
           </div>
 
-          <div class="grid gap-3 xl:grid-cols-3">
-            <section class="tf-panel p-5">
-              <h2 class="text-base font-extrabold text-task-ink">Task Status</h2>
-              <div class="mt-5 flex items-center gap-5"><div class="relative h-36 w-36 shrink-0 rounded-full" :style="{ background: analyticsStatusGradient }"><div class="absolute inset-7 grid place-items-center rounded-full bg-white text-center"><div><b class="block text-2xl text-task-ink">{{ tasks.length }}</b><small class="text-task-muted">Tasks</small></div></div></div><div class="min-w-0 flex-1 space-y-3"><div v-for="row in analyticsStatusRows" :key="row.label" class="flex items-center gap-2 text-xs"><i class="h-2.5 w-2.5 rounded-full" :style="{ background: row.color }" /><span class="min-w-0 flex-1 truncate text-task-muted">{{ row.label }}</span><b>{{ row.count }} ({{ row.percent }}%)</b></div></div></div>
-            </section>
-            <section class="tf-panel p-5">
-              <h2 class="text-base font-extrabold text-task-ink">Department Performance</h2>
-              <div class="mt-5 space-y-4"><div v-for="row in analyticsDepartmentRows" :key="row.name" class="grid grid-cols-[130px_1fr_48px] items-center gap-3 text-xs"><span class="truncate font-semibold text-task-muted">{{ row.name }}</span><div class="h-2 overflow-hidden rounded-full bg-slate-200"><div class="h-full rounded-full" :style="{ width: `${row.percent}%`, background: row.color }" /></div><b class="text-right">{{ row.percent }}%</b></div><p v-if="!analyticsDepartmentRows.length" class="py-12 text-center text-sm text-task-muted">No department performance data.</p></div>
-            </section>
-            <section class="tf-panel p-5">
+          <div class="grid gap-3 xl:grid-cols-[minmax(0,1.35fr)_minmax(300px,.65fr)]">
+            <section class="tf-panel min-w-0 p-5">
               <div class="flex items-center justify-between"><h2 class="text-base font-extrabold text-task-ink">Team Workload</h2><span class="tf-pill bg-task-blueSoft text-task-blue">By Staff</span></div>
-              <div class="mt-4 overflow-x-auto"><table class="w-full min-w-[560px] text-left text-xs"><thead class="text-task-muted"><tr><th class="pb-3">Staff</th><th>Active Tasks</th><th>Overdue</th><th>Completed</th><th>Workload</th></tr></thead><tbody class="divide-y divide-task-line"><tr v-for="row in analyticsWorkloadRows" :key="row.name"><td class="py-3 font-bold text-task-ink">{{ row.name }}</td><td>{{ row.active }}</td><td :class="row.overdue ? 'font-bold text-task-danger' : 'text-task-success'">{{ row.overdue }}</td><td>{{ row.completed }}</td><td class="w-36"><div class="h-2 overflow-hidden rounded-full bg-slate-200"><div class="h-full rounded-full bg-task-blue" :style="{ width: `${Math.min(100, row.efficiency)}%` }" /></div></td></tr></tbody></table></div>
+              <div class="mt-4 overflow-x-auto"><table class="w-full min-w-[500px] text-left text-xs"><thead class="text-task-muted"><tr><th class="pb-3">Staff</th><th>Active Tasks</th><th>Overdue</th><th>Completed</th><th>Workload</th></tr></thead><tbody class="divide-y divide-task-line"><tr v-for="row in analyticsWorkloadRows" :key="row.name"><td class="py-3 font-bold text-task-ink">{{ row.name }}</td><td>{{ row.active }}</td><td :class="row.overdue ? 'font-bold text-task-danger' : 'text-task-success'">{{ row.overdue }}</td><td>{{ row.completed }}</td><td class="w-36"><div class="h-2 overflow-hidden rounded-full bg-slate-200"><div class="h-full rounded-full bg-task-blue" :style="{ width: `${Math.min(100, row.efficiency)}%` }" /></div></td></tr></tbody></table></div>
             </section>
-            <section class="tf-panel p-5">
-              <h2 class="text-base font-extrabold text-task-ink">Tasks by Priority</h2>
-              <div class="mt-5 flex items-center gap-5"><div class="relative h-36 w-36 shrink-0 rounded-full" :style="{ background: analyticsPriorityGradient }"><div class="absolute inset-7 grid place-items-center rounded-full bg-white text-center"><div><b class="block text-2xl text-task-ink">{{ tasks.length }}</b><small class="text-task-muted">Tasks</small></div></div></div><div class="min-w-0 flex-1 space-y-3"><div v-for="row in analyticsPriorityRows" :key="row.label" class="flex items-center gap-2 text-xs"><i class="h-2.5 w-2.5 rounded-full" :style="{ background: row.color }" /><span class="min-w-0 flex-1 truncate text-task-muted">{{ row.label }}</span><b>{{ row.count }} ({{ row.percent }}%)</b></div></div></div>
-            </section>
-            <section class="tf-panel p-5">
+            <section class="tf-panel min-w-0 p-5">
               <div class="flex items-center justify-between"><div><h2 class="text-base font-extrabold text-task-ink">Overdue Tasks Trend</h2><p class="mt-1 text-xs text-task-muted">Current overdue workload by staff</p></div><span class="tf-pill bg-task-dangerSoft text-task-danger">{{ overdueTaskRows.length }} overdue</span></div>
               <div class="mt-6 flex h-44 items-end gap-3 border-b border-task-line px-2"><div v-for="group in analyticsOverdueByStaff.slice(0, 10)" :key="group.name" class="group flex h-full min-w-0 flex-1 flex-col justify-end"><div class="relative mx-auto w-full max-w-12 rounded-t-md bg-gradient-to-t from-task-danger to-[#ff899d] transition hover:opacity-80" :style="{ height: `${Math.max(8, Math.min(100, group.rows.length / Math.max(overdueTaskRows.length, 1) * 100))}%` }"><span class="absolute -top-5 left-1/2 -translate-x-1/2 text-[10px] font-bold text-task-danger">{{ group.rows.length }}</span></div><span class="mt-2 truncate text-center text-[9px] text-task-muted">{{ group.name.split(' ')[0] }}</span></div><p v-if="!analyticsOverdueByStaff.length" class="m-auto text-sm text-task-muted">No overdue tasks.</p></div>
             </section>
@@ -4521,7 +4434,7 @@ const iconPath = (name: string) => {
         <div class="flex touch-none items-start justify-between gap-4" :class="supportWidgetDragging ? 'cursor-grabbing' : 'cursor-move'" @pointerdown="startSupportDrag">
           <div class="flex select-none items-center gap-3">
             <span class="grid h-14 w-14 shrink-0 place-items-center rounded-[16px] bg-gradient-to-br from-task-blueSoft to-white p-0.5 shadow-sm ring-1 ring-task-blue/15"><img src="/images/tiko-assistant.webp" width="192" height="192" alt="Tiko feedback assistant" class="h-full w-full object-contain" /></span>
-            <div><h2 class="text-lg font-extrabold text-task-ink">Taskly</h2><p class="mt-0.5 text-xs font-medium text-task-muted">Feedback Assistant</p></div>
+            <div><h2 class="text-lg font-extrabold text-task-ink">Tiko</h2><p class="mt-0.5 text-xs font-medium text-task-muted">Feedback Assistant</p></div>
           </div>
           <button type="button" class="tf-icon-button h-8 w-8 shrink-0 cursor-pointer disabled:cursor-not-allowed disabled:opacity-50" :disabled="feedbackSending" aria-label="Close support" title="Close" @pointerdown.stop @click="supportWidgetOpen = false">
             <svg viewBox="0 0 24 24" class="h-4 w-4" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M18 6 6 18M6 6l12 12" /></svg>
@@ -4560,7 +4473,7 @@ const iconPath = (name: string) => {
           {{ feedbackSending ? 'Sending...' : 'Send Feedback →' }}
         </button>
       </div>
-      <button type="button" :class="['tf-support-launcher touch-none select-none', supportWidgetOpen ? 'is-open' : '', supportWidgetDragging ? 'is-dragging cursor-grabbing scale-105' : 'cursor-grab']" aria-label="Open or move Taskly support" title="Drag to move · Click to open" @dragstart.prevent @pointerdown="startSupportDrag" @click="toggleSupportWidget">
+      <button type="button" :class="['tf-support-launcher touch-none select-none', supportWidgetOpen ? 'is-open' : '', supportWidgetDragging ? 'is-dragging cursor-grabbing scale-105' : 'cursor-grab']" aria-label="Open or move Tiko support" title="Drag to move · Click to open" @dragstart.prevent @pointerdown="startSupportDrag" @click="toggleSupportWidget">
         <span class="tf-support-greeting" aria-hidden="true"><b>Hi! I'm Tiko 👋</b><small>Ask Tiko <i>✦</i></small></span>
         <img src="/images/tiko-assistant.webp" width="192" height="192" alt="Tiko feedback assistant" draggable="false" class="tf-support-robot pointer-events-none h-[66px] w-[66px] max-w-none select-none object-contain drop-shadow-[0_8px_12px_rgba(7,40,91,.38)]" />
       </button>

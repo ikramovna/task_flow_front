@@ -11,7 +11,7 @@ const props = withDefaults(defineProps<GreetingCardProps & { config: GreetingCar
 
 const emit = defineEmits<{ notification: []; theme: [] }>()
 const displayCount = computed(() => props.notificationCount > 99 ? '99+' : String(props.notificationCount))
-const background = computed(() => props.config.background.replace('-dark-', '-light-'))
+const background = computed(() => props.config.background)
 const tashkentNow = ref(new Date())
 const weatherTemperature = ref<number | null>(null)
 const weatherCode = ref<number | null>(null)
