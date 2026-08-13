@@ -4124,6 +4124,28 @@ const iconPath = (name: string) => {
             <label class="mb-5 mt-4 flex items-center justify-between gap-4 rounded-ui border border-task-line px-4 py-3 text-sm font-semibold"><span><span class="block">Active member</span><span class="mt-0.5 block text-xs font-normal text-task-muted">Allow this member to sign in immediately.</span></span><input v-model="memberIsActive" type="checkbox" class="h-5 w-5 accent-task-blue" /></label>
           </template>
           <template v-else-if="modal === 'task'">
+            <label v-if="canChooseDepartment" class="mb-4 block text-sm font-semibold">
+              Task Department <span class="text-task-danger">*</span>
+              <div class="tf-dropdown mt-2">
+                <button
+                  type="button"
+                  class="tf-dropdown-button h-12 disabled:cursor-not-allowed disabled:opacity-60"
+                  :disabled="taskModalMode === 'view'"
+                  @click="openDropdown = openDropdown === 'modalDepartment' ? null : 'modalDepartment'"
+                >
+                  <span class="truncate">{{ memberDepartmentsLoading ? 'Loading departments...' : modalDepartmentName }}</span>
+                  <svg viewBox="0 0 20 20" :class="['h-4 w-4 shrink-0 text-task-muted transition-transform', openDropdown === 'modalDepartment' ? 'rotate-180' : '']" fill="none" stroke="currentColor" stroke-width="2"><path d="m5 7.5 5 5 5-5" /></svg>
+                </button>
+                <div v-if="openDropdown === 'modalDepartment' && taskModalMode !== 'view'" class="tf-dropdown-menu max-h-56 overflow-y-auto">
+                  <button v-for="department in memberDepartmentOptions" :key="department.id" type="button" class="tf-dropdown-option" @click="selectModalDepartment(department.id)">
+                    <span>{{ department.name }}</span>
+                    <span v-if="modalDepartment === department.id" class="text-task-blue">✓</span>
+                  </button>
+                  <p v-if="!memberDepartmentsLoading && !memberDepartmentOptions.length" class="px-3 py-3 text-sm font-normal text-task-muted">No accessible departments available</p>
+                </div>
+              </div>
+              <span class="mt-1.5 block text-xs font-normal text-task-muted">You can assign members from your department or an accessible department.</span>
+            </label>
             <label class="block text-sm font-semibold">
               Task Title
               <input v-model="form.title" class="tf-input mt-2 h-12 w-full" placeholder="Enter task title" />
