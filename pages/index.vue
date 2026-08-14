@@ -147,7 +147,7 @@ const canManageDepartment = computed(() => ['owner', 'admin', 'manager'].include
 const canManageMembers = computed(() => currentUserActive.value && ['owner', 'admin', 'manager'].includes(normalizedRole.value))
 const canAddTask = computed(() => currentUserActive.value && ['owner', 'admin', 'manager'].includes(normalizedRole.value))
 const canCreateEvent = computed(() => canAddTask.value)
-const canCreateTaskInAnyDepartment = computed(() => currentUserActive.value && normalizedRole.value === 'manager')
+const canCreateTaskInAnyDepartment = computed(() => currentUserActive.value && ['owner', 'admin', 'manager'].includes(normalizedRole.value))
 const canChooseDepartment = computed(() =>
   ['owner', 'manager'].includes(normalizedRole.value) &&
   (currentUserHasAllDepartmentsAccess.value || currentUserAccessibleDepartmentIds.value.length > 1 || !currentDepartmentId.value)
@@ -1914,9 +1914,8 @@ const openModal = (value: Exclude<ModalKey, null>) => {
     taskAssigneeLabels.value = []
     taskMainAssigneeId.value = ''
     taskAssigneeSearch.value = ''
-    taskAssigneeOptions.value = [...departmentTeam.value]
+    taskAssigneeOptions.value = []
     if (canChooseTaskDepartment.value) void loadModalDepartments()
-    void loadTaskAssignees()
   }
   if (value === 'member') {
     editingMemberId.value = ''
@@ -1976,23 +1975,39 @@ const assignTaskTo = (member: string) => {
   taskAssigneeSearch.value = member
 }
 
-const loadTaskAssignees = async () => {
+let taskAssigneeSearchTimer: ReturnType<typeof setTimeout> | undefined
+let taskAssigneeRequestId = 0
+const loadTaskAssignees = async (search: string) => {
+  const query = search.trim()
+  const requestId = ++taskAssigneeRequestId
+  if (!query) {
+    taskAssigneeOptions.value = []
+    taskAssigneesLoading.value = false
+    return
+  }
   taskAssigneesLoading.value = true
   try {
-    const response = await taskFlowApi.listMembers({
-      is_active: true,
-      page_size: 200
-    })
+    const response = await taskFlowApi.searchTaskAssignees(query)
+    if (requestId !== taskAssigneeRequestId) return
     taskAssigneeOptions.value = taskFlowApi.listItems(response)
       .map(taskFlowApi.mapMember)
   } catch (error) {
+    if (requestId !== taskAssigneeRequestId) return
     console.error('Task assignees load failed.', error)
-    taskAssigneeOptions.value = [...team.value]
-    notifyError(taskFlowApiErrorMessage(error, 'Could not load team members'))
+    taskAssigneeOptions.value = []
+    notifyError(taskFlowApiErrorMessage(error, 'Could not search task assignees'))
   } finally {
-    taskAssigneesLoading.value = false
+    if (requestId === taskAssigneeRequestId) taskAssigneesLoading.value = false
   }
 }
+watch(taskAssigneeSearch, (search) => {
+  clearTimeout(taskAssigneeSearchTimer)
+  if (!search.trim()) {
+    void loadTaskAssignees('')
+    return
+  }
+  taskAssigneeSearchTimer = setTimeout(() => void loadTaskAssignees(search), 250)
+})
 const taskIsHiddenOf = (task: Array<string | number>) => String(task[17] || '') === 'true'
 const taskMainAssigneeIdOf = (task: Array<string | number>) => String(task[18] || '')
 const taskMainAssigneeOf = (task: Array<string | number>): ProjectCardMember | null => {
@@ -2021,7 +2036,7 @@ const selectModalDepartment = (departmentId: string) => {
     taskAssigneeLabels.value = []
     taskMainAssigneeId.value = ''
     form.assignee = ''
-    void loadTaskAssignees()
+    void loadTaskAssignees(taskAssigneeSearch.value)
   }
 }
 const currentMemberId = computed(() => {
@@ -2490,8 +2505,7 @@ const openTask = async (task: Array<string | number>, mode: 'view' | 'edit', fro
       return detail ? projectMemberName(detail) : teamMember ? teamMemberName(teamMember) : `User ${id}`
     })
     taskAssigneeSearch.value = ''
-    taskAssigneeOptions.value = [...departmentTeam.value]
-    void loadTaskAssignees()
+    taskAssigneeOptions.value = []
     modal.value = 'task'
   } catch (error) {
     notifyError(fromNotification ? 'This task is no longer available or you do not have access to it.' : taskFlowApiErrorMessage(error, 'Could not load task details'))
@@ -4298,7 +4312,7 @@ const iconPath = (name: string) => {
                   <p v-if="!memberDepartmentsLoading && !taskDepartmentOptions.length" class="px-3 py-3 text-sm font-normal text-task-muted">No departments available</p>
                 </div>
               </div>
-              <span class="mt-1.5 block text-xs font-normal text-task-muted">Select any department, then assign one or more of its members.</span>
+              <span class="mt-1.5 block text-xs font-normal text-task-muted">Task managers can select any department. Assignee search includes active employees from every department.</span>
             </label>
             <label class="block text-sm font-semibold">
               Task Title

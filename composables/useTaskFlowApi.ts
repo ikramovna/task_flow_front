@@ -698,6 +698,11 @@ export const useTaskFlowApi = () => {
     return await apiFetch<PaginatedResponse<ApiTask>>(`/tasks/${suffix}`)
   }
 
+  const searchTaskAssignees = async (search: string) => {
+    const params = new URLSearchParams({ search: search.trim() })
+    return await apiFetch<ListResponse<ApiMember>>(`/tasks/assignees/?${params}`)
+  }
+
   const createTask = async (task: TaskPayload) =>
     await apiFetch<ApiTask>('/tasks/', {
       method: 'POST',
@@ -990,6 +995,7 @@ export const useTaskFlowApi = () => {
     createTask,
     getTask,
     listTasks,
+    searchTaskAssignees,
     updateTask,
     deleteTask,
     archiveTask,
