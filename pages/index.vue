@@ -2531,7 +2531,7 @@ const deleteTask = async (task: Array<string | number>) => {
   try {
     await taskFlowApi.deleteTask(id)
     state.value.tasks = state.value.tasks.filter((item) => String(item[6] || '') !== id)
-    notify('Task muvaffaqiyatli o‘chirildi', 'success')
+    notify('Task deleted successfully', 'success')
   } catch (error) {
     notifyError(taskFlowApiErrorMessage(error, 'Could not delete the task'))
     return false
@@ -3402,7 +3402,7 @@ const iconPath = (name: string) => {
           <section v-for="(group, groupIndex) in sidebarGroups" :key="group.label" :class="['tf-sidebar-group', groupIndex ? 'mt-5 border-t border-task-line pt-5' : '']">
             <p v-if="!sidebarCollapsed" class="tf-sidebar-group-label">{{ group.label }}</p>
             <div class="mt-2 space-y-1.5">
-              <button v-for="item in group.items" :key="`${item.key}-${activePage === item.key}`" type="button" :disabled="isComingSoonPage(item.key)" :aria-current="activePage === item.key ? 'page' : null" :class="['tf-nav-item relative flex h-11 w-full items-center rounded-[12px] text-left text-sm transition', sidebarCollapsed ? 'justify-center px-2' : 'gap-3 px-3', isComingSoonPage(item.key) ? 'cursor-not-allowed text-slate-400' : activePage === item.key ? 'is-active font-semibold text-task-blue' : 'text-task-muted hover:bg-slate-50 hover:text-task-ink']" :title="isComingSoonPage(item.key) ? `${item.label} — Coming soon` : sidebarCollapsed ? item.label : undefined" @click="setPage(item.key)">
+              <button v-for="item in group.items" :key="item.key" type="button" :disabled="isComingSoonPage(item.key)" :aria-current="activePage === item.key ? 'page' : undefined" :class="['tf-nav-item relative flex h-11 w-full items-center rounded-[12px] text-left text-sm transition', sidebarCollapsed ? 'justify-center px-2' : 'gap-3 px-3', isComingSoonPage(item.key) ? 'cursor-not-allowed text-slate-400' : activePage === item.key ? 'is-active font-semibold text-task-blue' : 'text-task-muted hover:text-task-ink']" :title="isComingSoonPage(item.key) ? `${item.label} — Coming soon` : sidebarCollapsed ? item.label : undefined" @click="setPage(item.key)">
                 <span class="grid h-7 w-7 shrink-0 place-items-center"><svg viewBox="0 0 24 24" class="h-[19px] w-[19px]" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path :d="iconPath(item.icon)" /></svg></span>
                 <span v-if="!sidebarCollapsed" class="min-w-0 flex-1 truncate">{{ item.label }}</span>
                 <span v-if="isComingSoonPage(item.key) && !sidebarCollapsed" class="rounded-full bg-slate-100 px-2 py-1 text-[9px] font-bold uppercase tracking-wide text-slate-400">Soon</span>
@@ -3509,21 +3509,23 @@ const iconPath = (name: string) => {
           </div>
           <div class="grid items-stretch gap-4 xl:h-[360px] xl:grid-cols-[0.8fr_1.2fr]">
             <section class="tf-panel flex h-full min-h-[330px] flex-col overflow-hidden p-0 xl:min-h-0">
-              <header class="flex items-center justify-between gap-3 border-b border-task-line px-5 py-4">
-                <div><h2 class="flex items-center gap-2 font-bold"><span class="grid h-8 w-8 place-items-center rounded-[10px] bg-task-blueSoft text-task-blue"><svg viewBox="0 0 24 24" class="h-4 w-4" fill="none" stroke="currentColor" stroke-width="1.9"><path d="M4 20V10h4v10m2 0V4h4v16m2 0v-7h4v7" /></svg></span>Tasks by Department</h2><p class="mt-1 text-xs text-task-muted">Active workload distribution</p></div>
-                <span class="rounded-full bg-task-blueSoft px-3 py-1.5 text-xs font-extrabold text-task-blue">{{ dashboardDepartments.length }} teams</span>
+              <header class="border-b border-task-line px-5 py-4">
+                <div><h2 class="flex items-center gap-2 font-bold"><span class="grid h-8 w-8 place-items-center rounded-[10px] bg-task-blueSoft text-task-blue"><svg viewBox="0 0 24 24" class="h-4 w-4" fill="none" stroke="currentColor" stroke-width="1.9"><path d="M4 20V10h4v10m2 0V4h4v16m2 0v-7h4v7" /></svg></span>Tasks by Department</h2><p class="mt-1 text-xs text-task-muted">Role-filtered task distribution</p></div>
               </header>
-              <div v-if="dashboardDepartments.length" class="flex min-h-0 flex-1 flex-col bg-gradient-to-br from-white via-task-blueSoft/20 to-slate-50">
-                <div class="mx-4 mt-4 flex items-center gap-3 rounded-[15px] border border-task-blue/10 bg-white/90 px-4 py-3 shadow-sm">
-                  <span class="grid h-11 w-11 shrink-0 place-items-center rounded-[13px] bg-gradient-to-br from-task-blue to-task-blueDark text-white shadow-button"><b class="text-lg">{{ dashboardDepartmentTotal }}</b></span>
-                  <span class="min-w-0 flex-1"><b class="block text-sm text-task-ink">Total active tasks</b><small class="mt-0.5 block text-[10px] text-task-muted">Across every visible department</small></span>
-                  <span class="text-right"><b class="block text-sm text-task-ink">{{ Number(dashboardDepartments[0]?.percentage || 0).toFixed(0) }}%</b><small class="text-[9px] font-bold uppercase tracking-wide text-task-muted">Top share</small></span>
+              <div v-if="dashboardDepartments.length" class="grid min-h-0 flex-1 gap-3 p-4 sm:grid-cols-[122px_minmax(0,1fr)]">
+                <div class="flex min-h-[205px] flex-col items-center justify-center rounded-[14px] border border-task-line px-3 py-4">
+                  <div class="tf-department-donut" :style="{ background: dashboardDepartmentGradient }">
+                    <span><b>{{ dashboardDepartmentTotal }}</b><small>Total active<br>task</small></span>
+                  </div>
+                  <p class="mt-4 text-center text-[11px] font-semibold text-task-muted">{{ dashboardDepartments.length }} departments</p>
                 </div>
-                <div class="min-h-0 flex-1 space-y-2 overflow-y-auto px-4 py-3">
-                  <div v-for="(department, index) in dashboardDepartments" :key="String(department.department_id)" class="group grid min-w-0 grid-cols-[32px_minmax(0,1fr)_auto] items-center gap-3 rounded-[13px] border border-transparent bg-white/75 px-3 py-2.5 transition hover:border-task-blue/15 hover:bg-white hover:shadow-sm">
-                    <span :class="['grid h-8 w-8 place-items-center rounded-[10px] text-[11px] font-extrabold', index === 0 ? 'bg-task-blue text-white shadow-sm' : 'bg-slate-100 text-task-muted']">{{ index + 1 }}</span>
-                    <span class="min-w-0"><span class="flex items-center gap-2"><i class="h-2 w-2 shrink-0 rounded-full" :style="{ backgroundColor: dashboardDepartmentColor(index) }" /><b class="truncate text-xs text-task-ink">{{ department.department_name }}</b></span><span class="mt-2 block h-1.5 overflow-hidden rounded-full bg-slate-100"><i class="block h-full rounded-full transition-all duration-500" :style="{ width: `${Math.min(100, Number(department.percentage))}%`, backgroundColor: dashboardDepartmentColor(index) }" /></span></span>
-                    <span class="min-w-[52px] text-right"><b class="block text-sm text-task-ink">{{ department.task_count }}</b><small class="text-[9px] font-semibold text-task-muted">{{ Number(department.percentage).toFixed(0) }}%</small></span>
+                <div class="min-h-0 space-y-3 overflow-y-auto pr-1">
+                  <div v-for="(department, index) in dashboardDepartments" :key="String(department.department_id)" class="rounded-[14px] border border-task-line px-4 py-4">
+                    <div class="flex min-w-0 items-center justify-between gap-3">
+                      <span class="flex min-w-0 items-center gap-2"><i class="h-2.5 w-2.5 shrink-0 rounded-full" :style="{ backgroundColor: dashboardDepartmentColor(index) }" /><b class="truncate text-xs text-task-ink">{{ department.department_name }}</b></span>
+                      <span class="shrink-0 text-xs"><b class="text-task-ink">{{ department.task_count }}</b><span class="text-task-muted"> ({{ Number(department.percentage).toFixed(0) }}%)</span></span>
+                    </div>
+                    <span class="mt-3 block h-1.5 overflow-hidden rounded-full bg-slate-200"><i class="block h-full rounded-full transition-all duration-500" :style="{ width: `${Math.min(100, Number(department.percentage))}%`, backgroundColor: dashboardDepartmentColor(index) }" /></span>
                   </div>
                 </div>
               </div>

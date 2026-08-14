@@ -490,6 +490,11 @@ body {
   font-weight: 600;
 }
 
+.tf-sidebar-modern .tf-nav-item:not([aria-current='page']):not(:disabled) {
+  background: transparent;
+  box-shadow: none;
+}
+
 .tf-sidebar-modern .tf-nav-item.is-active::before {
   display: none;
 }
@@ -1716,6 +1721,11 @@ body {
 .tf-dark .tf-sidebar-modern .tf-nav-item.is-active {
   background: linear-gradient(90deg, rgb(37 103 223 / .24), rgb(37 103 223 / .10));
   color: #7eb3ff;
+}
+
+.tf-dark .tf-sidebar-modern .tf-nav-item:not([aria-current='page']):not(:disabled) {
+  background: transparent;
+  box-shadow: none;
 }
 
 .tf-dark .tf-sidebar-modern .tf-nav-item.is-active::before {
