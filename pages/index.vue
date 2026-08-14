@@ -15,6 +15,18 @@ type ProjectCardMember = {
   phone?: string
   job_title?: string
 }
+type SmartTaskDraft = {
+  title: string
+  description: string
+  priority: 'Low' | 'Medium' | 'High'
+  dueDate: string
+  category: string
+  departmentId: string
+  departmentName: string
+  assigneeId: string
+  assigneeName: string
+  acceptanceCriteria: string[]
+}
 
 const pageStorageKey = 'taskflow-active-page'
 const validPageKeys: PageKey[] = ['dashboard', 'tasks', 'projects', 'analytics', 'calendar', 'team', 'reports', 'messages', 'notifications', 'settings', 'help']
@@ -402,6 +414,16 @@ const eventTypeOptions = ['Meeting', 'Review', 'Workshop']
 const taskStatusOptions = ['Postponed', 'Not Started', 'In Progress', 'On Hold', 'Completed']
 const taskFormStatus = ref('Not Started')
 const taskIsHidden = ref(false)
+const aiTaskAssistantOpen = ref(false)
+const aiTaskPrompt = ref('')
+const aiTaskListening = ref(false)
+const aiTaskError = ref('')
+const aiTaskDraft = ref<SmartTaskDraft | null>(null)
+let aiSpeechRecognition: any = null
+watch(aiTaskPrompt, () => {
+  aiTaskDraft.value = null
+  aiTaskError.value = ''
+})
 const taskAssigneeIds = ref<string[]>([])
 const taskAssigneeLabels = ref<string[]>([])
 const taskMainAssigneeId = ref('')
@@ -606,7 +628,7 @@ const taskOverviewCards = computed(() => [
   { label: 'On Hold', value: tasks.value.filter((task) => String(task[3]).toLowerCase() === 'on hold').length, color: 'amber', status: 'on_hold' },
   { label: 'Submitted', value: tasks.value.filter((task) => String(task[3]).toLowerCase() === 'completed').length, color: 'green', status: 'all' },
   { label: 'Overdue', value: tasks.value.filter(isTaskOverdue).length, color: 'rose', status: 'overdue' },
-  { label: 'Archived', value: archivedTaskCount.value, color: 'slate', status: 'archived' }
+  { label: 'Completed', value: archivedTaskCount.value, color: 'slate', status: 'archived' }
 ])
 const overdueTaskRows = computed(() => tasks.value.filter(isTaskOverdue))
 const analyticsOverdueByStaff = computed(() => {
@@ -1883,6 +1905,10 @@ const openModal = (value: Exclude<ModalKey, null>) => {
   if (value === 'task') {
     editingTaskId.value = ''
     taskModalMode.value = 'create'
+    aiTaskAssistantOpen.value = false
+    aiTaskPrompt.value = ''
+    aiTaskDraft.value = null
+    aiTaskError.value = ''
     taskIsHidden.value = false
     taskAssigneeIds.value = []
     taskAssigneeLabels.value = []
@@ -2008,6 +2034,169 @@ const modalDepartmentName = computed(() =>
   (modal.value === 'task' ? taskDepartmentOptions.value : memberDepartmentOptions.value)
     .find((department) => department.id === modalDepartment.value)?.name || 'Select department'
 )
+
+const normalizeSmartText = (value: string) => value
+  .toLocaleLowerCase('uz')
+  .replace(/[ʻʼ’‘`]/g, "'")
+  .replace(/[^a-z0-9а-яёғқўҳ' ]/gi, ' ')
+  .replace(/\s+/g, ' ')
+  .trim()
+
+const smartDraftDueDate = (prompt: string) => {
+  const explicit = prompt.match(/\b(\d{1,2})[./-](\d{1,2})[./-](\d{4})\b/)
+  if (explicit) return `${explicit[1].padStart(2, '0')}.${explicit[2].padStart(2, '0')}.${explicit[3]}`
+
+  const normalized = normalizeSmartText(prompt)
+  const date = new Date()
+  if (/\b(ertaga|tomorrow)\b/.test(normalized)) date.setDate(date.getDate() + 1)
+  else {
+    const daysFromNow = normalized.match(/\b(\d+)\s*(kun|day)s?\b/)
+    if (daysFromNow) date.setDate(date.getDate() + Number(daysFromNow[1]))
+    else {
+      const weekdays: Array<[RegExp, number]> = [
+        [/\b(dushanba|monday)\b/, 1], [/\b(seshanba|tuesday)\b/, 2],
+        [/\b(chorshanba|wednesday)\b/, 3], [/\b(payshanba|thursday)\b/, 4],
+        [/\b(juma|friday)\b/, 5], [/\b(shanba|saturday)\b/, 6], [/\b(yakshanba|sunday)\b/, 0]
+      ]
+      const weekday = weekdays.find(([pattern]) => pattern.test(normalized))
+      if (weekday) {
+        const distance = (weekday[1] - date.getDay() + 7) % 7 || 7
+        date.setDate(date.getDate() + distance)
+      } else date.setDate(date.getDate() + 7)
+    }
+  }
+  return `${String(date.getDate()).padStart(2, '0')}.${String(date.getMonth() + 1).padStart(2, '0')}.${date.getFullYear()}`
+}
+
+const generateSmartTaskDraft = () => {
+  const prompt = aiTaskPrompt.value.trim()
+  aiTaskError.value = ''
+  if (prompt.length < 5) {
+    aiTaskError.value = 'Task haqida kamida bir necha so‘z yozing yoki gapiring.'
+    return
+  }
+
+  const normalized = normalizeSmartText(prompt)
+  const candidates = [...taskAssigneeOptions.value, ...team.value].filter((member, index, rows) => {
+    const id = teamMemberId(member)
+    return id && rows.findIndex((item) => teamMemberId(item) === id) === index
+  })
+  const promptWords = normalized.split(' ').filter(Boolean)
+  const memberMatches = candidates.map((member) => {
+    const name = normalizeSmartText(teamMemberName(member))
+    const nameParts = name.split(' ').filter((part) => part.length > 2)
+    let score = normalized.includes(name) ? 100 + name.length : 0
+    nameParts.forEach((part, index) => {
+      const exactOrSuffixed = promptWords.some((word) =>
+        word === part || ['ga', 'ka', 'qa', 'ni', 'ning', 'dan'].some((suffix) => word === `${part}${suffix}`)
+      )
+      if (exactOrSuffixed) score += index === 0 ? 40 : 20
+    })
+    return { member, score }
+  }).filter((item) => item.score > 0).sort((a, b) => b.score - a.score)
+  const matchedMember = memberMatches[0]?.member
+  const matchedDepartment = taskDepartmentOptions.value.find((department) =>
+    normalized.includes(normalizeSmartText(department.name))
+  )
+  const departmentId = matchedDepartment?.id || String(matchedMember?.[11] || '') || modalDepartment.value || effectiveDepartmentId.value
+  const departmentName = matchedDepartment?.name || taskDepartmentOptions.value.find((item) => item.id === departmentId)?.name || 'Current department'
+  const assigneeName = matchedMember ? teamMemberName(matchedMember) : ''
+  const assigneeId = matchedMember ? teamMemberId(matchedMember) : ''
+  const priority: SmartTaskDraft['priority'] = /\b(high|yuqori|urgent|shoshilinch)\b/.test(normalized)
+    ? 'High'
+    : /\b(low|past)\b/.test(normalized) ? 'Low' : 'Medium'
+
+  let title = prompt
+    .replace(/\b(priority|prioritet)\s*[:=-]?\s*(high|medium|low|yuqori|o['‘’]?rta|past)\b/gi, '')
+    .replace(/\b(ertaga|bugun|tomorrow|today|dushanba|seshanba|chorshanba|payshanba|juma|shanba|yakshanba|monday|tuesday|wednesday|thursday|friday|saturday|sunday)\s*(kuni|kunigacha|gacha|day)?\b/gi, '')
+    .replace(/\b(taskini|taskni|task|vazifani|vazifa)\s*(ber|yarat|create|assign)?\b/gi, '')
+  if (assigneeName) {
+    assigneeName.split(' ').filter(Boolean).forEach((part) => {
+      title = title.replace(new RegExp(`${part}(ga|ka|qa)?`, 'gi'), '')
+    })
+  }
+  title = title.replace(/\s+/g, ' ').replace(/^[,.:;\s-]+|[,.:;\s-]+$/g, '').trim()
+  if (!title) title = 'New task'
+  title = title.charAt(0).toUpperCase() + title.slice(1, 100)
+
+  const category = /\b(design|dizayn|ui|ux)\b/.test(normalized) ? 'Design'
+    : /\b(development|frontend|backend|api|code|dastur)\b/.test(normalized) ? 'Development'
+      : /\b(test|qa|tekshir)\b/.test(normalized) ? 'QA'
+        : /\b(marketing|reklama|content|kontent)\b/.test(normalized) ? 'Marketing' : ''
+  const isEnglishPrompt = /\b(please|create|assign|complete|design|develop|fix|by|priority)\b/.test(normalized) && !/\b(uchun|kerak|ber|yarat|tayyorla|gacha)\b/.test(normalized)
+  const acceptanceCriteria = isEnglishPrompt
+    ? category === 'Design'
+      ? ['Final design is ready for review.', 'Source file and responsive states are included.']
+      : category === 'Development'
+        ? ['Implementation is ready for code review.', 'The change is tested without known regressions.']
+        : ['Requested outcome is ready for review.', 'Requirements are verified and task status is updated.']
+    : category === 'Design'
+      ? ['Yakuniy dizayn review uchun tayyor bo‘ladi.', 'Source fayl va responsive holatlar birga topshiriladi.']
+      : category === 'Development'
+        ? ['Kod review uchun tayyor holatda topshiriladi.', 'O‘zgarish test qilinib, regressiya yo‘qligi tekshiriladi.']
+        : category === 'QA'
+          ? ['Test natijalari va topilgan muammolar yozib boriladi.', 'Talablar bajarilgani yakuniy tekshiruvdan o‘tkaziladi.']
+          : ['Natija review uchun tayyor holatda topshiriladi.', 'Talablar bajarilgani tekshiriladi va task statusi yangilanadi.']
+  aiTaskDraft.value = {
+    title,
+    description: `${prompt}\n\nAcceptance criteria:\n${acceptanceCriteria.map((item) => `• ${item}`).join('\n')}`,
+    priority,
+    dueDate: smartDraftDueDate(prompt),
+    category,
+    departmentId,
+    departmentName,
+    assigneeId,
+    assigneeName,
+    acceptanceCriteria
+  }
+}
+
+const applySmartTaskDraft = async () => {
+  const draft = aiTaskDraft.value
+  if (!draft) return
+  form.title = draft.title
+  form.description = draft.description
+  form.priority = draft.priority
+  form.dueDate = draft.dueDate
+  form.category = draft.category
+  if (draft.departmentId) modalDepartment.value = draft.departmentId
+  if (draft.assigneeId) {
+    taskAssigneeIds.value = [draft.assigneeId]
+    taskAssigneeLabels.value = [draft.assigneeName]
+    taskMainAssigneeId.value = draft.assigneeId
+    form.assignee = draft.assigneeName
+  }
+  aiTaskAssistantOpen.value = false
+  notify('AI draft task formiga qo‘llandi. Yaratishdan oldin tekshiring.', 'success')
+}
+
+const toggleSmartTaskVoice = () => {
+  if (!import.meta.client) return
+  if (aiTaskListening.value) {
+    aiSpeechRecognition?.stop?.()
+    return
+  }
+  const SpeechRecognition = (window as any).SpeechRecognition || (window as any).webkitSpeechRecognition
+  if (!SpeechRecognition) {
+    aiTaskError.value = 'Bu brauzer voice input’ni qo‘llamaydi. Matn yozib foydalanishingiz mumkin.'
+    return
+  }
+  aiTaskError.value = ''
+  aiSpeechRecognition = new SpeechRecognition()
+  aiSpeechRecognition.lang = 'uz-UZ'
+  aiSpeechRecognition.interimResults = true
+  aiSpeechRecognition.continuous = false
+  aiSpeechRecognition.onstart = () => { aiTaskListening.value = true }
+  aiSpeechRecognition.onresult = (event: any) => {
+    aiTaskPrompt.value = Array.from(event.results)
+      .map((result: any) => result[0]?.transcript || '')
+      .join(' ')
+      .trim()
+  }
+  aiSpeechRecognition.onerror = () => { aiTaskError.value = 'Ovoz aniqlanmadi. Qayta urinib ko‘ring.' }
+  aiSpeechRecognition.onend = () => { aiTaskListening.value = false }
+  aiSpeechRecognition.start()
+}
 const canChangeTaskStatus = (task: Array<string | number>) => {
   const mainAssigneeId = taskMainAssigneeIdOf(task)
   const mainAssignee = taskMainAssigneeOf(task)
@@ -3200,8 +3389,8 @@ const iconPath = (name: string) => {
         <nav :class="['flex min-h-0 flex-1 flex-col overflow-hidden pt-5', sidebarCollapsed ? 'px-1' : 'px-2']">
           <section v-for="(group, groupIndex) in sidebarGroups" :key="group.label" :class="['tf-sidebar-group', groupIndex ? 'mt-5 border-t border-task-line pt-5' : '']">
             <p v-if="!sidebarCollapsed" class="tf-sidebar-group-label">{{ group.label }}</p>
-            <div :key="`${group.label}-${activePage}`" class="mt-2 space-y-1.5">
-              <button v-for="item in group.items" :key="item.key" type="button" :disabled="isComingSoonPage(item.key)" :aria-current="activePage === item.key ? 'page' : undefined" :class="['tf-nav-item relative flex h-11 w-full items-center rounded-[12px] text-left text-sm transition', sidebarCollapsed ? 'justify-center px-2' : 'gap-3 px-3', isComingSoonPage(item.key) ? 'cursor-not-allowed text-slate-400' : activePage === item.key ? 'is-active font-semibold text-task-blue' : 'text-task-muted hover:bg-slate-50 hover:text-task-ink']" :title="isComingSoonPage(item.key) ? `${item.label} — Coming soon` : sidebarCollapsed ? item.label : undefined" @click="setPage(item.key)">
+            <div class="mt-2 space-y-1.5">
+              <button v-for="item in group.items" :key="`${item.key}-${activePage === item.key}`" type="button" :disabled="isComingSoonPage(item.key)" :aria-current="activePage === item.key ? 'page' : null" :class="['tf-nav-item relative flex h-11 w-full items-center rounded-[12px] text-left text-sm transition', sidebarCollapsed ? 'justify-center px-2' : 'gap-3 px-3', isComingSoonPage(item.key) ? 'cursor-not-allowed text-slate-400' : activePage === item.key ? 'is-active font-semibold text-task-blue' : 'text-task-muted hover:bg-slate-50 hover:text-task-ink']" :title="isComingSoonPage(item.key) ? `${item.label} — Coming soon` : sidebarCollapsed ? item.label : undefined" @click="setPage(item.key)">
                 <span class="grid h-7 w-7 shrink-0 place-items-center"><svg viewBox="0 0 24 24" class="h-[19px] w-[19px]" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path :d="iconPath(item.icon)" /></svg></span>
                 <span v-if="!sidebarCollapsed" class="min-w-0 flex-1 truncate">{{ item.label }}</span>
                 <span v-if="isComingSoonPage(item.key) && !sidebarCollapsed" class="rounded-full bg-slate-100 px-2 py-1 text-[9px] font-bold uppercase tracking-wide text-slate-400">Soon</span>
@@ -3306,8 +3495,8 @@ const iconPath = (name: string) => {
             <section class="tf-panel tf-dashboard-list overflow-hidden p-0"><header class="tf-dashboard-list-header"><h2 class="flex items-center gap-2 font-bold"><span class="tf-section-icon">▣</span>Today’s Schedule</h2><div class="flex items-center gap-3"><span class="tf-pill bg-task-blueSoft text-task-blue">{{ dashboardTodayEvents.length }}</span><button type="button" class="text-xs font-bold text-task-blue" @click="setPage('calendar')">View all</button></div></header><div class="tf-dashboard-list-body divide-y divide-task-line"><button v-for="event in dashboardTodayEvents" :key="String(event.id)" type="button" class="tf-dashboard-list-row w-full text-left transition hover:bg-task-blueSoft focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-task-blue" @click="openDashboardEvent(event)"><time class="tf-event-date grid h-11 min-w-14 place-items-center rounded-[9px] bg-task-blueSoft px-2 text-xs font-bold text-task-blue">{{ dashboardDateTime(event.starts_at, 'time') }}</time><div class="min-w-0 flex-1"><p class="truncate text-sm font-bold">{{ event.title }}</p><p class="mt-1 truncate text-xs text-task-muted">{{ event.department?.name || 'No department' }} · {{ event.location || 'Online' }}</p></div><span class="text-xs text-task-muted">›</span></button><div v-if="!dashboardTodayEvents.length" class="tf-empty-events"><EmptyCalendarArt /><p>No events scheduled for today.</p><small>Enjoy your free time! 🎉</small></div></div></section>
             <section class="tf-panel tf-dashboard-list overflow-hidden p-0"><header class="tf-dashboard-list-header"><h2 class="font-bold">Upcoming Deadlines</h2><div class="flex items-center gap-3"><span class="tf-pill bg-task-blueSoft text-task-blue">{{ dashboardDeadlines.length }}</span><button type="button" class="text-xs font-bold text-task-blue" @click="setPage('tasks')">View all</button></div></header><div class="tf-dashboard-list-body divide-y divide-task-line"><button v-for="task in dashboardDeadlines" :key="String(task.id)" type="button" class="tf-dashboard-list-row w-full text-left transition hover:bg-task-blueSoft focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-task-blue" @click="openDashboardTask(task)"><span :class="['h-2.5 w-2.5 shrink-0 rounded-full', task.priority === 'high' ? 'bg-task-danger' : task.priority === 'medium' ? 'bg-task-warning' : 'bg-task-success']" /><div class="min-w-0 flex-1"><p class="truncate text-sm font-bold">{{ task.title }}</p><p class="mt-1 truncate text-xs text-task-muted">{{ task.department?.name || 'No department' }}</p></div><div class="text-right"><p class="text-xs font-bold">{{ dashboardDateTime(task.due_date) }}</p><p class="mt-1 text-[10px] font-semibold text-task-warning">{{ task.days_remaining }} days left</p></div></button><div v-if="!dashboardDeadlines.length" class="tf-empty-events"><p>No upcoming deadlines.</p><small>You are all caught up.</small></div></div></section>
           </div>
-          <div class="grid items-stretch gap-4 xl:h-[360px] xl:grid-cols-[1.2fr_0.8fr]">
-            <section class="tf-panel order-2 flex h-full min-h-[330px] flex-col overflow-hidden p-0 xl:min-h-0">
+          <div class="grid items-stretch gap-4 xl:h-[360px] xl:grid-cols-[0.8fr_1.2fr]">
+            <section class="tf-panel flex h-full min-h-[330px] flex-col overflow-hidden p-0 xl:min-h-0">
               <header class="flex items-center justify-between gap-3 border-b border-task-line px-5 py-4">
                 <div><h2 class="flex items-center gap-2 font-bold"><span class="grid h-8 w-8 place-items-center rounded-[10px] bg-task-blueSoft text-task-blue"><svg viewBox="0 0 24 24" class="h-4 w-4" fill="none" stroke="currentColor" stroke-width="1.9"><path d="M4 20V10h4v10m2 0V4h4v16m2 0v-7h4v7" /></svg></span>Tasks by Department</h2><p class="mt-1 text-xs text-task-muted">Active workload distribution</p></div>
                 <span class="rounded-full bg-task-blueSoft px-3 py-1.5 text-xs font-extrabold text-task-blue">{{ dashboardDepartments.length }} teams</span>
@@ -4052,6 +4241,33 @@ const iconPath = (name: string) => {
             <label class="mb-5 mt-4 flex items-center justify-between gap-4 rounded-ui border border-task-line px-4 py-3 text-sm font-semibold"><span><span class="block">Active member</span><span class="mt-0.5 block text-xs font-normal text-task-muted">Allow this member to sign in immediately.</span></span><input v-model="memberIsActive" type="checkbox" class="h-5 w-5 accent-task-blue" /></label>
           </template>
           <template v-else-if="modal === 'task'">
+            <section v-if="false" class="mb-4 overflow-hidden rounded-[16px] border border-[#C9B7FF] bg-gradient-to-br from-[#F8F5FF] via-white to-task-blueSoft/60 shadow-sm">
+              <button type="button" class="flex w-full items-center gap-3 px-4 py-3.5 text-left" @click="aiTaskAssistantOpen = !aiTaskAssistantOpen">
+                <span class="grid h-10 w-10 shrink-0 place-items-center rounded-[13px] bg-gradient-to-br from-[#8B5CF6] to-task-blue text-white shadow-button"><svg viewBox="0 0 24 24" class="h-5 w-5" fill="none" stroke="currentColor" stroke-width="1.8"><path d="m12 3 1.4 4.1L17.5 8.5l-4.1 1.4L12 14l-1.4-4.1-4.1-1.4 4.1-1.4L12 3Z"/><path d="m18.5 14 .8 2.2 2.2.8-2.2.8-.8 2.2-.8-2.2-2.2-.8 2.2-.8.8-2.2Z"/></svg></span>
+                <span class="min-w-0 flex-1"><b class="block text-sm text-task-ink">Create with AI</b><small class="mt-0.5 block text-[11px] text-task-muted">Write or speak naturally — get a ready-to-review task draft.</small></span>
+                <svg viewBox="0 0 20 20" :class="['h-4 w-4 text-task-muted transition-transform', aiTaskAssistantOpen ? 'rotate-180' : '']" fill="none" stroke="currentColor" stroke-width="2"><path d="m5 7.5 5 5 5-5" /></svg>
+              </button>
+              <div v-if="aiTaskAssistantOpen" class="border-t border-[#DDD2FF] px-4 pb-4 pt-3">
+                <label class="text-xs font-bold text-task-ink">Tell the assistant what you need</label>
+                <div class="relative mt-2">
+                  <textarea v-model="aiTaskPrompt" class="tf-input h-28 w-full resize-none py-3 pl-3 pr-12 leading-5" placeholder="Masalan: Dilafruzga landing page dizaynini juma kunigacha tayyorlash taskini ber, priority high." />
+                  <button type="button" :class="['absolute bottom-3 right-3 grid h-9 w-9 place-items-center rounded-[11px] transition', aiTaskListening ? 'animate-pulse bg-task-danger text-white' : 'bg-task-blueSoft text-task-blue hover:bg-task-blue hover:text-white']" :aria-label="aiTaskListening ? 'Stop listening' : 'Speak task request'" @click="toggleSmartTaskVoice"><svg viewBox="0 0 24 24" class="h-4 w-4" fill="none" stroke="currentColor" stroke-width="1.9"><rect x="9" y="3" width="6" height="12" rx="3"/><path d="M5.5 11.5a6.5 6.5 0 0 0 13 0M12 18v3m-4 0h8"/></svg></button>
+                </div>
+                <p v-if="aiTaskListening" class="mt-2 text-xs font-semibold text-task-danger">Listening… gapirishingiz mumkin.</p>
+                <p v-if="aiTaskError" class="mt-2 text-xs font-semibold text-task-danger">{{ aiTaskError }}</p>
+                <div class="mt-3 flex items-center justify-between gap-3"><small class="text-[10px] leading-4 text-task-muted">Local smart draft · Always review before creating.</small><button type="button" class="tf-primary h-10 shrink-0 rounded-[11px] px-4 text-xs" @click="generateSmartTaskDraft"><span>✦</span> Generate draft</button></div>
+                <div v-if="aiTaskDraft" class="mt-4 rounded-[14px] border border-task-line bg-white p-3.5 shadow-sm">
+                  <div class="flex items-start justify-between gap-3"><div><p class="text-[10px] font-extrabold uppercase tracking-[.12em] text-[#7C3AED]">Draft preview</p><h3 class="mt-1 text-sm font-bold text-task-ink">{{ aiTaskDraft.title }}</h3></div><span :class="['tf-pill shrink-0', badgeClass(aiTaskDraft.priority)]">{{ aiTaskDraft.priority }}</span></div>
+                  <div class="mt-3 grid gap-2 text-[11px] sm:grid-cols-2">
+                    <p class="rounded-[9px] bg-slate-50 px-3 py-2 text-task-muted"><b class="text-task-ink">Assignee:</b> {{ aiTaskDraft.assigneeName || 'Select manually' }}</p>
+                    <p class="rounded-[9px] bg-slate-50 px-3 py-2 text-task-muted"><b class="text-task-ink">Due:</b> {{ aiTaskDraft.dueDate }}</p>
+                    <p class="rounded-[9px] bg-slate-50 px-3 py-2 text-task-muted"><b class="text-task-ink">Department:</b> {{ aiTaskDraft.departmentName }}</p>
+                    <p class="rounded-[9px] bg-slate-50 px-3 py-2 text-task-muted"><b class="text-task-ink">Category:</b> {{ aiTaskDraft.category || 'General' }}</p>
+                  </div>
+                  <div class="mt-3 flex justify-end"><button type="button" class="inline-flex h-10 items-center gap-2 rounded-[11px] bg-task-success px-4 text-xs font-bold text-white shadow-sm transition hover:brightness-95" @click="applySmartTaskDraft"><span>✓</span> Apply to task</button></div>
+                </div>
+              </div>
+            </section>
             <div v-if="taskModalMode === 'view' && openedTask" class="mb-4 rounded-[12px] border border-task-line bg-slate-50 px-4 py-3">
               <p class="text-xs font-semibold uppercase tracking-wide text-task-muted">Created by</p>
               <div class="mt-2 flex items-center gap-3">
