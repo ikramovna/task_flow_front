@@ -1282,6 +1282,11 @@ const setPage = (key: PageKey) => {
   mobileSidebarOpen.value = false
 }
 
+const navigateSidebar = (event: MouseEvent, key: PageKey) => {
+  setPage(key)
+  ;(event.currentTarget as HTMLButtonElement | null)?.blur()
+}
+
 const restoreActivePage = () => {
   if (!import.meta.client) return
   const hashPage = window.location.hash.replace(/^#/, '').split('?')[0]
@@ -3402,7 +3407,7 @@ const iconPath = (name: string) => {
           <section v-for="(group, groupIndex) in sidebarGroups" :key="group.label" :class="['tf-sidebar-group', groupIndex ? 'mt-5 border-t border-task-line pt-5' : '']">
             <p v-if="!sidebarCollapsed" class="tf-sidebar-group-label">{{ group.label }}</p>
             <div class="mt-2 space-y-1.5">
-              <button v-for="item in group.items" :key="item.key" type="button" :disabled="isComingSoonPage(item.key)" :aria-current="activePage === item.key ? 'page' : undefined" :class="['tf-nav-item relative flex h-11 w-full items-center rounded-[12px] text-left text-sm transition', sidebarCollapsed ? 'justify-center px-2' : 'gap-3 px-3', isComingSoonPage(item.key) ? 'cursor-not-allowed text-slate-400' : activePage === item.key ? 'is-active font-semibold text-task-blue' : 'text-task-muted hover:text-task-ink']" :title="isComingSoonPage(item.key) ? `${item.label} — Coming soon` : sidebarCollapsed ? item.label : undefined" @click="setPage(item.key)">
+              <button v-for="item in group.items" :key="item.key" type="button" :disabled="isComingSoonPage(item.key)" :aria-current="activePage === item.key ? 'page' : undefined" :class="['tf-nav-item relative flex h-11 w-full items-center rounded-[12px] text-left text-sm transition', sidebarCollapsed ? 'justify-center px-2' : 'gap-3 px-3', isComingSoonPage(item.key) ? 'cursor-not-allowed text-slate-400' : activePage === item.key ? 'is-active font-semibold text-task-blue' : 'text-task-muted']" :title="isComingSoonPage(item.key) ? `${item.label} — Coming soon` : sidebarCollapsed ? item.label : undefined" @click="navigateSidebar($event, item.key)">
                 <span class="grid h-7 w-7 shrink-0 place-items-center"><svg viewBox="0 0 24 24" class="h-[19px] w-[19px]" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path :d="iconPath(item.icon)" /></svg></span>
                 <span v-if="!sidebarCollapsed" class="min-w-0 flex-1 truncate">{{ item.label }}</span>
                 <span v-if="isComingSoonPage(item.key) && !sidebarCollapsed" class="rounded-full bg-slate-100 px-2 py-1 text-[9px] font-bold uppercase tracking-wide text-slate-400">Soon</span>
