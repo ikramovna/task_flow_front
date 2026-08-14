@@ -2068,7 +2068,7 @@ const smartDraftDueDate = (prompt: string) => {
   return `${String(date.getDate()).padStart(2, '0')}.${String(date.getMonth() + 1).padStart(2, '0')}.${date.getFullYear()}`
 }
 
-const generateSmartTaskDraft = () => {
+const generateLocalSmartTaskDraft = () => {
   const prompt = aiTaskPrompt.value.trim()
   aiTaskError.value = ''
   if (prompt.length < 5) {
@@ -2151,6 +2151,8 @@ const generateSmartTaskDraft = () => {
   }
 }
 
+const generateSmartTaskDraft = () => generateLocalSmartTaskDraft()
+
 const applySmartTaskDraft = async () => {
   const draft = aiTaskDraft.value
   if (!draft) return
@@ -2183,7 +2185,7 @@ const toggleSmartTaskVoice = () => {
   }
   aiTaskError.value = ''
   aiSpeechRecognition = new SpeechRecognition()
-  aiSpeechRecognition.lang = 'uz-UZ'
+  aiSpeechRecognition.lang = 'en-US'
   aiSpeechRecognition.interimResults = true
   aiSpeechRecognition.continuous = false
   aiSpeechRecognition.onstart = () => { aiTaskListening.value = true }
@@ -4241,7 +4243,7 @@ const iconPath = (name: string) => {
             <label class="mb-5 mt-4 flex items-center justify-between gap-4 rounded-ui border border-task-line px-4 py-3 text-sm font-semibold"><span><span class="block">Active member</span><span class="mt-0.5 block text-xs font-normal text-task-muted">Allow this member to sign in immediately.</span></span><input v-model="memberIsActive" type="checkbox" class="h-5 w-5 accent-task-blue" /></label>
           </template>
           <template v-else-if="modal === 'task'">
-            <section v-if="false" class="mb-4 overflow-hidden rounded-[16px] border border-[#C9B7FF] bg-gradient-to-br from-[#F8F5FF] via-white to-task-blueSoft/60 shadow-sm">
+            <section v-if="taskModalMode === 'create'" class="mb-4 overflow-hidden rounded-[16px] border border-[#C9B7FF] bg-gradient-to-br from-[#F8F5FF] via-white to-task-blueSoft/60 shadow-sm">
               <button type="button" class="flex w-full items-center gap-3 px-4 py-3.5 text-left" @click="aiTaskAssistantOpen = !aiTaskAssistantOpen">
                 <span class="grid h-10 w-10 shrink-0 place-items-center rounded-[13px] bg-gradient-to-br from-[#8B5CF6] to-task-blue text-white shadow-button"><svg viewBox="0 0 24 24" class="h-5 w-5" fill="none" stroke="currentColor" stroke-width="1.8"><path d="m12 3 1.4 4.1L17.5 8.5l-4.1 1.4L12 14l-1.4-4.1-4.1-1.4 4.1-1.4L12 3Z"/><path d="m18.5 14 .8 2.2 2.2.8-2.2.8-.8 2.2-.8-2.2-2.2-.8 2.2-.8.8-2.2Z"/></svg></span>
                 <span class="min-w-0 flex-1"><b class="block text-sm text-task-ink">Create with AI</b><small class="mt-0.5 block text-[11px] text-task-muted">Write or speak naturally — get a ready-to-review task draft.</small></span>
@@ -4250,12 +4252,12 @@ const iconPath = (name: string) => {
               <div v-if="aiTaskAssistantOpen" class="border-t border-[#DDD2FF] px-4 pb-4 pt-3">
                 <label class="text-xs font-bold text-task-ink">Tell the assistant what you need</label>
                 <div class="relative mt-2">
-                  <textarea v-model="aiTaskPrompt" class="tf-input h-28 w-full resize-none py-3 pl-3 pr-12 leading-5" placeholder="Masalan: Dilafruzga landing page dizaynini juma kunigacha tayyorlash taskini ber, priority high." />
+                  <textarea v-model="aiTaskPrompt" class="tf-input h-28 w-full resize-none py-3 pl-3 pr-12 leading-5" placeholder="For example: Assign John a task to prepare the landing page design by Friday, priority high." />
                   <button type="button" :class="['absolute bottom-3 right-3 grid h-9 w-9 place-items-center rounded-[11px] transition', aiTaskListening ? 'animate-pulse bg-task-danger text-white' : 'bg-task-blueSoft text-task-blue hover:bg-task-blue hover:text-white']" :aria-label="aiTaskListening ? 'Stop listening' : 'Speak task request'" @click="toggleSmartTaskVoice"><svg viewBox="0 0 24 24" class="h-4 w-4" fill="none" stroke="currentColor" stroke-width="1.9"><rect x="9" y="3" width="6" height="12" rx="3"/><path d="M5.5 11.5a6.5 6.5 0 0 0 13 0M12 18v3m-4 0h8"/></svg></button>
                 </div>
                 <p v-if="aiTaskListening" class="mt-2 text-xs font-semibold text-task-danger">Listening… gapirishingiz mumkin.</p>
                 <p v-if="aiTaskError" class="mt-2 text-xs font-semibold text-task-danger">{{ aiTaskError }}</p>
-                <div class="mt-3 flex items-center justify-between gap-3"><small class="text-[10px] leading-4 text-task-muted">Local smart draft · Always review before creating.</small><button type="button" class="tf-primary h-10 shrink-0 rounded-[11px] px-4 text-xs" @click="generateSmartTaskDraft"><span>✦</span> Generate draft</button></div>
+                <div class="mt-3 flex items-center justify-between gap-3"><small class="text-[10px] leading-4 text-task-muted">Free local smart draft · No token required.</small><button type="button" class="tf-primary h-10 shrink-0 rounded-[11px] px-4 text-xs" @click="generateSmartTaskDraft"><span>✦</span> Generate draft</button></div>
                 <div v-if="aiTaskDraft" class="mt-4 rounded-[14px] border border-task-line bg-white p-3.5 shadow-sm">
                   <div class="flex items-start justify-between gap-3"><div><p class="text-[10px] font-extrabold uppercase tracking-[.12em] text-[#7C3AED]">Draft preview</p><h3 class="mt-1 text-sm font-bold text-task-ink">{{ aiTaskDraft.title }}</h3></div><span :class="['tf-pill shrink-0', badgeClass(aiTaskDraft.priority)]">{{ aiTaskDraft.priority }}</span></div>
                   <div class="mt-3 grid gap-2 text-[11px] sm:grid-cols-2">
