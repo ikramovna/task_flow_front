@@ -1915,7 +1915,6 @@ const openModal = (value: Exclude<ModalKey, null>) => {
     taskMainAssigneeId.value = ''
     taskAssigneeSearch.value = ''
     taskAssigneeOptions.value = []
-    if (canChooseTaskDepartment.value) void loadModalDepartments()
   }
   if (value === 'member') {
     editingMemberId.value = ''
@@ -2808,7 +2807,6 @@ const submitModal = async () => {
     }
     const status = taskStatusApiValue(taskFormStatus.value)
     const payload = {
-      department: modalDepartment.value || effectiveDepartmentId.value || undefined,
       title,
       description: form.description.trim(),
       status,
@@ -4292,28 +4290,6 @@ const iconPath = (name: string) => {
                 <span class="font-semibold text-task-ink">{{ taskCreatorNameOf(openedTask) }}</span>
               </div>
             </div>
-            <label v-if="canChooseTaskDepartment" class="mb-4 block text-sm font-semibold">
-              Task Department <span class="text-task-danger">*</span>
-              <div class="tf-dropdown mt-2">
-                <button
-                  type="button"
-                  class="tf-dropdown-button h-12 disabled:cursor-not-allowed disabled:opacity-60"
-                  :disabled="taskModalMode === 'view'"
-                  @click="openDropdown = openDropdown === 'modalDepartment' ? null : 'modalDepartment'"
-                >
-                  <span class="truncate">{{ memberDepartmentsLoading ? 'Loading departments...' : modalDepartmentName }}</span>
-                  <svg viewBox="0 0 20 20" :class="['h-4 w-4 shrink-0 text-task-muted transition-transform', openDropdown === 'modalDepartment' ? 'rotate-180' : '']" fill="none" stroke="currentColor" stroke-width="2"><path d="m5 7.5 5 5 5-5" /></svg>
-                </button>
-                <div v-if="openDropdown === 'modalDepartment' && taskModalMode !== 'view'" class="tf-dropdown-menu max-h-56 overflow-y-auto">
-                  <button v-for="department in taskDepartmentOptions" :key="department.id" type="button" class="tf-dropdown-option" @click="selectModalDepartment(department.id)">
-                    <span>{{ department.name }}</span>
-                    <span v-if="modalDepartment === department.id" class="text-task-blue">✓</span>
-                  </button>
-                  <p v-if="!memberDepartmentsLoading && !taskDepartmentOptions.length" class="px-3 py-3 text-sm font-normal text-task-muted">No departments available</p>
-                </div>
-              </div>
-              <span class="mt-1.5 block text-xs font-normal text-task-muted">Task managers can select any department. Assignee search includes active employees from every department.</span>
-            </label>
             <label class="block text-sm font-semibold">
               Task Title
               <input v-model="form.title" class="tf-input mt-2 h-12 w-full" placeholder="Enter task title" />
