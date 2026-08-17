@@ -211,6 +211,10 @@ html:not(.tf-dark) .tf-page-size-control { border-color: #dce5ef; color: #66758a
 .tf-analytics-pagination .tf-icon-button,
 .tf-analytics-pagination .tf-primary { width: 36px; height: 36px; border-radius: 8px; }
 .tf-analytics-pagination .tf-page-size-control { height: 36px; min-width: 112px; padding-inline: 10px; }
+.tf-page-size-dropdown { flex: none; }
+.tf-page-size-dropdown .tf-page-size-control { width: 100%; justify-content: space-between; background: #0a182a; font-size: 11px; font-weight: 800; }
+.tf-page-size-dropdown .tf-dropdown-menu { z-index: 80; }
+html:not(.tf-dark) .tf-page-size-dropdown .tf-page-size-control { background: #fff; }
 .tf-analytics-pagination .tf-page-size-control select { width: 100%; cursor: pointer; font-size: 11px; }
 html:not(.tf-dark) .tf-analytics-pagination { border-color: #dfe7f1; }
 @media (max-width: 639px) {
@@ -221,6 +225,7 @@ html:not(.tf-dark) .tf-analytics-pagination { border-color: #dfe7f1; }
 .tf-staff-performance-footer button { width: 28px; height: 28px; border: 1px solid #203852; border-radius: 6px; }
 .tf-staff-performance-footer button.is-active { background: #1e63aa; color: white; }
 .tf-analytics-trends > .tf-panel { min-height: 430px; }
+.tf-analytics-trends > section:first-child button { cursor: default; }
 
 @media (max-width: 767px) {
   .tf-analytics-staff-table-wrap { min-height: 420px; }
@@ -1693,7 +1698,7 @@ html:not(.tf-dark) .tf-analytics-page svg path[stroke="#203650"] { stroke: #e3ea
 
 .tf-analytics-page .tf-analytics-filter-grid {
   display: grid;
-  grid-template-columns: repeat(5, minmax(0, 1fr)) auto;
+  grid-template-columns: repeat(6, minmax(0, 1fr)) auto;
   align-items: end;
   gap: 12px;
 }
@@ -1732,7 +1737,7 @@ html:not(.tf-dark) .tf-analytics-staff-search {
 html:not(.tf-dark) .tf-analytics-staff-search input { color: #26354a; }
 
 @media (min-width: 1024px) and (max-width: 1439px) {
-  .tf-analytics-page .tf-analytics-filter-grid { gap: 7px; grid-template-columns: repeat(5, minmax(0, 1fr)) 34px; }
+  .tf-analytics-page .tf-analytics-filter-grid { gap: 7px; grid-template-columns: repeat(6, minmax(0, 1fr)) 34px; }
   .tf-analytics-page .tf-analytics-filter-panel { padding: 10px; }
   .tf-analytics-page .tf-analytics-filter-label { font-size: 9px; }
   .tf-analytics-page .tf-analytics-filter-button { height: 38px; padding-inline: 7px; gap: 5px; font-size: 10px; }
@@ -1861,6 +1866,31 @@ html:not(.tf-dark) .tf-analytics-staff-search input { color: #26354a; }
   color: #422006;
   box-shadow: inset 0 0 0 1px rgb(253 224 71 / 0.28);
 }
+
+.tf-tiko-action-state {
+  display: flex;
+  min-height: 92px;
+  align-items: center;
+  gap: 10px;
+  margin-top: 14px;
+  overflow: hidden;
+  border: 1px solid var(--tf-border);
+  border-radius: 14px;
+  background: linear-gradient(135deg, rgb(235 245 255 / .92), rgb(247 251 255 / .96));
+  padding: 8px 12px 8px 5px;
+}
+.tf-tiko-action-state img { width: 82px; height: 82px; flex: none; object-fit: contain; filter: drop-shadow(0 8px 10px rgb(37 99 235 / .2)); animation: tf-tiko-state-float 2.2s ease-in-out infinite; }
+.tf-tiko-action-state div { min-width: 0; }
+.tf-tiko-action-state b { display: block; color: var(--tf-ink); font-size: 12px; }
+.tf-tiko-action-state span { display: block; margin-top: 3px; color: var(--tf-muted); font-size: 10px; line-height: 1.4; }
+.tf-tiko-action-state.is-sending { border-color: rgb(37 99 235 / .28); background: linear-gradient(135deg, rgb(222 239 255 / .96), rgb(238 249 255 / .96)); }
+.tf-tiko-action-state.is-sending img { animation: tf-tiko-state-send 1.35s ease-in-out infinite; }
+.tf-tiko-action-state.is-listening { border-color: rgb(37 99 235 / .3); background: linear-gradient(135deg, rgb(226 241 255 / .96), rgb(240 250 255 / .98)); box-shadow: inset 0 0 0 1px rgb(255 255 255 / .5); }
+.tf-tiko-action-state.is-listening img { width: 72px; height: 72px; margin-inline: 5px; animation: tf-tiko-state-listen 1.8s ease-in-out infinite; }
+.tf-dark .tf-tiko-action-state { background: linear-gradient(135deg, #0d2139, #0a192c); }
+@keyframes tf-tiko-state-float { 0%,100% { transform: translateY(2px) rotate(-1deg); } 50% { transform: translateY(-4px) rotate(1deg); } }
+@keyframes tf-tiko-state-send { 0%,100% { transform: scale(.96) rotate(-1deg); } 50% { transform: scale(1.04) rotate(1deg); } }
+@keyframes tf-tiko-state-listen { 0%,100% { transform: translateY(1px) scale(.98); } 50% { transform: translateY(-3px) scale(1.03); } }
 
 .tf-sidebar-user {
   border-color: var(--tf-border);

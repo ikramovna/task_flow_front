@@ -169,9 +169,9 @@ type ApiAnalytics = {
   team_velocity?: number
   overdue_tasks?: number
   monthly_progress?: Array<string | Record<string, unknown>>
-  performance_trend?: Array<string | Record<string, unknown>>
-  performance_over_time?: Array<string | Record<string, unknown>>
-  trend?: Array<string | Record<string, unknown>>
+  performance_trend?: Array<string | Record<string, unknown>> | { labels?: unknown[]; values?: unknown[] | Record<string, unknown>; data?: unknown[]; datasets?: Array<{ data?: unknown[] }> }
+  performance_over_time?: Array<string | Record<string, unknown>> | { labels?: unknown[]; values?: unknown[] | Record<string, unknown>; data?: unknown[]; datasets?: Array<{ data?: unknown[] }> }
+  trend?: Array<string | Record<string, unknown>> | { labels?: unknown[]; values?: unknown[] | Record<string, unknown>; data?: unknown[]; datasets?: Array<{ data?: unknown[] }> }
   tasks_by_category?: Array<string | Record<string, unknown>>
 }
 
@@ -940,12 +940,37 @@ export const useTaskFlowApi = () => {
   ]
 
   const mapAnalyticsMonthlyProgress = (analytics: ApiAnalytics) => {
-    const performanceEntries = analytics.performance_trend || analytics.performance_over_time || analytics.trend || []
+    const performanceTrend = analytics.performance_trend || analytics.performance_over_time || analytics.trend || []
+    if (!Array.isArray(performanceTrend)) {
+      const valueRecord = performanceTrend.values && !Array.isArray(performanceTrend.values) ? performanceTrend.values : null
+      const labels = Array.isArray(performanceTrend.labels)
+        ? performanceTrend.labels
+        : valueRecord ? Object.keys(valueRecord) : []
+      const values = Array.isArray(performanceTrend.values)
+        ? performanceTrend.values
+        : valueRecord ? Object.values(valueRecord)
+          : Array.isArray(performanceTrend.data) ? performanceTrend.data
+            : Array.isArray(performanceTrend.datasets?.[0]?.data) ? performanceTrend.datasets[0].data : []
+      if (values.length) {
+        return values.map((value, index) => {
+          const valueItem = value && typeof value === 'object' ? value as Record<string, unknown> : null
+          const rawPerformance = asNumber(valueItem
+            ? valueItem.performance ?? valueItem.performance_percentage ?? valueItem.average_performance ?? valueItem.avg_performance ?? valueItem.performance_value ?? valueItem.efficiency ?? valueItem.value
+            : value)
+          const performance = rawPerformance > 0 && rawPerformance <= 1 ? rawPerformance * 100 : rawPerformance
+          const label = valueItem?.date ?? valueItem?.day ?? valueItem?.period ?? valueItem?.label ?? labels[index] ?? `Point ${index + 1}`
+          return [String(label).slice(0, 12), performance, 100]
+        })
+      }
+    }
+
+    const performanceEntries = Array.isArray(performanceTrend) ? performanceTrend : []
     if (performanceEntries.length) {
       return performanceEntries.map((entry, index) => {
         const item = parseAnalyticsItem(entry)
         const label = String(item.date || item.day || item.period || item.label || item.name || `Point ${index + 1}`).slice(0, 12)
-        const performance = asNumber(item.performance ?? item.performance_percentage ?? item.average_performance ?? item.efficiency ?? item.value)
+        const rawPerformance = asNumber(item.performance ?? item.performance_percentage ?? item.average_performance ?? item.avg_performance ?? item.performance_value ?? item.efficiency ?? item.value)
+        const performance = rawPerformance > 0 && rawPerformance <= 1 ? rawPerformance * 100 : rawPerformance
         return [label, performance, 100]
       })
     }

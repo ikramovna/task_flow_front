@@ -1,15 +1,27 @@
+<script setup lang="ts">
+withDefaults(defineProps<{
+  title?: string
+  subtitle?: string
+  image?: string
+  overlay?: boolean
+}>(), {
+  title: 'Loading TaskFlow',
+  subtitle: 'Preparing your workspace…',
+  image: '/taskflow-logo-mark.webp',
+  overlay: false,
+})
+</script>
+
 <template>
-  <div class="tf-loading-screen" role="status" aria-live="polite" aria-label="Loading TaskFlow">
-    <div class="tf-loading-ambient" />
-    <div class="tf-loading-pulse">
-      <span class="tf-loading-ring tf-loading-ring--outer" />
-      <span class="tf-loading-ring tf-loading-ring--middle" />
-      <span class="tf-loading-core">
-        <img src="/taskflow-logo-mark.webp" width="96" height="96" alt="" class="h-14 w-14 rounded-[14px] object-contain" aria-hidden="true" />
-      </span>
+  <div :class="['tf-loading-screen', overlay ? 'is-overlay' : '']" role="status" aria-live="polite" :aria-label="title">
+    <div class="tf-loading-backdrop" />
+    <div class="tf-tiko-loader-card">
+      <span class="tf-tiko-loader-glow" />
+      <img :src="image" width="1280" height="1280" alt="" class="tf-tiko-loader-image" aria-hidden="true" />
+      <p class="tf-loading-title">{{ title }}</p>
+      <p class="tf-loading-subtitle">{{ subtitle }}</p>
+      <div class="tf-tiko-progress" aria-hidden="true"><span /></div>
     </div>
-    <p class="tf-loading-title">Loading<span class="tf-loading-dots" aria-hidden="true">...</span></p>
-    <p class="tf-loading-subtitle">Preparing your workspace</p>
   </div>
 </template>
 
@@ -18,142 +30,83 @@
   position: fixed;
   inset: 0;
   z-index: 100;
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  justify-content: center;
+  display: grid;
+  place-items: center;
   overflow: hidden;
   background: #f5f8fd;
   color: #17243a;
-  transition: background-color 220ms ease, color 220ms ease;
 }
 
-.tf-loading-ambient {
+.tf-loading-screen.is-overlay { z-index: 200; background: rgb(7 20 38 / .34); }
+.tf-loading-screen.is-overlay .tf-loading-backdrop {
   position: absolute;
-  width: 420px;
-  height: 420px;
-  border-radius: 999px;
-  background: radial-gradient(circle, rgb(37 99 235 / .16), rgb(96 165 250 / .08) 42%, transparent 70%);
-  animation: ambient 2.4s ease-in-out infinite;
-}
-
-.tf-loading-pulse {
-  position: relative;
-  display: grid;
-  width: 190px;
-  height: 190px;
-  place-items: center;
-}
-
-.tf-loading-ring {
-  position: absolute;
-  border-radius: 999px;
-  border: 1px solid rgb(37 99 235 / .2);
-  box-shadow: inset 0 0 30px rgb(37 99 235 / .05), 0 0 30px rgb(37 99 235 / .06);
-}
-
-.tf-loading-ring--outer {
   inset: 0;
-  animation: ring 2.2s ease-out infinite;
+  background: rgb(6 18 35 / .46);
+  backdrop-filter: blur(8px) saturate(.75);
+  animation: tiko-backdrop-in .2s ease-out both;
 }
 
-.tf-loading-ring--middle {
-  inset: 22px;
-  border-color: rgb(59 130 246 / .45);
-  background: radial-gradient(circle, rgb(30 64 175 / .2), transparent 68%);
-  animation: ring 2.2s .45s ease-out infinite;
-}
-
-.tf-loading-core {
+.tf-tiko-loader-card {
   position: relative;
-  z-index: 2;
-  display: grid;
-  width: 86px;
-  height: 86px;
-  place-items: center;
-  border: 1px solid rgb(255 255 255 / .92);
-  border-radius: 999px;
-  background: linear-gradient(145deg, rgb(255 255 255 / .98), rgb(239 246 255 / .94));
-  box-shadow: 0 0 34px rgb(37 99 235 / .34), 0 10px 30px rgb(30 64 175 / .18), inset 0 1px 0 #fff;
-  backdrop-filter: blur(12px);
-  animation: core 1.8s ease-in-out infinite;
-}
-
-.tf-loading-title {
-  position: relative;
-  margin-top: 8px;
-  font-size: 17px;
-  font-weight: 600;
-  letter-spacing: .01em;
-}
-
-.tf-loading-subtitle {
-  position: relative;
-  margin-top: 7px;
-  color: #667892;
-  font-size: 12px;
-}
-
-.tf-loading-dots {
-  display: inline-block;
-  width: 18px;
+  isolation: isolate;
+  display: flex;
+  width: min(330px, calc(100vw - 32px));
+  min-height: 320px;
+  flex-direction: column;
+  align-items: center;
+  justify-content: flex-end;
   overflow: hidden;
-  vertical-align: bottom;
-  animation: dots 1.25s steps(4, end) infinite;
+  border: 1px solid rgb(49 116 190 / .32);
+  border-radius: 28px;
+  background: linear-gradient(155deg, rgb(255 255 255 / .98), rgb(237 245 255 / .97));
+  padding: 18px 24px 24px;
+  box-shadow: 0 30px 80px -32px rgb(4 25 62 / .6), inset 0 1px 0 rgb(255 255 255 / .95);
+  animation: tiko-card-in .34s cubic-bezier(.2,.8,.2,1) both;
 }
+
+.tf-tiko-loader-glow {
+  position: absolute;
+  z-index: -1;
+  top: -85px;
+  width: 300px;
+  height: 300px;
+  border-radius: 50%;
+  background: radial-gradient(circle, rgb(25 142 255 / .28), transparent 68%);
+  animation: tiko-glow 2.2s ease-in-out infinite;
+}
+
+.tf-tiko-loader-image {
+  width: 220px;
+  height: 220px;
+  margin-bottom: -3px;
+  object-fit: contain;
+  filter: drop-shadow(0 16px 18px rgb(17 76 161 / .22));
+  transform-origin: 50% 85%;
+  animation: tiko-float 2.1s ease-in-out infinite;
+}
+
+.tf-loading-title { margin: 0; font-size: 17px; font-weight: 850; letter-spacing: -.02em; }
+.tf-loading-subtitle { min-height: 18px; margin: 5px 0 0; color: #687b94; font-size: 11px; font-weight: 600; text-align: center; }
+.tf-tiko-progress { width: 100%; height: 5px; margin-top: 17px; overflow: hidden; border-radius: 999px; background: rgb(104 139 181 / .18); }
+.tf-tiko-progress span { display: block; width: 46%; height: 100%; border-radius: inherit; background: linear-gradient(90deg, #1677ed, #20d9ee); box-shadow: 0 0 12px #20bde9; animation: tiko-progress 1.25s ease-in-out infinite; }
 
 html.tf-dark .tf-loading-screen,
-.tf-dark .tf-loading-screen {
-  background: #091323;
-  color: #d8e8ff;
-}
-
-html.tf-dark .tf-loading-ambient,
-.tf-dark .tf-loading-ambient {
-  background: radial-gradient(circle, rgb(37 99 235 / .18), rgb(30 64 175 / .06) 42%, transparent 70%);
-}
-
-html.tf-dark .tf-loading-ring,
-.tf-dark .tf-loading-ring {
-  border-color: rgb(59 130 246 / .25);
-  box-shadow: inset 0 0 30px rgb(37 99 235 / .04), 0 0 30px rgb(37 99 235 / .05);
-}
-
-html.tf-dark .tf-loading-ring--middle,
-.tf-dark .tf-loading-ring--middle {
-  border-color: rgb(59 130 246 / .45);
-}
-
+.tf-dark .tf-loading-screen { background: #071426; color: #edf6ff; }
+html.tf-dark .tf-loading-screen.is-overlay,
+.tf-dark .tf-loading-screen.is-overlay { background: rgb(3 10 21 / .25); }
+html.tf-dark .tf-tiko-loader-card,
+.tf-dark .tf-tiko-loader-card { border-color: #23496f; background: linear-gradient(155deg, #0d2139, #09182a); box-shadow: 0 34px 90px -28px #000, inset 0 1px 0 rgb(255 255 255 / .04); }
 html.tf-dark .tf-loading-subtitle,
-.tf-dark .tf-loading-subtitle {
-  color: #71839d;
-}
+.tf-dark .tf-loading-subtitle { color: #8398b2; }
 
-@keyframes ring {
-  0% { transform: scale(.72); opacity: 0; }
-  35% { opacity: 1; }
-  100% { transform: scale(1.08); opacity: 0; }
-}
-
-@keyframes core {
-  0%, 100% { transform: scale(1); box-shadow: 0 0 28px rgb(37 99 235 / .3), 0 10px 30px rgb(30 64 175 / .16), inset 0 1px 0 #fff; }
-  50% { transform: scale(1.06); box-shadow: 0 0 48px rgb(37 99 235 / .5), 0 12px 34px rgb(30 64 175 / .2), inset 0 1px 0 #fff; }
-}
-
-@keyframes ambient {
-  0%, 100% { transform: scale(.9); opacity: .65; }
-  50% { transform: scale(1.08); opacity: 1; }
-}
-
-@keyframes dots {
-  0% { width: 0; }
-  100% { width: 18px; }
-}
+@keyframes tiko-card-in { from { opacity: 0; transform: translateY(12px) scale(.96); } to { opacity: 1; transform: none; } }
+@keyframes tiko-backdrop-in { from { opacity: 0; } to { opacity: 1; } }
+@keyframes tiko-float { 0%,100% { transform: translateY(2px) rotate(-1deg); } 50% { transform: translateY(-8px) rotate(1deg); } }
+@keyframes tiko-glow { 0%,100% { opacity: .65; transform: scale(.92); } 50% { opacity: 1; transform: scale(1.08); } }
+@keyframes tiko-progress { 0% { transform: translateX(-110%); } 55%,100% { transform: translateX(220%); } }
 
 @media (prefers-reduced-motion: reduce) {
-  .tf-loading-ambient,
-  .tf-loading-ring,
-  .tf-loading-core,
-  .tf-loading-dots { animation: none; }
+  .tf-tiko-loader-card, .tf-loading-backdrop, .tf-tiko-loader-image, .tf-tiko-loader-glow, .tf-tiko-progress span { animation: none; }
+  .tf-tiko-progress span { width: 70%; }
 }
 </style>
