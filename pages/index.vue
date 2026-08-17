@@ -3574,8 +3574,7 @@ const iconPath = (name: string) => {
 
 <template>
   <main :class="['tf-shell', isDarkTheme ? 'tf-dark' : '']">
-    <LoadingPulse v-if="!state.loaded" title="Loading TaskFlow" subtitle="Preparing your workspace…" image="/taskflow-logo-mark.webp" />
-    <LoadingPulse v-else-if="feedbackSending" overlay title="Sending your message" subtitle="Tiko is delivering your feedback to the team…" image="/images/tiko-message-sent.png" />
+    <LoadingPulse v-if="feedbackSending" overlay title="Sending your message" subtitle="Tiko is delivering your feedback to the team…" image="/images/tiko-message-sent.png" />
     <section v-else class="tf-window">
       <div v-if="mobileSidebarOpen" class="tf-mobile-overlay" @click="mobileSidebarOpen = false" />
       <aside :class="['tf-sidebar tf-sidebar-modern relative flex shrink-0 flex-col border-r border-task-line bg-white transition-[width,padding] duration-300 ease-out', sidebarCollapsed ? 'w-[82px] px-3 py-4' : 'w-[250px] px-4 py-4', mobileSidebarOpen ? 'is-open' : '']">
