@@ -91,6 +91,7 @@ export default defineNuxtConfig({
       link: [
         { rel: 'icon', type: 'image/png', href: '/favicon.png?v=2' },
         { rel: 'apple-touch-icon', href: '/apple-touch-icon.png?v=2' },
+        { rel: 'preload', as: 'image', href: '/images/tiko-sleep-ui.png', type: 'image/png' },
       ]
     }
   }

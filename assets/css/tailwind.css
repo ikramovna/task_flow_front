@@ -1888,6 +1888,7 @@ html:not(.tf-dark) .tf-analytics-staff-search input { color: #26354a; }
 .tf-tiko-action-state.is-listening { border-color: rgb(37 99 235 / .3); background: linear-gradient(135deg, rgb(226 241 255 / .96), rgb(240 250 255 / .98)); box-shadow: inset 0 0 0 1px rgb(255 255 255 / .5); }
 .tf-tiko-action-state.is-listening img { width: 72px; height: 72px; margin-inline: 5px; animation: tf-tiko-state-listen 1.8s ease-in-out infinite; }
 .tf-dark .tf-tiko-action-state { background: linear-gradient(135deg, #0d2139, #0a192c); }
+.tf-dark .tf-tiko-action-state img { filter: none; }
 @keyframes tf-tiko-state-float { 0%,100% { transform: translateY(2px) rotate(-1deg); } 50% { transform: translateY(-4px) rotate(1deg); } }
 @keyframes tf-tiko-state-send { 0%,100% { transform: scale(.96) rotate(-1deg); } 50% { transform: scale(1.04) rotate(1deg); } }
 @keyframes tf-tiko-state-listen { 0%,100% { transform: translateY(1px) scale(.98); } 50% { transform: translateY(-3px) scale(1.03); } }
@@ -1983,13 +1984,26 @@ html:not(.tf-dark) .tf-analytics-staff-search input { color: #26354a; }
 
 .tf-support-robot {
   transform-origin: 50% 82%;
-  animation: tf-support-float 3.6s ease-in-out infinite;
-  will-change: transform;
+  animation: none;
+  transition: opacity 380ms ease, transform 380ms cubic-bezier(.22, 1, .36, 1);
+  will-change: transform, opacity;
 }
 
-.tf-support-launcher:hover .tf-support-robot,
-.tf-support-launcher:focus-visible .tf-support-robot {
-  animation: tf-support-wave 700ms ease-in-out;
+.tf-support-robot-stage {
+  transform-origin: 50% 82%;
+  animation: tf-support-float 3.6s ease-in-out infinite;
+}
+
+.tf-support-robot--sleep { opacity: 1; }
+.tf-support-robot--awake { opacity: 0; transform: scale(.88); }
+.tf-support-launcher:hover .tf-support-robot--sleep,
+.tf-support-launcher:focus-visible .tf-support-robot--sleep { opacity: 0; transform: scale(.88); }
+.tf-support-launcher:hover .tf-support-robot--awake,
+.tf-support-launcher:focus-visible .tf-support-robot--awake { opacity: 1; transform: scale(1); }
+
+.tf-support-launcher:hover .tf-support-robot-stage,
+.tf-support-launcher:focus-visible .tf-support-robot-stage {
+  animation: tf-support-wave 900ms ease-in-out infinite;
 }
 
 .tf-support-launcher.is-open::before,
@@ -1998,8 +2012,8 @@ html:not(.tf-dark) .tf-analytics-staff-search input { color: #26354a; }
   opacity: 0;
 }
 
-.tf-support-launcher.is-open .tf-support-robot,
-.tf-support-launcher.is-dragging .tf-support-robot {
+.tf-support-launcher.is-open .tf-support-robot-stage,
+.tf-support-launcher.is-dragging .tf-support-robot-stage {
   animation-play-state: paused;
 }
 
@@ -2011,8 +2025,9 @@ html:not(.tf-dark) .tf-analytics-staff-search input { color: #26354a; }
 
 @keyframes tf-support-wave {
   0%, 100% { transform: translateY(0) rotate(0deg) scale(1); }
-  30% { transform: translateY(-5px) rotate(-7deg) scale(1.06); }
-  65% { transform: translateY(-3px) rotate(6deg) scale(1.04); }
+  25% { transform: translateY(-4px) rotate(-5deg) scale(1.04); }
+  55% { transform: translateY(-2px) rotate(4deg) scale(1.03); }
+  78% { transform: translateY(-4px) rotate(-2deg) scale(1.04); }
 }
 
 @keyframes tf-support-pulse {
@@ -2180,9 +2195,37 @@ html:not(.tf-dark) .tf-analytics-staff-search input { color: #26354a; }
   }
 
   .tf-support-launcher::before,
+  .tf-support-robot-stage,
   .tf-support-robot {
     animation: none !important;
   }
+}
+
+@media print {
+  @page { size: A4 landscape; margin: 9mm; }
+  html.tf-analytics-print-mode,
+  html.tf-analytics-print-mode body { overflow: visible !important; background: #fff !important; }
+  html.tf-analytics-print-mode body * { visibility: hidden !important; }
+  html.tf-analytics-print-mode .tf-analytics-page,
+  html.tf-analytics-print-mode .tf-analytics-page * { visibility: visible !important; }
+  html.tf-analytics-print-mode .tf-analytics-page {
+    position: absolute !important;
+    inset: 0 auto auto 0 !important;
+    display: block !important;
+    width: 100% !important;
+    color: #17243a !important;
+    background: #fff !important;
+    print-color-adjust: exact;
+    -webkit-print-color-adjust: exact;
+  }
+  html.tf-analytics-print-mode .tf-analytics-page > * { margin-bottom: 10px !important; break-inside: avoid; }
+  html.tf-analytics-print-mode .tf-analytics-page .tf-panel { break-inside: avoid; box-shadow: none !important; }
+  html.tf-analytics-print-mode .tf-analytics-staff-table-wrap { overflow: visible !important; }
+  html.tf-analytics-print-mode .tf-analytics-staff-table-wrap table { min-width: 0 !important; font-size: 9px !important; }
+  html.tf-analytics-print-mode .tf-analytics-staff-table-wrap th,
+  html.tf-analytics-print-mode .tf-analytics-staff-table-wrap td { padding: 6px !important; }
+  html.tf-analytics-print-mode .tf-analytics-pagination,
+  html.tf-analytics-print-mode .tf-support-launcher { display: none !important; }
 }
 
 /* Dashboard composition shared by the light and dark themes. */

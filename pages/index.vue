@@ -35,6 +35,7 @@ const pageCookie = useCookie<PageKey | null>('taskflow-active-page', { sameSite:
 // Dashboard from flashing before the URL/local preference is restored.
 const initialPage = pageCookie.value && validPageKeys.includes(pageCookie.value) ? pageCookie.value : 'dashboard'
 const activePage = ref<PageKey>(initialPage)
+const sidebarNavigationKey = ref(0)
 const settingsTab = ref<'profile' | 'security'>('profile')
 const modal = ref<ModalKey>(null)
 const openDropdown = ref<string | null>(null)
@@ -84,7 +85,25 @@ const analyticsFilterError = ref('')
 const analyticsPerformanceLevel = ref('')
 const analyticsGlobalSearch = ref('')
 const analyticsStaffSearch = ref('')
+type AnalyticsStaffRow = {
+  id: string
+  name: string
+  role: string
+  department: string
+  assigned: number
+  completed: number
+  active: number
+  overdue: number
+  onTime: number
+  performanceScore: number
+  performanceLevel: string
+  avgCompletionDays: number
+}
+const analyticsStaffRows = ref<AnalyticsStaffRow[]>([])
+const analyticsStaffTotal = ref(0)
+const analyticsStaffTotalPages = ref(1)
 const analyticsOrdering = ref('-performance')
+const analyticsTableOrdering = ref('-performance')
 const analyticsOrderingOptions = [
   ['-performance', 'Highest performance'],
   ['-assigned', 'Most assigned'],
@@ -96,6 +115,18 @@ const analyticsOrderingOptions = [
   ['name', 'Name A–Z'],
 ] as const
 const analyticsOrderingLabel = computed(() => analyticsOrderingOptions.find(item => item[0] === analyticsOrdering.value)?.[1] || 'Highest performance')
+type AnalyticsSortColumn = 'name' | 'department' | 'assigned' | 'completed' | 'in_progress' | 'overdue' | 'on_time' | 'avg_time' | 'performance'
+const toggleAnalyticsSort = (column: AnalyticsSortColumn) => {
+  const isCurrentColumn = analyticsTableOrdering.value.replace(/^-/, '') === column
+  analyticsTableOrdering.value = isCurrentColumn
+    ? (analyticsTableOrdering.value.startsWith('-') ? column : `-${column}`)
+    : (column === 'name' || column === 'department' || column === 'avg_time' ? column : `-${column}`)
+  analyticsPage.value = 1
+}
+const analyticsSortMark = (column: AnalyticsSortColumn) => {
+  if (analyticsTableOrdering.value.replace(/^-/, '') !== column) return '↕'
+  return analyticsTableOrdering.value.startsWith('-') ? '↓' : '↑'
+}
 const analyticsPage = ref(1)
 const analyticsPageSize = ref(8)
 let analyticsRequestSequence = 0
@@ -124,6 +155,9 @@ const loadFilteredAnalytics = async () => {
   const sequence = ++analyticsRequestSequence
   analyticsLoading.value = true
   analyticsFilterError.value = ''
+  analyticsStaffRows.value = []
+  analyticsStaffTotal.value = 0
+  analyticsStaffTotalPages.value = 1
   try {
     const query = {
       ...Object.fromEntries(Object.entries(analyticsFilters).filter(([, value]) => value)),
@@ -138,6 +172,28 @@ const loadFilteredAnalytics = async () => {
     if (query.days) delete query.granularity
     const analytics: any = await taskFlowApi.getAnalytics(query)
     if (sequence !== analyticsRequestSequence) return
+    const staffPerformance = analytics.staff_performance || {}
+    const staffResults = Array.isArray(staffPerformance.results) ? staffPerformance.results : []
+    analyticsStaffRows.value = staffResults.map((item: any) => {
+      const staff = item.staff_member || item.employee || item.user || item.staff || {}
+      const department = item.department || staff.department || {}
+      return {
+        id: String(item.id ?? item.employee_id ?? staff.id ?? ''),
+        name: String(item.full_name ?? item.name ?? staff.full_name ?? staff.name ?? staff.email ?? 'Member'),
+        role: String(item.job_title ?? item.position ?? staff.job_title ?? staff.position ?? staff.role ?? 'Team member'),
+        department: String(item.department_name ?? department.name ?? department.title ?? 'No department'),
+        assigned: Number(item.assigned ?? item.assigned_tasks ?? item.total_tasks ?? 0),
+        completed: Number(item.completed ?? item.completed_tasks ?? 0),
+        active: Number(item.in_progress ?? item.in_progress_tasks ?? 0),
+        overdue: Number(item.overdue ?? item.overdue_tasks ?? 0),
+        onTime: Number(item.on_time ?? item.on_time_percentage ?? item.on_time_rate ?? 0),
+        performanceScore: Number(item.performance_score ?? 0),
+        performanceLevel: String(item.performance_level ?? ''),
+        avgCompletionDays: Number(item.avg_completion_days ?? 0),
+      }
+    })
+    analyticsStaffTotal.value = Number(staffPerformance.count ?? analyticsStaffRows.value.length)
+    analyticsStaffTotalPages.value = Math.max(1, Number(staffPerformance.total_pages ?? Math.ceil(analyticsStaffTotal.value / analyticsPageSize.value)))
     const completionRate = Number(analytics.task_completion_rate ?? analytics.completion_rate ?? 0)
     const overdue = Number(analytics.overdue_tasks ?? analytics.overdue_count ?? 0)
     const velocity = Number(analytics.team_velocity ?? analytics.active_workload ?? 0)
@@ -161,21 +217,20 @@ const loadFilteredAnalytics = async () => {
 
 const exportAnalyticsReport = () => {
   if (!import.meta.client) return
-  const rows = [
-    ['Metric', 'Value'],
-    ...analyticsStats.value.map(item => [String(item[1] || ''), String(item[0] || '')]),
-    [],
-    ['Task', 'Assignee', 'Priority', 'Status', 'Due date'],
-    ...tasks.value.map(task => [String(task[0] || ''), String(task[1] || ''), String(task[2] || ''), String(task[3] || ''), String(task[4] || '')])
-  ]
-  const csv = rows.map(row => row.map(value => `"${String(value).replace(/"/g, '""')}"`).join(',')).join('\n')
-  const url = URL.createObjectURL(new Blob([`\uFEFF${csv}`], { type: 'text/csv;charset=utf-8' }))
-  const link = document.createElement('a')
-  link.href = url
-  link.download = `taskflow-analytics-${new Date().toISOString().slice(0, 10)}.csv`
-  link.click()
-  URL.revokeObjectURL(url)
-  notify('Analytics report exported')
+  if (!analyticsFilteredMembers.value.length) {
+    notifyError('There is no Staff Performance data to export')
+    return
+  }
+  const previousTitle = document.title
+  document.title = `TaskFlow Analytics ${new Date().toISOString().slice(0, 10)}`
+  document.documentElement.classList.add('tf-analytics-print-mode')
+  window.setTimeout(() => {
+    window.print()
+    window.setTimeout(() => {
+      document.documentElement.classList.remove('tf-analytics-print-mode')
+      document.title = previousTitle
+    }, 300)
+  }, 120)
 }
 
 let analyticsFilterTimer: ReturnType<typeof setTimeout> | undefined
@@ -185,6 +240,9 @@ watch([activePage, () => ({ ...analyticsFilters }), analyticsPerformanceLevel, a
 }, { deep: true })
 watch([() => analyticsFilters.department, () => analyticsFilters.employee, () => analyticsFilters.status, () => analyticsFilters.days, analyticsPerformanceLevel, analyticsGlobalSearch, analyticsStaffSearch, analyticsOrdering, analyticsPageSize], () => {
   if (analyticsPage.value !== 1) analyticsPage.value = 1
+})
+watch(analyticsOrdering, (value) => {
+  analyticsTableOrdering.value = value
 })
 
 void taskFlowStore.loadBackendData().finally(() => {
@@ -1130,47 +1188,19 @@ const categoryTrendData = computed(() => {
     growth: `${Number(item[2] || item[1] || 0)} tasks`
   }))
 })
-const analyticsMemberTaskCount = (member: Array<string | number>) => {
-  const memberId = String(member[9] || member[7] || '')
-  const memberName = String(member[0] || '').trim().toLowerCase()
-  return tasks.value.filter((task) => {
-    if (String(task[14] || '').toLowerCase() === 'true' || String(task[17] || '').toLowerCase() === 'true') return false
-    let assigneeIds: string[] = []
-    try { assigneeIds = JSON.parse(String(task[13] || '[]')).map(String) } catch { assigneeIds = [] }
-    const assigneeNames = String(task[1] || '').split(',').map(name => name.trim().toLowerCase())
-    return (memberId && assigneeIds.includes(memberId)) || (memberName && assigneeNames.includes(memberName))
-  }).length
-}
-
-const analyticsFilteredMembers = computed(() => team.value.filter((member) => {
-  const globalSearch = analyticsGlobalSearch.value.trim().toLowerCase()
-  const search = analyticsStaffSearch.value.trim().toLowerCase()
-  const efficiency = Number(member[4] || 0)
-  if (analyticsMemberTaskCount(member) <= 0) return false
-  const globalTerms = globalSearch.split(/\s+/).filter(Boolean)
-  const staffTerms = search.split(/\s+/).filter(Boolean)
-  const globalHaystack = [member[0], member[1], member[2], member[10]].map(value => String(value || '')).join(' ').toLowerCase()
-  const staffHaystack = [member[0], member[1], member[10]].map(value => String(value || '')).join(' ').toLowerCase()
-  const matchesGlobal = globalTerms.every(term => globalHaystack.includes(term))
-  const matchesSearch = staffTerms.every(term => staffHaystack.includes(term))
-  const matchesLevel = !analyticsPerformanceLevel.value || (analyticsPerformanceLevel.value === 'excellent' ? efficiency >= 80 : analyticsPerformanceLevel.value === 'good' ? efficiency >= 60 && efficiency < 80 : efficiency < 60)
-  const matchesDepartment = !analyticsFilters.department || String(member[11] || '') === analyticsFilters.department
-  const matchesEmployee = !analyticsFilters.employee || String(member[9] || member[7] || '') === analyticsFilters.employee
-  return matchesGlobal && matchesSearch && matchesLevel && matchesDepartment && matchesEmployee
-}).sort((a, b) => {
-  const descending = analyticsOrdering.value.startsWith('-')
-  const key = analyticsOrdering.value.replace(/^-/, '')
-  const orderingValue = (member: any[]) => {
-    const completed = Number(member[5] || 0)
-    const inProgress = Number(member[6] || 0)
-    const overdue = tasks.value.filter(task => isTaskOverdue(task) && String(task[1] || '') === String(member[0] || '')).length
-    if (key === 'name') return String(member[0] || '')
-    if (key === 'completed') return completed
-    if (key === 'in_progress') return inProgress
-    if (key === 'overdue') return overdue
-    if (key === 'assigned') return Math.max(completed + inProgress + overdue, analyticsMemberTaskCount(member))
-    if (key === 'on_time' || key === 'performance') return Number(member[4] || 0)
-    if (key === 'avg_time') return 1.5 + (100 - Number(member[4] || 0)) / 22
+const analyticsFilteredMembers = computed(() => [...analyticsStaffRows.value].sort((a, b) => {
+  const descending = analyticsTableOrdering.value.startsWith('-')
+  const key = analyticsTableOrdering.value.replace(/^-/, '')
+  const orderingValue = (member: AnalyticsStaffRow) => {
+    if (key === 'name') return member.name
+    if (key === 'department') return member.department
+    if (key === 'completed') return member.completed
+    if (key === 'in_progress') return member.active
+    if (key === 'overdue') return member.overdue
+    if (key === 'assigned') return member.assigned
+    if (key === 'on_time') return member.onTime
+    if (key === 'performance') return member.performanceScore
+    if (key === 'avg_time') return member.avgCompletionDays
     return 0
   }
   const left = orderingValue(a)
@@ -1178,24 +1208,24 @@ const analyticsFilteredMembers = computed(() => team.value.filter((member) => {
   const result = typeof left === 'string' ? left.localeCompare(String(right)) : left - Number(right)
   return descending ? -result : result
 }))
-const analyticsPageCount = computed(() => Math.max(1, Math.ceil(analyticsFilteredMembers.value.length / analyticsPageSize.value)))
-const analyticsWorkloadRows = computed(() => analyticsFilteredMembers.value
-  .slice((analyticsPage.value - 1) * analyticsPageSize.value, analyticsPage.value * analyticsPageSize.value)
-  .map((member) => {
-    const completed = Number(member[5] || 0)
-    const overdue = tasks.value.filter(task => isTaskOverdue(task) && String(task[1] || '') === String(member[0] || '')).length
-    const assigned = Math.max(completed + Number(member[6] || 0) + overdue, analyticsMemberTaskCount(member))
-    return {
-      name: String(member[0] || 'Member'),
-      role: String(member[1] || 'Team member'),
-      department: departmentNameById(member[11], String(member[10] || '')),
-      active: Number(member[6] || 0),
-      assigned,
-      completed,
-      efficiency: Number(member[4] || 0),
-      overdue,
-    }
-  }))
+const analyticsPageCount = computed(() => analyticsStaffTotalPages.value)
+const analyticsWorkloadRows = computed(() => analyticsFilteredMembers.value)
+const analyticsPerformanceLevelLabel = (level: string) => level
+  ? level.split('_').map(word => word.charAt(0).toUpperCase() + word.slice(1)).join(' ')
+  : '—'
+const analyticsPerformanceLevelClass = (level: string) => {
+  const normalized = level.trim().toLowerCase().replace(/[\s-]+/g, '_')
+  if (normalized === 'excellent') return 'is-excellent'
+  if (normalized === 'good') return 'is-good'
+  if (normalized === 'needs_attention' || normalized === 'attention') return 'is-attention'
+  return 'is-critical'
+}
+const analyticsPerformanceBarClass = (level: string) => {
+  const normalized = level.trim().toLowerCase().replace(/[\s-]+/g, '_')
+  if (normalized === 'excellent') return 'bg-task-success'
+  if (normalized === 'good') return 'bg-task-warning'
+  return 'bg-task-danger'
+}
 const analyticsKpiCards = computed(() => {
   const totalStaff = team.value.length
   const averagePerformance = totalStaff ? Math.round(team.value.reduce((sum, member) => sum + Number(member[4] || 0), 0) / totalStaff) : 0
@@ -1418,8 +1448,12 @@ const setPage = (key: PageKey) => {
     taskPage.value = 1
     if (taskScope.value === 'archived') taskScope.value = 'all'
   }
+  const pageChanged = activePage.value !== key
   // Keep the user's sidebar choice unchanged while navigating.
   activePage.value = key
+  // Recreate the navigation after a hash-restored page change. This prevents
+  // SSR's previously active item from surviving hydration after a refresh.
+  if (pageChanged) sidebarNavigationKey.value += 1
   pageCookie.value = key
   if (import.meta.client) {
     localStorage.setItem(pageStorageKey, key)
@@ -3541,7 +3575,7 @@ const iconPath = (name: string) => {
 <template>
   <main :class="['tf-shell', isDarkTheme ? 'tf-dark' : '']">
     <LoadingPulse v-if="!state.loaded" title="Loading TaskFlow" subtitle="Preparing your workspace…" image="/taskflow-logo-mark.webp" />
-    <LoadingPulse v-else-if="feedbackSending" overlay title="Sending your message" subtitle="Tiko is delivering your feedback to the team…" image="/images/tiko-export.png" />
+    <LoadingPulse v-else-if="feedbackSending" overlay title="Sending your message" subtitle="Tiko is delivering your feedback to the team…" image="/images/tiko-message-sent.png" />
     <section v-else class="tf-window">
       <div v-if="mobileSidebarOpen" class="tf-mobile-overlay" @click="mobileSidebarOpen = false" />
       <aside :class="['tf-sidebar tf-sidebar-modern relative flex shrink-0 flex-col border-r border-task-line bg-white transition-[width,padding] duration-300 ease-out', sidebarCollapsed ? 'w-[82px] px-3 py-4' : 'w-[250px] px-4 py-4', mobileSidebarOpen ? 'is-open' : '']">
@@ -3561,7 +3595,7 @@ const iconPath = (name: string) => {
           </button>
         </div>
 
-        <nav :class="['flex min-h-0 flex-1 flex-col overflow-hidden pt-5', sidebarCollapsed ? 'px-1' : 'px-2']">
+        <nav :key="sidebarNavigationKey" :class="['flex min-h-0 flex-1 flex-col overflow-hidden pt-5', sidebarCollapsed ? 'px-1' : 'px-2']">
           <section v-for="(group, groupIndex) in sidebarGroups" :key="group.label" :class="['tf-sidebar-group', groupIndex ? 'mt-5 border-t border-task-line pt-5' : '']">
             <p v-if="!sidebarCollapsed" class="tf-sidebar-group-label">{{ group.label }}</p>
             <div class="mt-2 space-y-1.5">
@@ -4029,14 +4063,14 @@ const iconPath = (name: string) => {
           <div class="tf-analytics-workload grid gap-3 xl:grid-cols-[minmax(0,1.35fr)_minmax(300px,.65fr)]">
             <section class="tf-panel relative min-w-0 p-5">
               <div class="mb-4 flex flex-col gap-3 xl:flex-row xl:items-center xl:justify-between">
-                <h2 class="flex items-center gap-2 text-lg font-bold text-task-ink">Staff Performance <span class="h-1 w-1 rounded-full bg-task-blue"/><span class="text-sm font-semibold text-task-muted">{{ analyticsFilteredMembers.length }}</span></h2>
+                <h2 class="flex items-center gap-2 text-lg font-bold text-task-ink">Staff Performance <span class="h-1 w-1 rounded-full bg-task-blue"/><span class="text-sm font-semibold text-task-muted">{{ analyticsStaffTotal }}</span></h2>
                 <div class="flex flex-col gap-2 sm:flex-row sm:flex-wrap sm:items-center xl:justify-end">
                   <label class="relative w-full sm:w-60"><svg viewBox="0 0 24 24" class="pointer-events-none absolute left-3.5 top-1/2 h-4 w-4 -translate-y-1/2 text-task-muted" fill="none" stroke="currentColor" stroke-width="1.8"><path :d="iconPath('search')"/></svg><input v-model="analyticsStaffSearch" class="tf-input h-10 w-full pl-10" placeholder="Search staff..."/></label>
-                  <button type="button" class="tf-primary h-10 rounded-[11px] px-4 text-xs" @click="exportAnalyticsReport"><svg viewBox="0 0 24 24" class="h-4 w-4" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M12 3v12m0 0 4-4m-4 4-4-4M5 21h14"/></svg>Export</button>
+                  <button type="button" class="tf-primary h-10 rounded-[11px] px-4 text-xs" @click="exportAnalyticsReport"><svg viewBox="0 0 24 24" class="h-4 w-4" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M12 3v12m0 0 4-4m-4 4-4-4M5 21h14"/></svg>Export PDF</button>
                 </div>
               </div>
-              <div class="tf-analytics-staff-table-wrap overflow-x-auto"><table class="w-full min-w-[1120px] table-fixed text-left text-sm"><thead class="border-y border-task-line bg-slate-50/80 text-[11px] uppercase tracking-wide text-task-muted"><tr><th class="w-[285px] p-3 font-semibold">Staff</th><th class="w-[130px] p-3 font-semibold">Department</th><th class="w-[82px] p-3 font-semibold">Assigned</th><th class="w-[88px] p-3 font-semibold">Completed</th><th class="w-[90px] p-3 font-semibold">In Progress</th><th class="w-[76px] p-3 font-semibold">Overdue</th><th class="w-[72px] p-3 font-semibold">On-time</th><th class="w-[82px] p-3 font-semibold">Avg. Time</th><th class="w-[205px] p-3 font-semibold">Performance</th><th class="w-[58px] p-3 text-right font-semibold">Actions</th></tr></thead><tbody class="divide-y divide-task-line"><tr v-for="(row, index) in analyticsWorkloadRows" :key="row.name" class="transition hover:bg-task-blueSoft/40"><td class="max-w-[285px] p-3"><div class="flex min-w-0 items-center gap-3"><span :class="['grid h-10 w-10 shrink-0 place-items-center rounded-full text-xs font-bold', index % 4 === 0 ? 'bg-task-blueSoft text-task-blue' : index % 4 === 1 ? 'bg-[#F0E9FF] text-[#8057D5]' : index % 4 === 2 ? 'bg-task-warningSoft text-task-warning' : 'bg-task-successSoft text-task-success']">{{ initials(row.name) }}</span><div class="min-w-0 flex-1"><p class="truncate font-bold text-task-ink"><template v-for="(part, partIndex) in [highlightedSearchText(row.name, analyticsStaffSearch || analyticsGlobalSearch)]" :key="partIndex">{{ part.before }}<mark v-if="part.match" class="tf-search-highlight">{{ part.match }}</mark>{{ part.after }}</template></p><p class="tf-staff-role-clamp text-xs text-task-muted" :title="row.role"><template v-for="(part, partIndex) in [highlightedSearchText(row.role, analyticsStaffSearch || analyticsGlobalSearch)]" :key="partIndex">{{ part.before }}<mark v-if="part.match" class="tf-search-highlight">{{ part.match }}</mark>{{ part.after }}</template></p></div></div></td><td class="p-3"><span class="inline-flex max-w-full truncate rounded-full bg-task-blueSoft px-2.5 py-1 text-xs font-semibold text-task-blue"><template v-for="(part, partIndex) in [highlightedSearchText(row.department, analyticsStaffSearch || analyticsGlobalSearch)]" :key="partIndex">{{ part.before }}<mark v-if="part.match" class="tf-search-highlight">{{ part.match }}</mark>{{ part.after }}</template></span></td><td class="p-3">{{ row.completed + row.active + row.overdue }}</td><td class="p-3 text-task-success">{{ row.completed }}</td><td class="p-3 text-task-blue">{{ row.active }}</td><td :class="['p-3', row.overdue ? 'font-bold text-task-danger' : 'text-task-success']">{{ row.overdue }}</td><td class="p-3 font-semibold">{{ row.efficiency }}%</td><td class="p-3 text-task-muted">{{ (1.5 + (100 - row.efficiency) / 22).toFixed(1) }} days</td><td class="p-3"><div class="min-w-[150px]"><div class="flex items-center justify-between gap-3"><b class="text-xs text-task-ink">{{ row.efficiency }}%</b><span :class="['tf-performance-badge', row.efficiency >= 80 ? 'is-excellent' : row.efficiency >= 60 ? 'is-good' : row.efficiency >= 45 ? 'is-attention' : 'is-critical']">{{ row.efficiency >= 80 ? 'Excellent' : row.efficiency >= 60 ? 'Good' : row.efficiency >= 45 ? 'Needs Attention' : 'Critical' }}</span></div><div class="mt-1.5 h-1.5 w-full overflow-hidden rounded-full bg-slate-200"><div :class="['h-full rounded-full', row.efficiency >= 80 ? 'bg-task-success' : row.efficiency >= 60 ? 'bg-task-warning' : 'bg-task-danger']" :style="{ width: `${row.efficiency}%` }"/></div></div></td><td class="p-3 text-right"><button type="button" class="tf-icon-button rounded-full"><svg viewBox="0 0 24 24" class="h-4 w-4" fill="none" stroke="currentColor"><path :d="iconPath('dots')"/></svg></button></td></tr></tbody></table></div>
-              <p v-if="!analyticsFilteredMembers.length" class="py-10 text-center text-sm text-task-muted">No staff found.</p><div v-if="analyticsFilteredMembers.length" class="tf-analytics-pagination"><span>Showing {{ (analyticsPage - 1) * analyticsPageSize + 1 }} to {{ Math.min(analyticsPage * analyticsPageSize, analyticsFilteredMembers.length) }} of {{ analyticsFilteredMembers.length }} staff members</span><div class="tf-analytics-pagination-controls"><div class="flex gap-2"><button type="button" class="tf-icon-button" :disabled="analyticsPage <= 1" @click="analyticsPage--">‹</button><button v-for="page in analyticsPageCount" :key="page" type="button" :class="[analyticsPage === page ? 'tf-primary' : 'tf-icon-button', 'h-9 w-9 p-0']" @click="analyticsPage = page">{{ page }}</button><button type="button" class="tf-icon-button" :disabled="analyticsPage >= analyticsPageCount" @click="analyticsPage++">›</button></div><div class="tf-dropdown tf-page-size-dropdown"><button type="button" class="tf-page-size-control" aria-label="Rows per page" @click="openDropdown = openDropdown === 'analyticsPageSize' ? null : 'analyticsPageSize'"><span>{{ analyticsPageSize }} per page</span><svg viewBox="0 0 20 20" :class="['h-4 w-4 transition-transform', openDropdown === 'analyticsPageSize' ? 'rotate-180' : '']" fill="none" stroke="currentColor" stroke-width="2"><path d="m5 7.5 5 5 5-5" /></svg></button><div v-if="openDropdown === 'analyticsPageSize'" class="tf-dropdown-menu bottom-[calc(100%+7px)] top-auto min-w-full"><button v-for="size in [8, 16, 24]" :key="size" type="button" class="tf-dropdown-option" @click="analyticsPageSize = size; analyticsPage = 1; openDropdown = null"><span>{{ size }} per page</span><span v-if="analyticsPageSize === size">✓</span></button></div></div></div></div>
+              <div class="tf-analytics-staff-table-wrap overflow-x-auto"><table class="w-full min-w-[1120px] table-fixed text-left text-sm"><thead class="border-y border-task-line bg-slate-50/80 text-[11px] uppercase tracking-wide text-task-muted"><tr><th class="w-[285px] p-3 font-semibold"><button type="button" :class="['inline-flex items-center gap-1.5 transition hover:text-task-blue', analyticsTableOrdering.replace(/^-/, '') === 'name' ? 'text-task-blue' : '']" @click="toggleAnalyticsSort('name')">Staff <span>{{ analyticsSortMark('name') }}</span></button></th><th class="w-[130px] p-3 font-semibold"><button type="button" :class="['inline-flex items-center gap-1.5 transition hover:text-task-blue', analyticsTableOrdering.replace(/^-/, '') === 'department' ? 'text-task-blue' : '']" @click="toggleAnalyticsSort('department')">Department <span>{{ analyticsSortMark('department') }}</span></button></th><th class="w-[82px] p-3 font-semibold"><button type="button" :class="['inline-flex items-center gap-1.5 transition hover:text-task-blue', analyticsTableOrdering.replace(/^-/, '') === 'assigned' ? 'text-task-blue' : '']" @click="toggleAnalyticsSort('assigned')">Assigned <span>{{ analyticsSortMark('assigned') }}</span></button></th><th class="w-[88px] p-3 font-semibold"><button type="button" :class="['inline-flex items-center gap-1.5 transition hover:text-task-blue', analyticsTableOrdering.replace(/^-/, '') === 'completed' ? 'text-task-blue' : '']" @click="toggleAnalyticsSort('completed')">Completed <span>{{ analyticsSortMark('completed') }}</span></button></th><th class="w-[90px] p-3 font-semibold"><button type="button" :class="['inline-flex items-center gap-1.5 transition hover:text-task-blue', analyticsTableOrdering.replace(/^-/, '') === 'in_progress' ? 'text-task-blue' : '']" @click="toggleAnalyticsSort('in_progress')">In Progress <span>{{ analyticsSortMark('in_progress') }}</span></button></th><th class="w-[76px] p-3 font-semibold"><button type="button" :class="['inline-flex items-center gap-1.5 transition hover:text-task-blue', analyticsTableOrdering.replace(/^-/, '') === 'overdue' ? 'text-task-blue' : '']" @click="toggleAnalyticsSort('overdue')">Overdue <span>{{ analyticsSortMark('overdue') }}</span></button></th><th class="w-[72px] p-3 font-semibold"><button type="button" :class="['inline-flex items-center gap-1.5 transition hover:text-task-blue', analyticsTableOrdering.replace(/^-/, '') === 'on_time' ? 'text-task-blue' : '']" @click="toggleAnalyticsSort('on_time')">On-time <span>{{ analyticsSortMark('on_time') }}</span></button></th><th class="w-[82px] p-3 font-semibold"><button type="button" :class="['inline-flex items-center gap-1.5 transition hover:text-task-blue', analyticsTableOrdering.replace(/^-/, '') === 'avg_time' ? 'text-task-blue' : '']" @click="toggleAnalyticsSort('avg_time')">Avg. Time <span>{{ analyticsSortMark('avg_time') }}</span></button></th><th class="w-[205px] p-3 font-semibold"><button type="button" :class="['inline-flex items-center gap-1.5 transition hover:text-task-blue', analyticsTableOrdering.replace(/^-/, '') === 'performance' ? 'text-task-blue' : '']" @click="toggleAnalyticsSort('performance')">Performance <span>{{ analyticsSortMark('performance') }}</span></button></th><th class="w-[58px] p-3 text-right font-semibold">Actions</th></tr></thead><tbody class="divide-y divide-task-line"><tr v-for="(row, index) in analyticsWorkloadRows" :key="row.name" class="transition hover:bg-task-blueSoft/40"><td class="max-w-[285px] p-3"><div class="flex min-w-0 items-center gap-3"><span :class="['grid h-10 w-10 shrink-0 place-items-center rounded-full text-xs font-bold', index % 4 === 0 ? 'bg-task-blueSoft text-task-blue' : index % 4 === 1 ? 'bg-[#F0E9FF] text-[#8057D5]' : index % 4 === 2 ? 'bg-task-warningSoft text-task-warning' : 'bg-task-successSoft text-task-success']">{{ initials(row.name) }}</span><div class="min-w-0 flex-1"><p class="truncate font-bold text-task-ink"><template v-for="(part, partIndex) in [highlightedSearchText(row.name, analyticsStaffSearch || analyticsGlobalSearch)]" :key="partIndex">{{ part.before }}<mark v-if="part.match" class="tf-search-highlight">{{ part.match }}</mark>{{ part.after }}</template></p><p class="tf-staff-role-clamp text-xs text-task-muted" :title="row.role"><template v-for="(part, partIndex) in [highlightedSearchText(row.role, analyticsStaffSearch || analyticsGlobalSearch)]" :key="partIndex">{{ part.before }}<mark v-if="part.match" class="tf-search-highlight">{{ part.match }}</mark>{{ part.after }}</template></p></div></div></td><td class="p-3"><span class="inline-flex max-w-full truncate rounded-full bg-task-blueSoft px-2.5 py-1 text-xs font-semibold text-task-blue"><template v-for="(part, partIndex) in [highlightedSearchText(row.department, analyticsStaffSearch || analyticsGlobalSearch)]" :key="partIndex">{{ part.before }}<mark v-if="part.match" class="tf-search-highlight">{{ part.match }}</mark>{{ part.after }}</template></span></td><td class="p-3">{{ row.assigned }}</td><td class="p-3 text-task-success">{{ row.completed }}</td><td class="p-3 text-task-blue">{{ row.active }}</td><td :class="['p-3', row.overdue ? 'font-bold text-task-danger' : 'text-task-success']">{{ row.overdue }}</td><td class="p-3 font-semibold">{{ row.onTime }}%</td><td class="p-3 text-task-muted">{{ row.avgCompletionDays }} days</td><td class="p-3"><div class="min-w-[150px]"><div class="flex items-center justify-between gap-3"><b class="text-xs text-task-ink">{{ row.performanceScore }}%</b><span :class="['tf-performance-badge', analyticsPerformanceLevelClass(row.performanceLevel)]">{{ analyticsPerformanceLevelLabel(row.performanceLevel) }}</span></div><div class="mt-1.5 h-1.5 w-full overflow-hidden rounded-full bg-slate-200"><div :class="['h-full rounded-full', analyticsPerformanceBarClass(row.performanceLevel)]" :style="{ width: `${row.performanceScore}%` }"/></div></div></td><td class="p-3 text-right"><button type="button" class="tf-icon-button rounded-full"><svg viewBox="0 0 24 24" class="h-4 w-4" fill="none" stroke="currentColor"><path :d="iconPath('dots')"/></svg></button></td></tr></tbody></table></div>
+              <p v-if="!analyticsWorkloadRows.length && !analyticsLoading" class="py-10 text-center text-sm text-task-muted">No staff found.</p><div v-if="analyticsStaffTotal" class="tf-analytics-pagination"><span>Showing {{ (analyticsPage - 1) * analyticsPageSize + 1 }} to {{ Math.min(analyticsPage * analyticsPageSize, analyticsStaffTotal) }} of {{ analyticsStaffTotal }} staff members</span><div class="tf-analytics-pagination-controls"><div class="flex gap-2"><button type="button" class="tf-icon-button" :disabled="analyticsPage <= 1" @click="analyticsPage--">‹</button><button v-for="page in analyticsPageCount" :key="page" type="button" :class="[analyticsPage === page ? 'tf-primary' : 'tf-icon-button', 'h-9 w-9 p-0']" @click="analyticsPage = page">{{ page }}</button><button type="button" class="tf-icon-button" :disabled="analyticsPage >= analyticsPageCount" @click="analyticsPage++">›</button></div><div class="tf-dropdown tf-page-size-dropdown"><button type="button" class="tf-page-size-control" aria-label="Rows per page" @click="openDropdown = openDropdown === 'analyticsPageSize' ? null : 'analyticsPageSize'"><span>{{ analyticsPageSize }} per page</span><svg viewBox="0 0 20 20" :class="['h-4 w-4 transition-transform', openDropdown === 'analyticsPageSize' ? 'rotate-180' : '']" fill="none" stroke="currentColor" stroke-width="2"><path d="m5 7.5 5 5 5-5" /></svg></button><div v-if="openDropdown === 'analyticsPageSize'" class="tf-dropdown-menu bottom-[calc(100%+7px)] top-auto min-w-full"><button v-for="size in [8, 16, 24]" :key="size" type="button" class="tf-dropdown-option" @click="analyticsPageSize = size; analyticsPage = 1; openDropdown = null"><span>{{ size }} per page</span><span v-if="analyticsPageSize === size">✓</span></button></div></div></div></div>
             </section>
             <section class="tf-panel min-w-0 p-5">
               <div class="flex items-center justify-between"><div><h2 class="text-base font-extrabold text-task-ink">Overdue Tasks Trend</h2><p class="mt-1 text-xs text-task-muted">Current overdue workload by staff</p></div><span class="tf-pill bg-task-dangerSoft text-task-danger">{{ overdueTaskRows.length }} overdue</span></div>
@@ -4782,7 +4816,6 @@ const iconPath = (name: string) => {
           </button>
         </div>
         <div class="mt-4"><p class="text-sm font-bold text-task-ink">Something not working as expected?</p><p class="mt-1 text-xs leading-5 text-task-muted">Report an issue or share an idea with us.</p></div>
-        <div :class="['tf-tiko-action-state', feedbackDraft.trim() || feedbackScreenshotPreview ? 'is-listening' : 'is-idle']"><img :src="feedbackDraft.trim() || feedbackScreenshotPreview ? '/images/tiko-assistant.webp' : '/images/tiko-sleep.png'" width="1280" height="1280" alt="Tiko feedback assistant" /><div><b>Tiko is ready when you are</b><span>{{ feedbackDraft.trim() || feedbackScreenshotPreview ? 'Tiko is listening — keep going.' : 'Write a message to wake Tiko up.' }}</span></div></div>
         <div class="tf-support-type-tabs mt-4 grid grid-cols-3 overflow-hidden rounded-[12px] border border-task-line bg-slate-50/70 p-1">
           <button v-for="type in ['Bug', 'Suggestion', 'Feedback']" :key="type" type="button" :class="['tf-support-type flex h-10 items-center justify-center gap-2 rounded-[9px] text-xs font-semibold transition', feedbackType === type ? 'is-active bg-gradient-to-b from-[#4B91EB] to-[#2768C7] text-white shadow-button' : 'text-task-muted hover:bg-white hover:text-task-blue']" @click="feedbackType = type as typeof feedbackType"><svg v-if="type === 'Bug'" viewBox="0 0 24 24" class="h-4 w-4" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M8 9h8v9a4 4 0 0 1-8 0V9Zm-2 4H3m18 0h-3M8 7 6 5m10 2 2-2M9 3h6v4H9V3Z" /></svg><svg v-else-if="type === 'Suggestion'" viewBox="0 0 24 24" class="h-4 w-4" fill="none" stroke="currentColor" stroke-width="1.8"><path d="m12 3 1.2 3.8L17 8l-3.8 1.2L12 13l-1.2-3.8L7 8l3.8-1.2L12 3Zm6 10 .8 2.2L21 16l-2.2.8L18 19l-.8-2.2L15 16l2.2-.8L18 13Z" /></svg><svg v-else viewBox="0 0 24 24" class="h-4 w-4" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M5 4h14a2 2 0 0 1 2 2v9a2 2 0 0 1-2 2H9l-5 4v-4H5a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2Z" /></svg>{{ type }}</button>
         </div>
@@ -4817,7 +4850,10 @@ const iconPath = (name: string) => {
       </div>
       <button type="button" :class="['tf-support-launcher touch-none select-none', supportWidgetOpen ? 'is-open' : '', supportWidgetDragging ? 'is-dragging cursor-grabbing scale-105' : 'cursor-grab']" aria-label="Open or move Tiko support" title="Drag to move · Click to open" @dragstart.prevent @pointerdown="startSupportDrag" @click="toggleSupportWidget">
         <span class="tf-support-greeting" aria-hidden="true"><b>Hi! I'm Tiko 👋</b><small>Ask Tiko <i>✦</i></small></span>
-        <img src="/images/tiko-assistant.webp" width="192" height="192" alt="Tiko feedback assistant" draggable="false" class="tf-support-robot pointer-events-none h-[66px] w-[66px] max-w-none select-none object-contain drop-shadow-[0_8px_12px_rgba(7,40,91,.38)]" />
+        <span class="tf-support-robot-stage relative block h-[66px] w-[66px] shrink-0" aria-hidden="true">
+          <img src="/images/tiko-sleep-ui.png" width="256" height="256" alt="" draggable="false" decoding="async" class="tf-support-robot tf-support-robot--sleep pointer-events-none absolute inset-0 h-full w-full max-w-none select-none object-contain drop-shadow-[0_8px_12px_rgba(7,40,91,.38)]" />
+          <img src="/images/tiko-assistant.webp" width="192" height="192" alt="" draggable="false" decoding="async" class="tf-support-robot tf-support-robot--awake pointer-events-none absolute inset-0 h-full w-full max-w-none select-none object-contain drop-shadow-[0_8px_12px_rgba(7,40,91,.38)]" />
+        </span>
       </button>
     </div>
 

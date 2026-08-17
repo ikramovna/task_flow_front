@@ -123,6 +123,9 @@ type ApiMember = {
   date_joined?: string
   joined_at?: string
   efficiency?: number
+  task_count?: number
+  total_tasks?: number
+  assigned_tasks?: number
   completed_tasks?: number
   in_progress_tasks?: number
 }
@@ -173,6 +176,11 @@ type ApiAnalytics = {
   performance_over_time?: Array<string | Record<string, unknown>> | { labels?: unknown[]; values?: unknown[] | Record<string, unknown>; data?: unknown[]; datasets?: Array<{ data?: unknown[] }> }
   trend?: Array<string | Record<string, unknown>> | { labels?: unknown[]; values?: unknown[] | Record<string, unknown>; data?: unknown[]; datasets?: Array<{ data?: unknown[] }> }
   tasks_by_category?: Array<string | Record<string, unknown>>
+  staff_performance?: {
+    count?: number
+    total_pages?: number
+    results?: Array<Record<string, unknown>>
+  }
 }
 
 export type AnalyticsQuery = {
@@ -911,7 +919,8 @@ export const useTaskFlowApi = () => {
       departmentId,
       member.is_active === false ? 'Inactive' : 'Active',
       member.date_joined || member.joined_at || '',
-      member.role || 'member'
+      member.role || 'member',
+      member.task_count ?? member.total_tasks ?? member.assigned_tasks ?? ''
     ]
   }
 
