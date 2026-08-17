@@ -169,6 +169,9 @@ type ApiAnalytics = {
   team_velocity?: number
   overdue_tasks?: number
   monthly_progress?: Array<string | Record<string, unknown>>
+  performance_trend?: Array<string | Record<string, unknown>>
+  performance_over_time?: Array<string | Record<string, unknown>>
+  trend?: Array<string | Record<string, unknown>>
   tasks_by_category?: Array<string | Record<string, unknown>>
 }
 
@@ -181,6 +184,13 @@ export type AnalyticsQuery = {
   start_date?: string
   end_date?: string
   granularity?: 'day' | 'week' | 'month'
+  ordering?: string
+  page?: number
+  page_size?: number
+  performance_level?: string
+  search?: string
+  staff_filter?: string
+  staff_search?: string
 }
 
 type DashboardMetric = { count: number; percentage: number }
@@ -929,8 +939,18 @@ export const useTaskFlowApi = () => {
     ...(event.attendees || []).map(String)
   ]
 
-  const mapAnalyticsMonthlyProgress = (analytics: ApiAnalytics) =>
-    (analytics.monthly_progress || []).map((entry, index) => {
+  const mapAnalyticsMonthlyProgress = (analytics: ApiAnalytics) => {
+    const performanceEntries = analytics.performance_trend || analytics.performance_over_time || analytics.trend || []
+    if (performanceEntries.length) {
+      return performanceEntries.map((entry, index) => {
+        const item = parseAnalyticsItem(entry)
+        const label = String(item.date || item.day || item.period || item.label || item.name || `Point ${index + 1}`).slice(0, 12)
+        const performance = asNumber(item.performance ?? item.performance_percentage ?? item.average_performance ?? item.efficiency ?? item.value)
+        return [label, performance, 100]
+      })
+    }
+
+    return (analytics.monthly_progress || []).map((entry, index) => {
       const item = parseAnalyticsItem(entry)
       const month =
         String(item.month || item.name || item.label || item.date || `Month ${index + 1}`)
@@ -941,6 +961,7 @@ export const useTaskFlowApi = () => {
 
       return [month, completed, created]
     })
+  }
 
   const mapAnalyticsTasksByCategory = (analytics: ApiAnalytics) =>
     (analytics.tasks_by_category || []).map((entry) => {

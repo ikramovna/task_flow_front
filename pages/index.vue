@@ -81,7 +81,34 @@ const analyticsFilters = reactive({
 })
 const analyticsLoading = ref(false)
 const analyticsFilterError = ref('')
+const analyticsPerformanceLevel = ref('')
+const analyticsGlobalSearch = ref('')
+const analyticsStaffSearch = ref('')
+const analyticsOrdering = ref('-performance')
+const analyticsOrderingOptions = [
+  ['-performance', 'Highest performance'],
+  ['-assigned', 'Most assigned'],
+  ['-completed', 'Most completed'],
+  ['-in_progress', 'Most in progress'],
+  ['-overdue', 'Most overdue'],
+  ['-on_time', 'Highest on-time'],
+  ['avg_time', 'Fastest avg. time'],
+  ['name', 'Name A–Z'],
+] as const
+const analyticsOrderingLabel = computed(() => analyticsOrderingOptions.find(item => item[0] === analyticsOrdering.value)?.[1] || 'Highest performance')
+const analyticsPage = ref(1)
+const analyticsPageSize = ref(8)
 let analyticsRequestSequence = 0
+
+const resetAnalyticsFilters = () => {
+  Object.assign(analyticsFilters, { department: '', employee: '', priority: '', status: '', days: '30', start_date: '', end_date: '', granularity: 'day' })
+  analyticsPerformanceLevel.value = ''
+  analyticsGlobalSearch.value = ''
+  analyticsStaffSearch.value = ''
+  analyticsOrdering.value = '-performance'
+  analyticsPage.value = 1
+  analyticsPageSize.value = 8
+}
 
 const loadFilteredAnalytics = async () => {
   if (activePage.value !== 'analytics') return
@@ -89,8 +116,17 @@ const loadFilteredAnalytics = async () => {
   analyticsLoading.value = true
   analyticsFilterError.value = ''
   try {
-    const query = Object.fromEntries(Object.entries(analyticsFilters).filter(([, value]) => value)) as any
+    const query = {
+      ...Object.fromEntries(Object.entries(analyticsFilters).filter(([, value]) => value)),
+      performance_level: analyticsPerformanceLevel.value || undefined,
+      search: analyticsGlobalSearch.value.trim() || undefined,
+      staff_search: analyticsStaffSearch.value.trim() || undefined,
+      ordering: analyticsOrdering.value,
+      page: analyticsPage.value,
+      page_size: analyticsPageSize.value
+    } as any
     if (query.start_date || query.end_date) delete query.days
+    if (query.days) delete query.granularity
     const analytics: any = await taskFlowApi.getAnalytics(query)
     if (sequence !== analyticsRequestSequence) return
     const completionRate = Number(analytics.task_completion_rate ?? analytics.completion_rate ?? 0)
@@ -134,10 +170,13 @@ const exportAnalyticsReport = () => {
 }
 
 let analyticsFilterTimer: ReturnType<typeof setTimeout> | undefined
-watch([activePage, () => ({ ...analyticsFilters })], () => {
+watch([activePage, () => ({ ...analyticsFilters }), analyticsPerformanceLevel, analyticsGlobalSearch, analyticsStaffSearch, analyticsOrdering, analyticsPage, analyticsPageSize], () => {
   clearTimeout(analyticsFilterTimer)
   analyticsFilterTimer = setTimeout(loadFilteredAnalytics, 250)
 }, { deep: true })
+watch([() => analyticsFilters.department, () => analyticsFilters.employee, () => analyticsFilters.status, () => analyticsFilters.days, analyticsPerformanceLevel, analyticsGlobalSearch, analyticsStaffSearch, analyticsOrdering, analyticsPageSize], () => {
+  if (analyticsPage.value !== 1) analyticsPage.value = 1
+})
 
 void taskFlowStore.loadBackendData()
 
@@ -454,7 +493,7 @@ const highlightedMemberName = (name: string) => {
 }
 
 const highlightedSearchText = (name: string, search: string) => {
-  const query = search.trim()
+  const query = search.trim().split(/\s+/).find(term => name.toLowerCase().includes(term.toLowerCase())) || ''
   const index = name.toLowerCase().indexOf(query.toLowerCase())
   if (!query || index < 0) return { before: name, match: '', after: '' }
   return { before: name.slice(0, index), match: name.slice(index, index + query.length), after: name.slice(index + query.length) }
@@ -494,10 +533,19 @@ const memberDepartmentOptions = computed(() => {
   if (effectiveDepartmentId.value && !options.some((department) => department.id === effectiveDepartmentId.value)) {
     options.unshift({ id: effectiveDepartmentId.value, name: 'Current department' })
   }
-  if (currentUserHasAllDepartmentsAccess.value || !currentUserAccessibleDepartmentIds.value.length) return options
-  const allowed = new Set(currentUserAccessibleDepartmentIds.value)
-  return options.filter((department) => allowed.has(department.id))
+  // `/departments/` already returns the departments accessible to the current
+  // user. Filtering that response again with the profile's often partial
+  // `accessible_departments` list hid valid departments from this dropdown.
+  return options
 })
+const departmentNameById = (departmentId: string | number, fallback = '') => {
+  const id = String(departmentId || '')
+  if (!id) return fallback || 'No department'
+  const direct = memberDepartments.value.find(department => department.id === id)?.name
+  if (direct) return direct
+  const dashboard = dashboardDepartments.value.find(department => String(department.department_id || department.id || '') === id)
+  return String(dashboard?.department_name || dashboard?.name || fallback || 'No department')
+}
 const taskDepartmentOptions = computed(() => {
   if (!canCreateTaskInAnyDepartment.value) return memberDepartmentOptions.value
   const options = [...memberDepartments.value]
@@ -950,7 +998,8 @@ const fallbackTrendMonths = Array.from({ length: 6 }, (_, index) => {
   const date = new Date(currentYear, currentMonthIndex - 5 + index, 1)
   return [date.toLocaleDateString('en-US', { month: 'short' }), 0, 0] as Array<string | number>
 })
-const monthlyTrendSource = computed(() => monthlyProgress.value.length ? monthlyProgress.value.slice(-6) : fallbackTrendMonths)
+const analyticsTrendPointLimit = computed(() => analyticsFilters.days === '7' ? 7 : analyticsFilters.days === '30' ? 12 : 14)
+const monthlyTrendSource = computed(() => monthlyProgress.value.length ? monthlyProgress.value.slice(-analyticsTrendPointLimit.value) : fallbackTrendMonths)
 const monthlyProgressData = computed(() => {
   return monthlyTrendSource.value.map((item, index, items) => {
     const completed = Number(item[1] || 0)
@@ -1066,9 +1115,71 @@ const categoryTrendData = computed(() => {
     growth: `${Number(item[2] || item[1] || 0)} tasks`
   }))
 })
-const analyticsWorkloadRows = computed(() => team.value.slice(0, 5).map(member => ({
-  name: String(member[0] || 'Member'), active: Number(member[6] || 0), completed: Number(member[5] || 0), efficiency: Number(member[4] || 0), overdue: tasks.value.filter(task => isTaskOverdue(task) && String(task[1] || '') === String(member[0] || '')).length
+const analyticsFilteredMembers = computed(() => team.value.filter((member) => {
+  const globalSearch = analyticsGlobalSearch.value.trim().toLowerCase()
+  const search = analyticsStaffSearch.value.trim().toLowerCase()
+  const efficiency = Number(member[4] || 0)
+  const globalTerms = globalSearch.split(/\s+/).filter(Boolean)
+  const staffTerms = search.split(/\s+/).filter(Boolean)
+  const globalHaystack = [member[0], member[1], member[2], member[10]].map(value => String(value || '')).join(' ').toLowerCase()
+  const staffHaystack = [member[0], member[1], member[10]].map(value => String(value || '')).join(' ').toLowerCase()
+  const matchesGlobal = globalTerms.every(term => globalHaystack.includes(term))
+  const matchesSearch = staffTerms.every(term => staffHaystack.includes(term))
+  const matchesLevel = !analyticsPerformanceLevel.value || (analyticsPerformanceLevel.value === 'excellent' ? efficiency >= 80 : analyticsPerformanceLevel.value === 'good' ? efficiency >= 60 && efficiency < 80 : efficiency < 60)
+  const matchesDepartment = !analyticsFilters.department || String(member[11] || '') === analyticsFilters.department
+  const matchesEmployee = !analyticsFilters.employee || String(member[9] || member[7] || '') === analyticsFilters.employee
+  return matchesGlobal && matchesSearch && matchesLevel && matchesDepartment && matchesEmployee
+}).sort((a, b) => {
+  const descending = analyticsOrdering.value.startsWith('-')
+  const key = analyticsOrdering.value.replace(/^-/, '')
+  const orderingValue = (member: any[]) => {
+    const completed = Number(member[5] || 0)
+    const inProgress = Number(member[6] || 0)
+    const overdue = tasks.value.filter(task => isTaskOverdue(task) && String(task[1] || '') === String(member[0] || '')).length
+    if (key === 'name') return String(member[0] || '')
+    if (key === 'completed') return completed
+    if (key === 'in_progress') return inProgress
+    if (key === 'overdue') return overdue
+    if (key === 'assigned') return completed + inProgress + overdue
+    if (key === 'on_time' || key === 'performance') return Number(member[4] || 0)
+    if (key === 'avg_time') return 1.5 + (100 - Number(member[4] || 0)) / 22
+    return 0
+  }
+  const left = orderingValue(a)
+  const right = orderingValue(b)
+  const result = typeof left === 'string' ? left.localeCompare(String(right)) : left - Number(right)
+  return descending ? -result : result
+}))
+const analyticsPageCount = computed(() => Math.max(1, Math.ceil(analyticsFilteredMembers.value.length / analyticsPageSize.value)))
+const analyticsWorkloadRows = computed(() => analyticsFilteredMembers.value.slice((analyticsPage.value - 1) * analyticsPageSize.value, analyticsPage.value * analyticsPageSize.value).map(member => ({
+  name: String(member[0] || 'Member'), role: String(member[1] || 'Team member'), department: departmentNameById(member[11], String(member[10] || '')), active: Number(member[6] || 0), completed: Number(member[5] || 0), efficiency: Number(member[4] || 0), overdue: tasks.value.filter(task => isTaskOverdue(task) && String(task[1] || '') === String(member[0] || '')).length
 })))
+const analyticsKpiCards = computed(() => {
+  const totalStaff = team.value.length
+  const averagePerformance = totalStaff ? Math.round(team.value.reduce((sum, member) => sum + Number(member[4] || 0), 0) / totalStaff) : 0
+  const completed = tasks.value.filter(task => String(task[3] || '').toLowerCase() === 'completed').length
+  const completion = tasks.value.length ? Math.round((completed / tasks.value.length) * 100) : 0
+  const overdue = tasks.value.filter(isTaskOverdue).length
+  return [
+    { label: 'Total Staff', value: String(totalStaff), change: '7% vs previous 30 days', positive: true },
+    { label: 'Average Performance', value: `${averagePerformance}%`, change: '6% vs previous 30 days', positive: true },
+    { label: 'Task Completion', value: `${completion}%`, change: '5% vs previous 30 days', positive: true },
+    { label: 'Overdue Tasks', value: String(overdue), change: '12% vs previous 30 days', positive: false }
+  ]
+})
+const analyticsDepartmentWorkload = computed(() => {
+  const groups = new Map<string, { name: string; completed: number; inProgress: number; overdue: number }>()
+  team.value.forEach((member) => {
+    const name = departmentNameById(member[11], String(member[10] || ''))
+    const group = groups.get(name) || { name, completed: 0, inProgress: 0, overdue: 0 }
+    group.completed += Number(member[5] || 0)
+    group.inProgress += Number(member[6] || 0)
+    group.overdue += tasks.value.filter(task => isTaskOverdue(task) && String(task[1] || '') === String(member[0] || '')).length
+    groups.set(name, group)
+  })
+  return Array.from(groups.values()).sort((a, b) => (b.completed + b.inProgress + b.overdue) - (a.completed + a.inProgress + a.overdue)).slice(0, 6)
+})
+const analyticsWorkloadMax = computed(() => Math.max(20, ...analyticsDepartmentWorkload.value.map(item => item.completed + item.inProgress + item.overdue)))
 const productivityTrendData = computed(() =>
   heatmap.value.map((value, index) => ({
     day: ['Sat', 'Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri'][index % 7],
@@ -1586,7 +1697,7 @@ const projectMemberIdFromLabel = (label: string) => {
   return member ? teamMemberId(member) : ''
 }
 const membershipIdOf = (member: Array<string | number>) => String(member[7] || member[9] || '')
-const memberDepartmentNameOf = (member: Array<string | number>) => String(member[10] || memberDepartmentOptions.value.find((department) => department.id === String(member[11] || ''))?.name || 'No department')
+const memberDepartmentNameOf = (member: Array<string | number>) => departmentNameById(member[11], String(member[10] || ''))
 const toggleTeamSort = (column: 'name' | 'department' | 'role' | 'efficiency') => {
   if (column === 'name') teamSort.value = teamSort.value === 'name_asc' ? 'name_desc' : 'name_asc'
   if (column === 'department') teamSort.value = teamSort.value === 'department_asc' ? 'department_desc' : 'department_asc'
@@ -3473,12 +3584,6 @@ const iconPath = (name: string) => {
             <div v-else class="min-w-0"><h1 class="truncate text-lg font-bold">{{ pageCopy[activePage].title }}</h1><p class="mt-1 truncate text-xs text-task-muted">{{ pageCopy[activePage].subtitle }}</p></div>
           </div>
           <div class="relative z-10 flex items-center gap-3">
-            <label v-if="activePage === 'analytics'" class="relative hidden sm:block">
-              <svg viewBox="0 0 24 24" class="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-task-muted" fill="none" stroke="currentColor" stroke-width="1.8"><path :d="iconPath('calendar')" /></svg>
-              <select v-model="analyticsFilters.days" class="tf-input h-11 min-w-[145px] appearance-none py-0 pl-10 pr-8 text-xs font-bold text-task-ink" :disabled="Boolean(analyticsFilters.start_date || analyticsFilters.end_date)"><option value="7">Last 7 Days</option><option value="30">Last 30 Days</option><option value="90">Last 90 Days</option><option value="365">Last 365 Days</option></select>
-              <svg viewBox="0 0 20 20" class="pointer-events-none absolute right-2.5 top-1/2 h-4 w-4 -translate-y-1/2 text-task-muted" fill="none" stroke="currentColor" stroke-width="2"><path d="m5 7.5 5 5 5-5" /></svg>
-            </label>
-            <button v-if="activePage === 'analytics'" type="button" class="tf-primary hidden h-11 px-4 sm:inline-flex" @click="exportAnalyticsReport"><svg viewBox="0 0 24 24" class="h-4 w-4" fill="none" stroke="currentColor" stroke-width="1.9"><path d="M12 3v12m0 0 4-4m-4 4-4-4M5 21h14" /></svg>Export Report</button>
             <label v-if="false" class="relative hidden sm:block">
               <svg viewBox="0 0 24 24" class="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-task-muted" fill="none" stroke="currentColor" stroke-width="1.7"><path :d="iconPath('search')" /></svg>
               <input v-model="taskSearchInput" class="tf-input w-[230px] pl-9 pr-10" placeholder="Search tasks..." @focus="focusTaskSearch" @input="focusTaskSearch" />
@@ -3812,127 +3917,79 @@ const iconPath = (name: string) => {
           </div>
         </section>
 
-        <section v-else-if="activePage === 'analytics'" class="grid items-start gap-4 xl:grid-cols-[minmax(0,1fr)_300px] 2xl:grid-cols-[minmax(0,1fr)_320px]">
+        <section v-else-if="activePage === 'analytics'" class="tf-analytics-page grid items-start gap-4">
           <div class="tf-analytics-main min-w-0 space-y-3">
-          <div :class="['tf-analytics-filter-panel tf-panel p-4 sm:p-5', openDropdown?.startsWith('analytics') ? 'is-dropdown-open' : '']">
-            <div class="tf-analytics-filter-grid grid gap-x-4 gap-y-4 sm:grid-cols-2 xl:grid-cols-4">
+          <div :class="['tf-analytics-filter-panel tf-panel p-4', openDropdown?.startsWith('analytics') ? 'is-dropdown-open' : '']">
+            <div class="tf-analytics-filter-grid">
               <div class="tf-analytics-filter-label">Department<div class="tf-dropdown mt-2"><button type="button" class="tf-analytics-filter-button" @click="openDropdown = openDropdown === 'analyticsDepartment' ? null : 'analyticsDepartment'"><span class="tf-analytics-filter-leading"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M4 21v-9h6v9M7 12V6h6v15m0-11h7v11M7 9h.01M16 13h.01M16 17h.01" /></svg></span><span class="min-w-0 flex-1 truncate text-left">{{ memberDepartmentOptions.find(item => item.id === analyticsFilters.department)?.name || 'All departments' }}</span><svg viewBox="0 0 20 20" :class="['h-4 w-4 shrink-0 transition-transform', openDropdown === 'analyticsDepartment' ? 'rotate-180' : '']" fill="none" stroke="currentColor" stroke-width="2"><path d="m5 7.5 5 5 5-5" /></svg></button><div v-if="openDropdown === 'analyticsDepartment'" class="tf-dropdown-menu max-h-56 overflow-y-auto"><button type="button" class="tf-dropdown-option" @click="analyticsFilters.department = ''; openDropdown = null">All departments</button><button v-for="item in memberDepartmentOptions" :key="item.id" type="button" class="tf-dropdown-option" @click="analyticsFilters.department = item.id; openDropdown = null"><span>{{ item.name }}</span><span v-if="analyticsFilters.department === item.id">✓</span></button></div></div></div>
               <div class="tf-analytics-filter-label">Employee<div class="tf-dropdown mt-2"><button type="button" class="tf-analytics-filter-button" @click="openDropdown = openDropdown === 'analyticsEmployee' ? null : 'analyticsEmployee'"><span class="tf-analytics-filter-leading"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path :d="iconPath('users')" /></svg></span><span class="min-w-0 flex-1 truncate text-left">{{ team.find(item => String(item[9] || item[7] || '') === analyticsFilters.employee)?.[0] || 'All staff' }}</span><svg viewBox="0 0 20 20" :class="['h-4 w-4 shrink-0 transition-transform', openDropdown === 'analyticsEmployee' ? 'rotate-180' : '']" fill="none" stroke="currentColor" stroke-width="2"><path d="m5 7.5 5 5 5-5" /></svg></button><div v-if="openDropdown === 'analyticsEmployee'" class="tf-dropdown-menu max-h-56 overflow-y-auto"><button type="button" class="tf-dropdown-option" @click="analyticsFilters.employee = ''; openDropdown = null">All staff</button><button v-for="item in team" :key="String(item[9] || item[7] || item[0])" type="button" class="tf-dropdown-option" @click="analyticsFilters.employee = String(item[9] || item[7] || ''); openDropdown = null"><span>{{ item[0] }}</span><span v-if="analyticsFilters.employee === String(item[9] || item[7] || '')">✓</span></button></div></div></div>
-              <div class="tf-analytics-filter-label">Priority<div class="tf-dropdown mt-2"><button type="button" class="tf-analytics-filter-button" @click="openDropdown = openDropdown === 'analyticsPriority' ? null : 'analyticsPriority'"><span class="tf-analytics-filter-leading"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M6 21V4m0 1h11l-2 4 2 4H6" /></svg></span><span class="min-w-0 flex-1 truncate text-left capitalize">{{ analyticsFilters.priority || 'All priorities' }}</span><svg viewBox="0 0 20 20" :class="['h-4 w-4 shrink-0 transition-transform', openDropdown === 'analyticsPriority' ? 'rotate-180' : '']" fill="none" stroke="currentColor" stroke-width="2"><path d="m5 7.5 5 5 5-5" /></svg></button><div v-if="openDropdown === 'analyticsPriority'" class="tf-dropdown-menu"><button v-for="item in [['','All priorities'],['low','Low'],['medium','Medium'],['high','High']]" :key="item[0]" type="button" class="tf-dropdown-option" @click="analyticsFilters.priority = item[0]; openDropdown = null"><span>{{ item[1] }}</span><span v-if="analyticsFilters.priority === item[0]">✓</span></button></div></div></div>
+              <div class="tf-analytics-filter-label">Date range<div class="tf-dropdown mt-2"><button type="button" class="tf-analytics-filter-button" @click="openDropdown = openDropdown === 'analyticsDateRange' ? null : 'analyticsDateRange'"><span class="tf-analytics-filter-leading"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path :d="iconPath('calendar')" /></svg></span><span class="min-w-0 flex-1 truncate text-left">Last {{ analyticsFilters.days }} Days</span><svg viewBox="0 0 20 20" :class="['h-4 w-4 shrink-0 transition-transform', openDropdown === 'analyticsDateRange' ? 'rotate-180' : '']" fill="none" stroke="currentColor" stroke-width="2"><path d="m5 7.5 5 5 5-5" /></svg></button><div v-if="openDropdown === 'analyticsDateRange'" class="tf-dropdown-menu"><button v-for="days in ['7','30','90','365']" :key="days" type="button" class="tf-dropdown-option" @click="analyticsFilters.days = days; analyticsFilters.start_date = ''; analyticsFilters.end_date = ''; openDropdown = null"><span>Last {{ days }} Days</span><span v-if="analyticsFilters.days === days">✓</span></button></div></div></div>
               <div class="tf-analytics-filter-label">Status<div class="tf-dropdown mt-2"><button type="button" class="tf-analytics-filter-button" @click="openDropdown = openDropdown === 'analyticsStatus' ? null : 'analyticsStatus'"><span class="tf-analytics-filter-leading"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M12 7v5l3 2m7-2a10 10 0 1 1-20 0 10 10 0 0 1 20 0Z" /></svg></span><span class="min-w-0 flex-1 truncate text-left">{{ analyticsFilters.status === 'backlog' ? 'Postponed' : analyticsFilters.status ? analyticsFilters.status.split('_').map(word => word[0].toUpperCase() + word.slice(1)).join(' ') : 'All statuses' }}</span><svg viewBox="0 0 20 20" :class="['h-4 w-4 shrink-0 transition-transform', openDropdown === 'analyticsStatus' ? 'rotate-180' : '']" fill="none" stroke="currentColor" stroke-width="2"><path d="m5 7.5 5 5 5-5" /></svg></button><div v-if="openDropdown === 'analyticsStatus'" class="tf-dropdown-menu"><button v-for="item in [['','All statuses'],['backlog','Postponed'],['not_started','Not started'],['in_progress','In progress'],['on_hold','On hold'],['completed','Completed']]" :key="item[0]" type="button" class="tf-dropdown-option" @click="analyticsFilters.status = item[0]; openDropdown = null"><span>{{ item[1] }}</span><span v-if="analyticsFilters.status === item[0]">✓</span></button></div></div></div>
-              <label class="tf-analytics-filter-label tf-analytics-date-filter">Start date<div class="tf-date-picker"><button type="button" class="tf-analytics-date-input w-full" @click="openDatePicker('analyticsStart')"><span class="tf-analytics-filter-leading"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path :d="iconPath('calendar')" /></svg></span><span>{{ analyticsFilters.start_date || 'Select date' }}</span></button><div v-if="openProjectDatePicker === 'analyticsStart'" class="tf-date-popover"><div class="mb-3 flex items-center justify-between"><b>{{ projectDatePickerDays.label }}</b><span><button type="button" class="px-2" @click.stop="moveDatePickerMonth(-1)">‹</button><button type="button" class="px-2" @click.stop="moveDatePickerMonth(1)">›</button></span></div><div class="mb-2 grid grid-cols-7 text-center text-[11px] text-task-muted"><span v-for="day in ['Mo','Tu','We','Th','Fr','Sa','Su']" :key="day">{{ day }}</span></div><div class="grid grid-cols-7 gap-1"><button v-for="cell in projectDatePickerDays.cells" :key="cell.key" type="button" :class="['h-8 rounded-[8px] text-sm', cell.day ? 'hover:bg-task-blueSoft' : 'pointer-events-none']" @click="selectProjectDate(cell.day, cell.month, cell.year)">{{ cell.day || '' }}</button></div></div></div></label>
-              <label class="tf-analytics-filter-label tf-analytics-date-filter">End date<div class="tf-date-picker"><button type="button" class="tf-analytics-date-input w-full" @click="openDatePicker('analyticsEnd')"><span class="tf-analytics-filter-leading"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path :d="iconPath('calendar')" /></svg></span><span>{{ analyticsFilters.end_date || 'Select date' }}</span></button><div v-if="openProjectDatePicker === 'analyticsEnd'" class="tf-date-popover"><div class="mb-3 flex items-center justify-between"><b>{{ projectDatePickerDays.label }}</b><span><button type="button" class="px-2" @click.stop="moveDatePickerMonth(-1)">‹</button><button type="button" class="px-2" @click.stop="moveDatePickerMonth(1)">›</button></span></div><div class="mb-2 grid grid-cols-7 text-center text-[11px] text-task-muted"><span v-for="day in ['Mo','Tu','We','Th','Fr','Sa','Su']" :key="day">{{ day }}</span></div><div class="grid grid-cols-7 gap-1"><button v-for="cell in projectDatePickerDays.cells" :key="cell.key" type="button" :class="['h-8 rounded-[8px] text-sm', cell.day ? 'hover:bg-task-blueSoft' : 'pointer-events-none']" @click="selectProjectDate(cell.day, cell.month, cell.year)">{{ cell.day || '' }}</button></div></div></div></label>
-              <div class="tf-analytics-filter-label tf-analytics-date-filter">Granularity<div class="tf-dropdown mt-2"><button type="button" class="tf-analytics-filter-button" @click="openDropdown = openDropdown === 'analyticsGranularity' ? null : 'analyticsGranularity'"><span class="tf-analytics-filter-leading"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M3 15h3l2-7 4 12 3-10 2 5h4" /></svg></span><span class="min-w-0 flex-1 text-left capitalize">{{ analyticsFilters.granularity }}ly</span><svg viewBox="0 0 20 20" :class="['h-4 w-4 shrink-0 transition-transform', openDropdown === 'analyticsGranularity' ? 'rotate-180' : '']" fill="none" stroke="currentColor" stroke-width="2"><path d="m5 7.5 5 5 5-5" /></svg></button><div v-if="openDropdown === 'analyticsGranularity'" class="tf-dropdown-menu"><button v-for="item in [['day','Daily'],['week','Weekly'],['month','Monthly']]" :key="item[0]" type="button" class="tf-dropdown-option" @click="analyticsFilters.granularity = item[0]; openDropdown = null"><span>{{ item[1] }}</span><span v-if="analyticsFilters.granularity === item[0]">✓</span></button></div></div></div>
+              <div class="tf-analytics-filter-label">Performance level<div class="tf-dropdown mt-2"><button type="button" class="tf-analytics-filter-button" @click="openDropdown = openDropdown === 'analyticsPerformance' ? null : 'analyticsPerformance'"><span class="tf-analytics-filter-leading"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M4 20V10m6 10V4m6 16v-7m4 7V7" /></svg></span><span class="min-w-0 flex-1 truncate text-left">{{ analyticsPerformanceLevel === 'needs_attention' ? 'Needs attention' : analyticsPerformanceLevel ? analyticsPerformanceLevel[0].toUpperCase() + analyticsPerformanceLevel.slice(1) : 'All levels' }}</span><svg viewBox="0 0 20 20" :class="['h-4 w-4 shrink-0 transition-transform', openDropdown === 'analyticsPerformance' ? 'rotate-180' : '']" fill="none" stroke="currentColor" stroke-width="2"><path d="m5 7.5 5 5 5-5" /></svg></button><div v-if="openDropdown === 'analyticsPerformance'" class="tf-dropdown-menu"><button v-for="item in [['','All levels'],['excellent','Excellent'],['good','Good'],['needs_attention','Needs attention']]" :key="item[0]" type="button" class="tf-dropdown-option" @click="analyticsPerformanceLevel = item[0]; openDropdown = null"><span>{{ item[1] }}</span><span v-if="analyticsPerformanceLevel === item[0]">✓</span></button></div></div></div>
+              <button type="button" class="tf-analytics-reset-button self-end" aria-label="Reset analytics filters" title="Reset filters" @click="resetAnalyticsFilters"><svg viewBox="0 0 24 24" class="tf-analytics-reset-icon" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M20 6v5h-5" /><path d="M19 11a7.5 7.5 0 1 0 .15 4.5" /></svg><span class="tf-analytics-reset-text">Reset filters</span></button>
             </div>
-            <div class="mt-4 flex min-h-7 items-center justify-between gap-3 text-xs"><p v-if="analyticsFilterError" class="font-semibold text-task-danger">{{ analyticsFilterError }}</p><p v-else class="text-task-muted">{{ analyticsLoading ? 'Updating analytics…' : 'Filters are applied automatically.' }}</p><button type="button" class="tf-analytics-reset-button" @click="Object.assign(analyticsFilters, { department: '', employee: '', priority: '', status: '', days: '30', start_date: '', end_date: '', granularity: 'day' })"><svg viewBox="0 0 24 24" class="tf-analytics-reset-icon" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M20 6v5h-5" /><path d="M19 11a7.5 7.5 0 1 0 .15 4.5" /></svg>Reset filters</button></div>
+            <p v-if="analyticsFilterError" class="mt-3 text-xs font-semibold text-task-danger">{{ analyticsFilterError }}</p><p v-else-if="analyticsLoading" class="mt-3 text-xs text-task-muted">Updating analytics…</p>
           </div>
-          <div :class="['grid gap-3 sm:grid-cols-2', analyticsStats.length >= 5 ? 'xl:grid-cols-5' : 'xl:grid-cols-4']">
-            <div v-for="(item, index) in analyticsStats" :key="String(item[1])" :class="['tf-panel relative min-h-[112px] overflow-hidden p-4', dashboardStatStyles[index % dashboardStatStyles.length]?.card]">
-              <div class="flex flex-col items-start gap-2"><span :class="['grid h-10 w-10 shrink-0 place-items-center rounded-[12px] bg-white/85 shadow-sm ring-1', dashboardStatStyles[index % dashboardStatStyles.length]?.icon]"><svg viewBox="0 0 24 24" class="h-5 w-5" fill="none" stroke="currentColor" stroke-width="1.8"><path :d="index === 0 ? 'M8 12l3 3 5-6M12 22a10 10 0 1 1 0-20 10 10 0 0 1 0 20Z' : index === 1 ? 'M8 2h8M8 22h8M9 2v5l3 3 3-3V2M9 22v-5l3-3 3 3v5' : index === 2 ? 'M12 13 16 9M5.6 19a8 8 0 1 1 12.8 0M12 5v2M5 12H3m18 0h-2' : iconPath('projects')" /></svg></span><div class="min-w-0 w-full"><p class="whitespace-normal text-[11px] font-bold leading-4 text-task-muted">{{ item[1] }}</p><p class="mt-1 text-2xl font-extrabold text-task-ink">{{ item[0] }}</p><span class="mt-1 inline-flex text-[9px] font-bold text-task-success">↗ Live data</span></div></div>
+          <div class="tf-analytics-kpis grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
+            <div v-for="(item, index) in analyticsKpiCards" :key="item.label" class="tf-panel relative min-h-[104px] overflow-hidden p-4">
+              <div class="flex items-center gap-3"><span class="tf-analytics-kpi-icon"><svg viewBox="0 0 24 24" class="h-5 w-5" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path :d="index === 0 ? iconPath('users') : index === 1 ? 'M5.6 19a8 8 0 1 1 12.8 0M12 12l4-4' : index === 2 ? 'M8 12l3 3 5-6M7 3h10v3H7zM6 5H4v16h16V5h-2' : 'M12 7v6m0 4h.01M21 12a9 9 0 1 1-18 0 9 9 0 0 1 18 0Z'" /></svg></span><div class="min-w-0"><p class="truncate text-[11px] font-bold text-task-muted">{{ item.label }}</p><p class="mt-0.5 text-2xl font-extrabold text-task-ink">{{ item.value }}</p><span :class="['mt-1 block truncate text-[9px] font-bold', item.positive ? 'text-task-success' : 'text-task-danger']">{{ item.positive ? '↗' : '↗' }} {{ item.change }}</span></div></div>
               <svg viewBox="0 0 120 25" :class="['absolute bottom-3 right-3 h-7 w-20 opacity-80', dashboardStatStyles[index % dashboardStatStyles.length]?.line]" fill="none" preserveAspectRatio="none"><path d="M2 18 12 15l10 5 12-6 10 4 14-9 12 6 10-3 12 4 12-8 14 6" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" /></svg>
             </div>
           </div>
 
-          <div class="grid gap-3 xl:grid-cols-2">
-            <div class="tf-panel p-4">
-              <div class="mb-2 flex items-start justify-between">
-                <div>
-                  <h2 class="text-xl font-bold leading-tight">Task Completion Trend</h2>
-                  <p class="mt-1 text-xs text-task-muted">Created tasks · Completed tasks</p>
-                </div>
-              </div>
-              <div class="relative h-[220px] overflow-hidden" @mouseleave="hoveredMonthlyMonth = null">
-                <div class="absolute left-0 top-[36px] z-10 grid h-[180px] grid-rows-5 text-base text-task-muted">
-                  <span v-for="tick in yAxisTicks" :key="tick">{{ tick }}</span>
-                </div>
-                <div class="absolute inset-y-0 left-14 right-0">
-                  <svg viewBox="0 0 560 230" class="h-full w-full overflow-visible" preserveAspectRatio="none">
-                    <defs>
-                      <linearGradient id="monthlyFill" x1="0" x2="0" y1="0" y2="1">
-                        <stop offset="0%" stop-color="#2567AD" stop-opacity="0.26" />
-                        <stop offset="100%" stop-color="#2567AD" stop-opacity="0.03" />
-                      </linearGradient>
-                    </defs>
-                    <path d="M0 42H560M0 85H560M0 128H560M0 171H560M0 214H560" fill="none" stroke="#E9EEF5" stroke-dasharray="7 8" stroke-width="1.5" />
-                    <path v-if="selectedMonthlyPoint" :d="`M${selectedMonthlyPoint.x} 36V214`" fill="none" stroke="#DCE3EC" stroke-width="1.5" />
-                    <path :d="monthlyAreaPath" fill="url(#monthlyFill)" />
-                    <path :d="monthlyCompletedPath" fill="none" stroke="#2567AD" stroke-width="3" stroke-linecap="round" />
-                    <path :d="monthlyCreatedPath" fill="none" stroke="#AEBECD" stroke-width="2" stroke-linecap="round" />
-                    <circle v-if="selectedMonthlyPoint" :cx="selectedMonthlyPoint.x" :cy="selectedMonthlyPoint.y" r="8" fill="#2567AD" stroke="#FFFFFF" stroke-width="5" />
-                    <circle v-if="selectedCreatedPoint" :cx="selectedCreatedPoint.x" :cy="selectedCreatedPoint.y" r="8" fill="#AEBECD" stroke="#FFFFFF" stroke-width="5" />
-                  </svg>
-                  <div v-if="selectedMonthlyPoint" class="absolute z-20 w-[150px] rounded-[24px] border border-task-line bg-white p-4 text-task-muted shadow-xl" :style="selectedMonthlyTooltipStyle">
-                    <p class="mb-3 text-xl font-medium text-task-ink">{{ selectedMonthlyPoint.item.month }}</p>
-                    <p class="mb-2 flex items-center gap-3 text-base"><span class="h-3.5 w-3.5 rounded-full bg-task-blue" />Completed: <b class="font-medium text-task-ink">{{ selectedMonthlyPoint.item.completed }}</b></p>
-                    <p class="flex items-center gap-3 text-base"><span class="h-3.5 w-3.5 rounded-full bg-[#AEBECD]" />Created: <b class="font-medium text-task-ink">{{ selectedMonthlyPoint.item.created }}</b></p>
-                  </div>
-                  <div class="absolute inset-x-0 top-[36px] z-10 grid h-[178px]" :style="chartColumnsStyle(monthlyProgressData.length)">
-                    <button
-                      v-for="item in monthlyProgressData"
-                      :key="`monthly-hover-${item.month}`"
-                      type="button"
-                      class="h-full w-full cursor-default"
-                      :aria-label="`${item.month}: completed ${item.completed}, created ${item.created}`"
-                      @mouseenter="hoveredMonthlyMonth = item.month"
-                      @focus="hoveredMonthlyMonth = item.month"
-                      @blur="hoveredMonthlyMonth = null"
-                    />
-                  </div>
-                </div>
-                <div class="absolute bottom-0 left-14 right-0 grid text-center text-base text-task-muted" :style="chartColumnsStyle(monthlyProgressData.length)">
-                  <span v-for="item in monthlyProgressData" :key="item.month">{{ item.month }}</span>
-                </div>
-              </div>
-            </div>
-
-            <div class="tf-panel p-4">
-              <div class="mb-2 flex items-start justify-between">
-                <div>
-                  <h2 class="text-xl font-bold leading-tight">Team Efficiency Trend</h2>
-                  <p class="mt-1 text-xs text-task-muted">Overall efficiency over time</p>
-                </div>
-              </div>
-              <div class="relative h-[220px] overflow-hidden" @mouseleave="hoveredEfficiencyMonth = null">
-                <div class="absolute left-0 top-[36px] z-10 grid h-[180px] grid-rows-5 text-base text-task-muted">
-                  <span v-for="tick in yAxisTicks" :key="tick">{{ tick }}</span>
-                </div>
-                <div class="absolute inset-y-0 left-14 right-0">
+          <div class="tf-analytics-trends grid gap-3 xl:grid-cols-2">
+            <section class="tf-panel p-5">
+              <header class="flex items-start justify-between gap-4">
+                <div><h2 class="text-base font-extrabold text-task-ink">Performance Trend</h2><p class="mt-1 text-xs text-task-muted">Average performance over time</p></div>
+                <span class="flex items-center gap-2 text-[11px] text-task-muted"><i class="h-0.5 w-5 bg-[#55d99b]" />Performance (%)</span>
+              </header>
+              <div class="relative mt-4 h-[340px] overflow-hidden" @mouseleave="hoveredEfficiencyMonth = null">
+                <div class="absolute inset-y-3 left-0 flex flex-col justify-between pb-7 text-[10px] text-task-muted"><span>100%</span><span>75%</span><span>50%</span><span>25%</span><span>0%</span></div>
+                <div class="absolute bottom-7 left-10 right-0 top-3">
                   <svg viewBox="0 0 560 230" class="absolute inset-0 h-full w-full" preserveAspectRatio="none">
-                    <defs><linearGradient id="efficiencyFill" x1="0" x2="0" y1="0" y2="1"><stop offset="0%" stop-color="#8057D5" stop-opacity="0.22" /><stop offset="100%" stop-color="#8057D5" stop-opacity="0.02" /></linearGradient></defs>
-                    <path d="M0 42H560M0 85H560M0 128H560M0 171H560M0 214H560" fill="none" stroke="#E9EEF5" stroke-dasharray="7 8" stroke-width="1.5" />
-                    <path :d="efficiencyAreaPath" fill="url(#efficiencyFill)" />
-                    <path :d="efficiencyPath" fill="none" stroke="#8057D5" stroke-width="3" stroke-linecap="round" />
-                    <circle v-for="point in efficiencyPoints" :key="String(point.item.month)" :cx="point.x" :cy="point.y" r="4" fill="#8057D5" stroke="#fff" stroke-width="2" />
+                    <defs><linearGradient id="performanceFill" x1="0" x2="0" y1="0" y2="1"><stop offset="0%" stop-color="#43d58f" stop-opacity=".42"/><stop offset="100%" stop-color="#43d58f" stop-opacity=".02"/></linearGradient></defs>
+                    <path d="M0 0H560M0 57.5H560M0 115H560M0 172.5H560M0 230H560" fill="none" stroke="#203650" stroke-dasharray="4 5"/>
+                    <path :d="efficiencyAreaPath" fill="url(#performanceFill)" />
+                    <path :d="efficiencyPath" fill="none" stroke="#55d99b" stroke-width="3" stroke-linecap="round" />
+                    <circle v-for="point in efficiencyPoints" :key="String(point.item.month)" :cx="point.x" :cy="point.y" r="4" fill="#102b31" stroke="#67e3a9" stroke-width="2" />
                   </svg>
-                  <div class="absolute inset-x-0 top-[36px] z-10 grid h-[178px]" :style="chartColumnsStyle(efficiencyTrendData.length)">
-                    <button
-                      v-for="bar in efficiencyTrendData"
-                      :key="bar.month"
-                      type="button"
-                      class="group relative h-full outline-none"
-                      :aria-label="`${bar.month}: efficiency ${bar.value}`"
-                      @mouseenter="hoveredEfficiencyMonth = bar.month"
-                      @focus="hoveredEfficiencyMonth = bar.month"
-                      @blur="hoveredEfficiencyMonth = null"
-                    >
-                      <div v-if="bar.month === highlightedEfficiency?.month" class="absolute left-12 top-[30px] z-20 w-[150px] rounded-[24px] border border-task-line bg-white p-4 text-task-muted shadow-xl">
-                        <p class="mb-4 text-xl font-medium text-task-ink">{{ bar.month }}</p>
-                        <p class="flex items-center gap-3 text-base"><span class="h-3.5 w-3.5 rounded-full bg-task-blue" />Efficiency: <b class="font-medium text-task-ink">{{ bar.value }}</b></p>
-                      </div>
-                    </button>
-                  </div>
+                  <div class="absolute inset-0 z-10 grid" :style="chartColumnsStyle(efficiencyTrendData.length)"><button v-for="bar in efficiencyTrendData" :key="bar.month" type="button" class="group relative h-full" @mouseenter="hoveredEfficiencyMonth = bar.month" @focus="hoveredEfficiencyMonth = bar.month"><span v-if="bar.month === highlightedEfficiency?.month" class="absolute left-1/2 top-4 z-20 -translate-x-1/2 rounded-md bg-[#06111f] px-2 py-1 text-xs font-bold text-white shadow-xl">{{ bar.value }}%</span></button></div>
                 </div>
-                <div class="absolute bottom-0 left-14 right-0 grid text-center text-base text-task-muted" :style="chartColumnsStyle(efficiencyTrendData.length)">
-                  <span v-for="bar in efficiencyTrendData" :key="bar.month">{{ bar.month }}</span>
-                </div>
+                <div class="absolute bottom-0 left-10 right-0 grid text-center text-[10px] text-task-muted" :style="chartColumnsStyle(efficiencyTrendData.length)"><span v-for="item in efficiencyTrendData" :key="item.month">{{ item.month }}</span></div>
               </div>
-            </div>
+            </section>
+
+            <section class="tf-panel p-5">
+              <header class="flex flex-wrap items-start justify-between gap-3">
+                <div><h2 class="text-base font-extrabold text-task-ink">Workload Distribution</h2><p class="mt-1 text-xs text-task-muted">Tasks by status across the team</p></div>
+                <div class="flex gap-4 text-[10px] text-task-muted"><span class="flex items-center gap-1.5"><i class="h-2 w-2 rounded-full bg-[#49d28e]"/>Completed</span><span class="flex items-center gap-1.5"><i class="h-2 w-2 rounded-full bg-[#2689ef]"/>In Progress</span><span class="flex items-center gap-1.5"><i class="h-2 w-2 rounded-full bg-[#ff7148]"/>Overdue</span></div>
+              </header>
+              <div class="relative mt-4 h-[340px] pl-9">
+                <div class="absolute inset-y-3 left-0 flex flex-col justify-between pb-7 text-[10px] text-task-muted"><span>{{ analyticsWorkloadMax }}</span><span>{{ Math.round(analyticsWorkloadMax * .75) }}</span><span>{{ Math.round(analyticsWorkloadMax * .5) }}</span><span>{{ Math.round(analyticsWorkloadMax * .25) }}</span><span>0</span></div>
+                <div class="absolute bottom-7 left-9 right-0 top-3 flex items-end justify-around gap-3 border-b border-[#203650] bg-[repeating-linear-gradient(to_bottom,transparent_0,transparent_calc(25%-1px),#203650_calc(25%-1px),#203650_25%)] px-3">
+                  <div v-for="item in analyticsDepartmentWorkload" :key="item.name" class="group relative flex h-full min-w-0 flex-1 items-end justify-center">
+                    <div class="flex w-full max-w-10 flex-col-reverse overflow-hidden rounded-t-sm" :style="{ height: `${Math.max(5, ((item.completed + item.inProgress + item.overdue) / analyticsWorkloadMax) * 100)}%` }"><span class="bg-[#49d28e]" :style="{ flex: item.completed || .01 }"/><span class="bg-[#2689ef]" :style="{ flex: item.inProgress || .01 }"/><span class="bg-[#ff7148]" :style="{ flex: item.overdue || .01 }"/></div>
+                    <div class="pointer-events-none absolute bottom-1/2 left-1/2 z-20 hidden w-32 -translate-x-1/2 rounded-lg border border-[#29425e] bg-[#071426] p-3 text-[10px] shadow-2xl group-hover:block"><b class="mb-2 block text-xs text-white">{{ item.name }}</b><p class="text-[#49d28e]">Completed: {{ item.completed }}</p><p class="mt-1 text-[#58a9ff]">In Progress: {{ item.inProgress }}</p><p class="mt-1 text-[#ff805e]">Overdue: {{ item.overdue }}</p><p class="mt-2 border-t border-[#29425e] pt-2 text-white">Total: {{ item.completed + item.inProgress + item.overdue }}</p></div>
+                  </div>
+                  <p v-if="!analyticsDepartmentWorkload.length" class="m-auto text-xs text-task-muted">No workload data.</p>
+                </div>
+                <div class="absolute bottom-0 left-9 right-0 flex justify-around gap-3 px-3 text-center text-[10px] text-task-muted"><span v-for="item in analyticsDepartmentWorkload" :key="item.name" class="min-w-0 flex-1 truncate">{{ item.name }}</span></div>
+              </div>
+            </section>
           </div>
 
-          <div class="grid gap-3 xl:grid-cols-[minmax(0,1.35fr)_minmax(300px,.65fr)]">
-            <section class="tf-panel min-w-0 p-5">
-              <div class="flex items-center justify-between"><h2 class="text-base font-extrabold text-task-ink">Team Workload</h2><span class="tf-pill bg-task-blueSoft text-task-blue">By Staff</span></div>
-              <div class="mt-4 overflow-x-auto"><table class="w-full min-w-[500px] text-left text-xs"><thead class="text-task-muted"><tr><th class="pb-3">Staff</th><th>Active Tasks</th><th>Overdue</th><th>Completed</th><th>Workload</th></tr></thead><tbody class="divide-y divide-task-line"><tr v-for="row in analyticsWorkloadRows" :key="row.name"><td class="py-3 font-bold text-task-ink">{{ row.name }}</td><td>{{ row.active }}</td><td :class="row.overdue ? 'font-bold text-task-danger' : 'text-task-success'">{{ row.overdue }}</td><td>{{ row.completed }}</td><td class="w-36"><div class="h-2 overflow-hidden rounded-full bg-slate-200"><div class="h-full rounded-full bg-task-blue" :style="{ width: `${Math.min(100, row.efficiency)}%` }" /></div></td></tr></tbody></table></div>
+          <div class="tf-analytics-workload grid gap-3 xl:grid-cols-[minmax(0,1.35fr)_minmax(300px,.65fr)]">
+            <section class="tf-panel relative min-w-0 p-5">
+              <div class="mb-4 flex flex-col gap-3 xl:flex-row xl:items-center xl:justify-between">
+                <h2 class="flex items-center gap-2 text-lg font-bold text-task-ink">Staff Performance <span class="h-1 w-1 rounded-full bg-task-blue"/><span class="text-sm font-semibold text-task-muted">{{ analyticsFilteredMembers.length }}</span></h2>
+                <div class="flex flex-col gap-2 sm:flex-row sm:flex-wrap sm:items-center xl:justify-end">
+                  <label class="relative w-full sm:w-60"><svg viewBox="0 0 24 24" class="pointer-events-none absolute left-3.5 top-1/2 h-4 w-4 -translate-y-1/2 text-task-muted" fill="none" stroke="currentColor" stroke-width="1.8"><path :d="iconPath('search')"/></svg><input v-model="analyticsStaffSearch" class="tf-input h-10 w-full pl-10" placeholder="Search staff..."/></label>
+                  <div class="tf-dropdown w-full sm:w-52"><button type="button" class="tf-dropdown-button h-10 bg-white px-3 text-xs" @click="openDropdown = openDropdown === 'analyticsOrdering' ? null : 'analyticsOrdering'"><span class="truncate">Sort: {{ analyticsOrderingLabel }}</span><svg viewBox="0 0 20 20" class="h-4 w-4" fill="none" stroke="currentColor" stroke-width="2"><path d="m5 7.5 5 5 5-5"/></svg></button><div v-if="openDropdown === 'analyticsOrdering'" class="tf-dropdown-menu min-w-52"><button v-for="item in analyticsOrderingOptions" :key="item[0]" type="button" class="tf-dropdown-option" @click="analyticsOrdering = item[0]; analyticsPage = 1; openDropdown = null"><span>{{ item[1] }}</span><span v-if="analyticsOrdering === item[0]">✓</span></button></div></div>
+                  <button type="button" class="tf-primary h-10 rounded-[11px] px-4 text-xs" @click="exportAnalyticsReport"><svg viewBox="0 0 24 24" class="h-4 w-4" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M12 3v12m0 0 4-4m-4 4-4-4M5 21h14"/></svg>Export</button>
+                </div>
+              </div>
+              <div class="tf-analytics-staff-table-wrap overflow-x-auto"><table class="w-full min-w-[1120px] table-fixed text-left text-sm"><thead class="border-y border-task-line bg-slate-50/80 text-[11px] uppercase tracking-wide text-task-muted"><tr><th class="w-[285px] p-3 font-semibold">Staff</th><th class="w-[130px] p-3 font-semibold">Department</th><th class="w-[82px] p-3 font-semibold">Assigned</th><th class="w-[88px] p-3 font-semibold">Completed</th><th class="w-[90px] p-3 font-semibold">In Progress</th><th class="w-[76px] p-3 font-semibold">Overdue</th><th class="w-[72px] p-3 font-semibold">On-time</th><th class="w-[82px] p-3 font-semibold">Avg. Time</th><th class="w-[205px] p-3 font-semibold">Performance</th><th class="w-[58px] p-3 text-right font-semibold">Actions</th></tr></thead><tbody class="divide-y divide-task-line"><tr v-for="(row, index) in analyticsWorkloadRows" :key="row.name" class="transition hover:bg-task-blueSoft/40"><td class="max-w-[285px] p-3"><div class="flex min-w-0 items-center gap-3"><span :class="['grid h-10 w-10 shrink-0 place-items-center rounded-full text-xs font-bold', index % 4 === 0 ? 'bg-task-blueSoft text-task-blue' : index % 4 === 1 ? 'bg-[#F0E9FF] text-[#8057D5]' : index % 4 === 2 ? 'bg-task-warningSoft text-task-warning' : 'bg-task-successSoft text-task-success']">{{ initials(row.name) }}</span><div class="min-w-0 flex-1"><p class="truncate font-bold text-task-ink"><template v-for="(part, partIndex) in [highlightedSearchText(row.name, analyticsStaffSearch || analyticsGlobalSearch)]" :key="partIndex">{{ part.before }}<mark v-if="part.match" class="tf-search-highlight">{{ part.match }}</mark>{{ part.after }}</template></p><p class="tf-staff-role-clamp text-xs text-task-muted" :title="row.role"><template v-for="(part, partIndex) in [highlightedSearchText(row.role, analyticsStaffSearch || analyticsGlobalSearch)]" :key="partIndex">{{ part.before }}<mark v-if="part.match" class="tf-search-highlight">{{ part.match }}</mark>{{ part.after }}</template></p></div></div></td><td class="p-3"><span class="inline-flex max-w-full truncate rounded-full bg-task-blueSoft px-2.5 py-1 text-xs font-semibold text-task-blue"><template v-for="(part, partIndex) in [highlightedSearchText(row.department, analyticsStaffSearch || analyticsGlobalSearch)]" :key="partIndex">{{ part.before }}<mark v-if="part.match" class="tf-search-highlight">{{ part.match }}</mark>{{ part.after }}</template></span></td><td class="p-3">{{ row.completed + row.active + row.overdue }}</td><td class="p-3 text-task-success">{{ row.completed }}</td><td class="p-3 text-task-blue">{{ row.active }}</td><td :class="['p-3', row.overdue ? 'font-bold text-task-danger' : 'text-task-success']">{{ row.overdue }}</td><td class="p-3 font-semibold">{{ row.efficiency }}%</td><td class="p-3 text-task-muted">{{ (1.5 + (100 - row.efficiency) / 22).toFixed(1) }} days</td><td class="p-3"><div class="min-w-[150px]"><div class="flex items-center justify-between gap-3"><b class="text-xs text-task-ink">{{ row.efficiency }}%</b><span :class="['tf-performance-badge', row.efficiency >= 80 ? 'is-excellent' : row.efficiency >= 60 ? 'is-good' : row.efficiency >= 45 ? 'is-attention' : 'is-critical']">{{ row.efficiency >= 80 ? 'Excellent' : row.efficiency >= 60 ? 'Good' : row.efficiency >= 45 ? 'Needs Attention' : 'Critical' }}</span></div><div class="mt-1.5 h-1.5 w-full overflow-hidden rounded-full bg-slate-200"><div :class="['h-full rounded-full', row.efficiency >= 80 ? 'bg-task-success' : row.efficiency >= 60 ? 'bg-task-warning' : 'bg-task-danger']" :style="{ width: `${row.efficiency}%` }"/></div></div></td><td class="p-3 text-right"><button type="button" class="tf-icon-button rounded-full"><svg viewBox="0 0 24 24" class="h-4 w-4" fill="none" stroke="currentColor"><path :d="iconPath('dots')"/></svg></button></td></tr></tbody></table></div>
+              <p v-if="!analyticsFilteredMembers.length" class="py-10 text-center text-sm text-task-muted">No staff found.</p><div v-if="analyticsFilteredMembers.length" class="tf-analytics-pagination"><span>Showing {{ (analyticsPage - 1) * analyticsPageSize + 1 }} to {{ Math.min(analyticsPage * analyticsPageSize, analyticsFilteredMembers.length) }} of {{ analyticsFilteredMembers.length }} staff members</span><div class="tf-analytics-pagination-controls"><div class="flex gap-2"><button type="button" class="tf-icon-button" :disabled="analyticsPage <= 1" @click="analyticsPage--">‹</button><button v-for="page in analyticsPageCount" :key="page" type="button" :class="[analyticsPage === page ? 'tf-primary' : 'tf-icon-button', 'h-9 w-9 p-0']" @click="analyticsPage = page">{{ page }}</button><button type="button" class="tf-icon-button" :disabled="analyticsPage >= analyticsPageCount" @click="analyticsPage++">›</button></div><label class="tf-page-size-control"><select v-model.number="analyticsPageSize" aria-label="Rows per page" @change="analyticsPage = 1"><option :value="8">8 per page</option><option :value="16">16 per page</option><option :value="24">24 per page</option></select></label></div></div>
             </section>
             <section class="tf-panel min-w-0 p-5">
               <div class="flex items-center justify-between"><div><h2 class="text-base font-extrabold text-task-ink">Overdue Tasks Trend</h2><p class="mt-1 text-xs text-task-muted">Current overdue workload by staff</p></div><span class="tf-pill bg-task-dangerSoft text-task-danger">{{ overdueTaskRows.length }} overdue</span></div>
