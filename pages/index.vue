@@ -1234,9 +1234,16 @@ const performanceTrendMax = computed(() => {
   return Math.max(4, Math.ceil(largest / 4) * 4)
 })
 const performanceTrendTicks = computed(() => [1, .75, .5, .25, 0].map((ratio) => Math.round(performanceTrendMax.value * ratio)))
+const performanceChartTop = 8
+const performanceChartBottom = 222
+const performanceChartHeight = performanceChartBottom - performanceChartTop
+const performanceChartLeft = 5
+const performanceChartRight = 555
 const buildPerformancePoints = (key: 'completed' | 'assigned') => efficiencyTrendData.value.map((item, index) => ({
-  x: chartX(index, efficiencyTrendData.value.length),
-  y: 230 - (Math.min(Math.max(item[key], 0), performanceTrendMax.value) / performanceTrendMax.value) * 230,
+  x: efficiencyTrendData.value.length <= 1
+    ? chartWidth / 2
+    : performanceChartLeft + (index / (efficiencyTrendData.value.length - 1)) * (performanceChartRight - performanceChartLeft),
+  y: performanceChartBottom - (Math.min(Math.max(item[key], 0), performanceTrendMax.value) / performanceTrendMax.value) * performanceChartHeight,
   item
 }))
 const completedTrendPoints = computed(() => buildPerformancePoints('completed'))
