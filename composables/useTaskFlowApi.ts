@@ -49,6 +49,7 @@ type ApiTask = {
   title: string
   status?: string
   priority?: string
+  effort_score?: number
   due_date?: string | null
   progress?: number
   description?: string
@@ -73,6 +74,7 @@ type TaskPayload = {
   description: string
   status: string
   priority: string
+  effort_score: number
   category: string
   assignees: Array<string | number>
   due_date: string
@@ -173,13 +175,40 @@ export type AnalyticsMetric = {
   label?: string
 }
 
+export type AnalyticsCardKey =
+  | 'total_average_performance'
+  | 'total_average_on_time'
+  | 'total_average_completion_days'
+  | 'tasks_per_employee'
+  | 'overdue_rate'
+  | 'weighted_workload_per_employee'
+
+export type AnalyticsCardUnit =
+  | 'percent'
+  | 'days'
+  | 'tasks_per_employee'
+  | 'effort_points_per_employee'
+
+export type AnalyticsCard = {
+  key: AnalyticsCardKey
+  label: string
+  value: number
+  unit: AnalyticsCardUnit
+  total_tasks?: number
+  completed_tasks?: number
+  overdue_tasks?: number
+  total_effort_points?: number
+  employees?: number
+}
+
 export type AnalyticsSummary = {
-  task_completion_rate: AnalyticsMetric
-  active_tasks: AnalyticsMetric
-  completed_tasks: AnalyticsMetric
-  archived_tasks: AnalyticsMetric
-  on_hold_tasks: AnalyticsMetric
-  postponed_tasks: AnalyticsMetric
+  cards: AnalyticsCard[]
+  task_completion_rate?: AnalyticsMetric
+  active_tasks?: AnalyticsMetric
+  completed_tasks?: AnalyticsMetric
+  archived_tasks?: AnalyticsMetric
+  on_hold_tasks?: AnalyticsMetric
+  postponed_tasks?: AnalyticsMetric
 }
 
 export type AnalyticsStatusChartItem = {
@@ -892,7 +921,7 @@ export const useTaskFlowApi = () => {
       events,
       stats: {
         activeProjects: projects.length,
-        utilization: Number(analytics.summary?.task_completion_rate.value ?? 0),
+        utilization: Number(analytics.summary?.task_completion_rate?.value ?? 0),
         teamVelocity: analytics.team_velocity || 0,
         overdueTasks: analytics.overdue_tasks || 0,
         projectSummary
@@ -926,7 +955,8 @@ export const useTaskFlowApi = () => {
       task.creator_detail ||
       task.owner_detail ||
       (typeof task.created_by === 'object' ? task.created_by : task.created_by == null ? null : { id: task.created_by })
-    )
+    ),
+    task.effort_score ?? 3
   ]
 
   const mapProject = (project: ApiProject) => [
@@ -996,7 +1026,8 @@ export const useTaskFlowApi = () => {
   ]
 
   const mapAnalyticsMonthlyProgress = (analytics: ApiAnalytics) => {
-    const performanceTrend = analytics.performance_trend || analytics.performance_over_time || analytics.trend || []
+    const analyticsCharts = (analytics as ApiAnalytics & { charts?: ApiAnalytics }).charts
+    const performanceTrend = analytics.performance_trend || analyticsCharts?.performance_trend || analytics.performance_over_time || analytics.trend || []
     if (!Array.isArray(performanceTrend)) {
       const valueRecord = performanceTrend.values && !Array.isArray(performanceTrend.values) ? performanceTrend.values : null
       const labels = Array.isArray(performanceTrend.labels)
@@ -1010,12 +1041,10 @@ export const useTaskFlowApi = () => {
       if (values.length) {
         return values.map((value, index) => {
           const valueItem = value && typeof value === 'object' ? value as Record<string, unknown> : null
-          const rawPerformance = asNumber(valueItem
-            ? valueItem.performance ?? valueItem.performance_percentage ?? valueItem.average_performance ?? valueItem.avg_performance ?? valueItem.performance_value ?? valueItem.efficiency ?? valueItem.value
-            : value)
-          const performance = rawPerformance > 0 && rawPerformance <= 1 ? rawPerformance * 100 : rawPerformance
+          const completed = asNumber(valueItem ? valueItem.completed ?? valueItem.completed_tasks ?? valueItem.completed_count ?? valueItem.done ?? valueItem.value : value)
+          const assigned = asNumber(valueItem ? valueItem.assigned ?? valueItem.assigned_tasks ?? valueItem.assigned_count ?? valueItem.created ?? valueItem.total : 0)
           const label = valueItem?.date ?? valueItem?.day ?? valueItem?.period ?? valueItem?.label ?? labels[index] ?? `Point ${index + 1}`
-          return [String(label).slice(0, 12), performance, 100]
+          return [String(label).slice(0, 12), completed, assigned]
         })
       }
     }
@@ -1025,9 +1054,9 @@ export const useTaskFlowApi = () => {
       return performanceEntries.map((entry, index) => {
         const item = parseAnalyticsItem(entry)
         const label = String(item.date || item.day || item.period || item.label || item.name || `Point ${index + 1}`).slice(0, 12)
-        const rawPerformance = asNumber(item.performance ?? item.performance_percentage ?? item.average_performance ?? item.avg_performance ?? item.performance_value ?? item.efficiency ?? item.value)
-        const performance = rawPerformance > 0 && rawPerformance <= 1 ? rawPerformance * 100 : rawPerformance
-        return [label, performance, 100]
+        const completed = asNumber(item.completed ?? item.completed_tasks ?? item.completed_count ?? item.done ?? item.value)
+        const assigned = asNumber(item.assigned ?? item.assigned_tasks ?? item.assigned_count ?? item.created ?? item.total)
+        return [label, completed, assigned]
       })
     }
 

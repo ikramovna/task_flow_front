@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import type { Ref } from 'vue'
-import type { AnalyticsSummary } from '~/composables/useTaskFlowApi'
+import type { AnalyticsCard, AnalyticsSummary } from '~/composables/useTaskFlowApi'
 import GreetingCard from '~/components/GreetingCard.vue'
 import { greetingConfig } from '~/constants/greetings'
 
@@ -104,6 +104,7 @@ type AnalyticsStaffRow = {
   assigned: number
   completed: number
   active: number
+  onHold: number
   overdue: number
   onTime: number
   performanceScore: number | null
@@ -185,13 +186,14 @@ const analyticsOrderingOptions = [
   ['-assigned', 'Most assigned'],
   ['-completed', 'Most completed'],
   ['-in_progress', 'Most in progress'],
+  ['-on_hold', 'Most on hold'],
   ['-overdue', 'Most overdue'],
   ['-on_time', 'Highest on-time'],
   ['avg_time', 'Fastest avg. time'],
   ['name', 'Name A–Z'],
 ] as const
 const analyticsOrderingLabel = computed(() => analyticsOrderingOptions.find(item => item[0] === analyticsOrdering.value)?.[1] || 'Highest performance')
-type AnalyticsSortColumn = 'name' | 'department' | 'assigned' | 'completed' | 'in_progress' | 'overdue' | 'on_time' | 'avg_time' | 'performance'
+type AnalyticsSortColumn = 'name' | 'department' | 'assigned' | 'completed' | 'in_progress' | 'on_hold' | 'overdue' | 'on_time' | 'avg_time' | 'performance'
 const toggleAnalyticsSort = (column: AnalyticsSortColumn) => {
   const isCurrentColumn = analyticsTableOrdering.value.replace(/^-/, '') === column
   analyticsTableOrdering.value = isCurrentColumn
@@ -270,6 +272,7 @@ const loadFilteredAnalytics = async () => {
         assigned: Number(item.assigned ?? item.assigned_tasks ?? item.total_tasks ?? 0),
         completed: Number(item.completed ?? item.completed_tasks ?? 0),
         active: Number(item.in_progress ?? item.in_progress_tasks ?? 0),
+        onHold: Number(item.on_hold ?? item.on_hold_tasks ?? 0),
         overdue: Number(item.overdue ?? item.overdue_tasks ?? 0),
         onTime: Number(item.on_time ?? item.on_time_percentage ?? item.on_time_rate ?? 0),
         performanceScore: item.performance_score == null || !Number.isFinite(Number(item.performance_score)) ? null : Number(item.performance_score),
@@ -279,14 +282,7 @@ const loadFilteredAnalytics = async () => {
     })
     analyticsStaffTotal.value = Number(staffPerformance.count ?? analyticsStaffRows.value.length)
     analyticsStaffTotalPages.value = Math.max(1, Number(staffPerformance.total_pages ?? Math.ceil(analyticsStaffTotal.value / analyticsPageSize.value)))
-    state.value.analyticsStats = summary ? [
-      [`${summary.task_completion_rate.value}%`, 'Performance', 'bg-[#EAF2FC]'],
-      [String(summary.active_tasks.value), 'Active', 'bg-task-mint'],
-      [String(summary.completed_tasks.value), 'Completed', 'bg-task-successSoft'],
-      [String(summary.archived_tasks.value), 'Verified & Archived', 'bg-task-lavender'],
-      [String(summary.on_hold_tasks.value), 'On Hold', 'bg-task-warningSoft'],
-      [String(summary.postponed_tasks.value), 'Postponed', 'bg-slate-100']
-    ] : []
+    state.value.analyticsStats = (summary?.cards || []).map((card) => [String(card.value), card.label, card.unit])
     state.value.monthlyProgress = taskFlowApi.mapAnalyticsMonthlyProgress(analytics)
     state.value.tasksByCategory = taskFlowApi.mapAnalyticsTasksByCategory(analytics)
   } catch (error) {
@@ -593,6 +589,7 @@ const form = reactive({
   title: '',
   assignee: '',
   priority: 'Low',
+  effortScore: 3,
   startDate: '',
   dueDate: '',
   projectManager: '',
@@ -606,6 +603,13 @@ const form = reactive({
 })
 const eventTypeOptions = ['Meeting', 'Review', 'Workshop']
 const taskStatusOptions = ['Postponed', 'Not Started', 'In Progress', 'On Hold', 'Completed']
+const taskEffortOptions = [
+  { value: 1, label: '1 — Very simple (1–2 hours)' },
+  { value: 2, label: '2 — Small (half a day)' },
+  { value: 3, label: '3 — Medium (about 1 day)' },
+  { value: 4, label: '4 — Complex (2–3 days)' },
+  { value: 5, label: '5 — Very complex (4+ days)' }
+]
 const taskFormStatus = ref('Not Started')
 const taskIsHidden = ref(false)
 const aiTaskAssistantOpen = ref(false)
@@ -1180,19 +1184,11 @@ const monthlyProgressData = computed(() => {
 })
 const efficiencyTrendData = computed(() =>
   monthlyTrendSource.value
-    .map((item, index, items) => {
-      const completed = Number(item[1] || 0)
-      const created = Number(item[2] || 0)
-      const value = created > 0 ? Math.min(Math.round((completed / created) * 100), 100) : 0
-      const previousCompleted = Number(items[index - 1]?.[1] || 0)
-      const previousCreated = Number(items[index - 1]?.[2] || 0)
-      const previous = previousCreated > 0 ? Math.min(Math.round((previousCompleted / previousCreated) * 100), 100) : 0
-      const diff = value - previous
+    .map((item, index) => {
       return {
-        month: String(item[0] || `Month ${index + 1}`),
-        value,
-        from: 'monthly analytics',
-        growth: index === 0 || previous === 0 ? '0%' : `${diff >= 0 ? '+' : ''}${Math.round((diff / previous) * 100)}%`
+        month: String(item[0] || `Point ${index + 1}`),
+        completed: Number(item[1] || 0),
+        assigned: Number(item[2] || 0)
       }
     })
 )
@@ -1233,14 +1229,20 @@ const monthlyCompletedPoints = computed(() => buildLinePoints(monthlyProgressDat
 const monthlyCreatedPoints = computed(() => buildLinePoints(monthlyProgressData.value, 'created'))
 const monthlyCompletedPath = computed(() => buildSmoothPath(monthlyCompletedPoints.value))
 const monthlyCreatedPath = computed(() => buildSmoothPath(monthlyCreatedPoints.value))
-const efficiencyPoints = computed(() => buildLinePoints(efficiencyTrendData.value, 'value'))
-const efficiencyPath = computed(() => buildSmoothPath(efficiencyPoints.value))
-const efficiencyAreaPath = computed(() => {
-  if (!efficiencyPoints.value.length || !efficiencyPath.value) return ''
-  const first = efficiencyPoints.value[0]
-  const last = efficiencyPoints.value[efficiencyPoints.value.length - 1]
-  return `${efficiencyPath.value} L${last.x} ${chartBottom} L${first.x} ${chartBottom} Z`
+const performanceTrendMax = computed(() => {
+  const largest = Math.max(0, ...efficiencyTrendData.value.flatMap((item) => [item.completed, item.assigned]))
+  return Math.max(4, Math.ceil(largest / 4) * 4)
 })
+const performanceTrendTicks = computed(() => [1, .75, .5, .25, 0].map((ratio) => Math.round(performanceTrendMax.value * ratio)))
+const buildPerformancePoints = (key: 'completed' | 'assigned') => efficiencyTrendData.value.map((item, index) => ({
+  x: chartX(index, efficiencyTrendData.value.length),
+  y: 230 - (Math.min(Math.max(item[key], 0), performanceTrendMax.value) / performanceTrendMax.value) * 230,
+  item
+}))
+const completedTrendPoints = computed(() => buildPerformancePoints('completed'))
+const assignedTrendPoints = computed(() => buildPerformancePoints('assigned'))
+const completedTrendPath = computed(() => buildSmoothPath(completedTrendPoints.value))
+const assignedTrendPath = computed(() => buildSmoothPath(assignedTrendPoints.value))
 const monthlyAreaPath = computed(() => {
   if (!monthlyCompletedPoints.value.length || !monthlyCompletedPath.value) return ''
   const first = monthlyCompletedPoints.value[0]
@@ -1266,7 +1268,7 @@ const highlightedEfficiency = computed(() => {
     return efficiencyTrendData.value.find((item) => item.month === hoveredEfficiencyMonth.value) ?? null
   }
   return efficiencyTrendData.value.reduce<(typeof efficiencyTrendData.value)[number] | null>(
-    (highest, item) => !highest || item.value > highest.value ? item : highest,
+    (highest, item) => !highest || item.assigned > highest.assigned ? item : highest,
     null,
   )
 })
@@ -1290,6 +1292,7 @@ const analyticsFilteredMembers = computed(() => [...analyticsStaffRows.value].so
     if (key === 'department') return member.department
     if (key === 'completed') return member.completed
     if (key === 'in_progress') return member.active
+    if (key === 'on_hold') return member.onHold
     if (key === 'overdue') return member.overdue
     if (key === 'assigned') return member.assigned
     if (key === 'on_time') return member.onTime
@@ -1328,18 +1331,17 @@ const analyticsPerformanceBarClass = (level: string) => {
   if (normalized === 'critical') return 'bg-task-danger'
   return 'bg-slate-400'
 }
-const analyticsKpiCards = computed(() => {
-  const summary = analyticsSummary.value
-  if (!summary) return []
-  return [
-    { label: 'Performance', value: `${summary.task_completion_rate.value}%` },
-    { label: 'Active', value: String(summary.active_tasks.value) },
-    { label: 'Completed', value: String(summary.completed_tasks.value) },
-    { label: 'Verified & Archived', value: String(summary.archived_tasks.value) },
-    { label: 'On Hold', value: String(summary.on_hold_tasks.value) },
-    { label: 'Postponed', value: String(summary.postponed_tasks.value) }
-  ]
-})
+const formatAnalyticsCardValue = (card: AnalyticsCard) => {
+  switch (card.unit) {
+    case 'percent': return `${card.value}%`
+    case 'days': return `${card.value} days`
+    case 'tasks_per_employee': return `${card.value} tasks/person`
+    case 'effort_points_per_employee': return `${card.value} points/person`
+    default: return String(card.value)
+  }
+}
+const formatAnalyticsCardLabel = (card: AnalyticsCard) => card.label.replace(/\bAverage\b/g, 'Avg.')
+const analyticsKpiCards = computed(() => analyticsSummary.value?.cards || [])
 const analyticsDepartmentPerformanceMax = computed(() => {
   const highestTaskTotal = Math.max(0, ...analyticsDepartmentPerformance.value.map(item => item.completed + item.inProgress + item.overdue))
   return Math.max(10, Math.ceil(highestTaskTotal / 10) * 10)
@@ -2174,6 +2176,7 @@ const openModal = (value: Exclude<ModalKey, null>) => {
   form.title = ''
   form.assignee = ''
   form.priority = value === 'project' ? 'Low' : 'Medium'
+  form.effortScore = 3
   taskFormStatus.value = 'Not Started'
   form.startDate = formatProjectDateInput(new Date())
   form.dueDate = formatProjectDateInput(new Date())
@@ -2767,6 +2770,7 @@ const openTask = async (task: Array<string | number>, mode: 'view' | 'edit', fro
     taskModalMode.value = mode
     form.title = String(mapped[0] || '')
     form.priority = String(mapped[2] || 'Medium')
+    form.effortScore = Math.min(5, Math.max(1, Number(mapped[21] || 3)))
     taskFormStatus.value = taskStatusDisplay(mapped[3] || 'Not Started')
     taskIsHidden.value = taskIsHiddenOf(mapped)
     form.description = String(mapped[10] || '')
@@ -2843,6 +2847,7 @@ const duplicateTask = async (task: Array<string | number>) => {
       description: String(task[10] || ''),
       status: projectEnum(String(task[3] || 'Not Started')),
       priority: projectEnum(String(task[2] || 'Medium')),
+      effort_score: Math.min(5, Math.max(1, Number(task[21] || 3))),
       category: String(task[11] || ''),
       assignees,
       due_date: String(task[12] || todayIsoDate()),
@@ -3097,6 +3102,7 @@ const submitModal = async () => {
       description: form.description.trim(),
       status,
       priority: projectEnum(form.priority),
+      effort_score: form.effortScore,
       category: form.category.trim(),
       assignees: [
         taskMainAssigneeId.value,
@@ -4106,8 +4112,8 @@ const iconPath = (name: string) => {
             <p v-if="analyticsFilterError" class="mt-3 text-xs font-semibold text-task-danger">{{ analyticsFilterError }}</p><p v-else-if="analyticsLoading" class="mt-3 text-xs text-task-muted">Updating analytics…</p>
           </div>
           <div class="tf-analytics-kpis grid gap-3 sm:grid-cols-2 xl:grid-cols-3 2xl:grid-cols-6">
-            <div v-for="(item, index) in analyticsKpiCards" :key="item.label" class="tf-panel relative min-h-[104px] overflow-hidden p-4">
-              <div class="flex items-center gap-3"><span class="tf-analytics-kpi-icon"><svg viewBox="0 0 24 24" class="h-5 w-5" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path :d="index === 0 ? 'M5.6 19a8 8 0 1 1 12.8 0M12 12l4-4' : index === 1 ? 'M12 7v5l3 2m7-2a9 9 0 1 1-18 0 9 9 0 0 1 18 0Z' : index === 2 ? 'M8 12l3 3 5-6M7 3h10v3H7zM6 5H4v16h16V5h-2' : index === 3 ? 'M4 7h16v13H4V7Zm-1-4h18v4H3V3Zm6 9h6' : index === 4 ? 'M9 9h6v6H9z' : 'M4 5h16v14H4V5Zm4 4h8m-8 4h8'" /></svg></span><div class="min-w-0"><p class="truncate text-[11px] font-bold text-task-muted">{{ item.label }}</p><p class="mt-0.5 text-2xl font-extrabold text-task-ink">{{ item.value }}</p></div></div>
+            <div v-for="(item, index) in analyticsKpiCards" :key="item.key" class="tf-panel relative min-h-[104px] overflow-hidden p-4">
+              <div class="flex items-center gap-3"><span class="tf-analytics-kpi-icon"><svg viewBox="0 0 24 24" class="h-5 w-5" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path :d="index === 0 ? 'M5.6 19a8 8 0 1 1 12.8 0M12 12l4-4' : index === 1 ? 'M12 7v5l3 2m7-2a9 9 0 1 1-18 0 9 9 0 0 1 18 0Z' : index === 2 ? 'M8 12l3 3 5-6M7 3h10v3H7zM6 5H4v16h16V5h-2' : index === 3 ? 'M4 7h16v13H4V7Zm-1-4h18v4H3V3Zm6 9h6' : index === 4 ? 'M9 9h6v6H9z' : 'M4 5h16v14H4V5Zm4 4h8m-8 4h8'" /></svg></span><div class="min-w-0"><p class="truncate text-[11px] font-bold text-task-muted">{{ formatAnalyticsCardLabel(item) }}</p><p class="mt-0.5 text-2xl font-extrabold text-task-ink">{{ formatAnalyticsCardValue(item) }}</p></div></div>
               <svg viewBox="0 0 120 25" :class="['absolute bottom-3 right-3 h-7 w-20 opacity-80', dashboardStatStyles[index % dashboardStatStyles.length]?.line]" fill="none" preserveAspectRatio="none"><path d="M2 18 12 15l10 5 12-6 10 4 14-9 12 6 10-3 12 4 12-8 14 6" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" /></svg>
             </div>
           </div>
@@ -4115,20 +4121,20 @@ const iconPath = (name: string) => {
           <div class="tf-analytics-trends grid gap-3 xl:grid-cols-2">
             <section class="tf-panel p-5">
               <header class="flex items-start justify-between gap-4">
-                <div><h2 class="text-base font-extrabold text-task-ink">Performance Trend</h2><p class="mt-1 text-xs text-task-muted">Average performance over time</p></div>
-                <span class="flex items-center gap-2 text-[11px] text-task-muted"><i class="h-0.5 w-5 bg-[#55d99b]" />Performance (%)</span>
+                <div><h2 class="text-base font-extrabold text-task-ink">Performance Trend</h2><p class="mt-1 text-xs text-task-muted">Assigned and completed tasks over time</p></div>
+                <div class="flex flex-wrap justify-end gap-3 text-[11px] text-task-muted"><span class="flex items-center gap-2"><i class="h-0.5 w-5 bg-[#34D399]" />Completed</span><span class="flex items-center gap-2"><i class="h-0.5 w-5 bg-[#EF4444]" />Assigned</span></div>
               </header>
               <div class="relative mt-4 h-[340px] overflow-hidden" @mouseleave="hoveredEfficiencyMonth = null">
-                <div class="absolute inset-y-3 left-0 flex flex-col justify-between pb-7 text-[10px] text-task-muted"><span>100%</span><span>75%</span><span>50%</span><span>25%</span><span>0%</span></div>
+                <div class="absolute inset-y-3 left-0 flex flex-col justify-between pb-7 text-[10px] text-task-muted"><span v-for="tick in performanceTrendTicks" :key="tick">{{ tick }}</span></div>
                 <div class="absolute bottom-7 left-10 right-0 top-3">
                   <svg viewBox="0 0 560 230" class="absolute inset-0 h-full w-full" preserveAspectRatio="none">
-                    <defs><linearGradient id="performanceFill" x1="0" x2="0" y1="0" y2="1"><stop offset="0%" stop-color="#43d58f" stop-opacity=".42"/><stop offset="100%" stop-color="#43d58f" stop-opacity=".02"/></linearGradient></defs>
                     <path d="M0 0H560M0 57.5H560M0 115H560M0 172.5H560M0 230H560" fill="none" stroke="#203650" stroke-dasharray="4 5"/>
-                    <path :d="efficiencyAreaPath" fill="url(#performanceFill)" />
-                    <path :d="efficiencyPath" fill="none" stroke="#55d99b" stroke-width="3" stroke-linecap="round" />
-                    <circle v-for="point in efficiencyPoints" :key="String(point.item.month)" :cx="point.x" :cy="point.y" r="4" fill="#102b31" stroke="#67e3a9" stroke-width="2" />
+                    <path :d="assignedTrendPath" fill="none" stroke="#EF4444" stroke-width="3" stroke-linecap="round" />
+                    <path :d="completedTrendPath" fill="none" stroke="#34D399" stroke-width="3" stroke-linecap="round" />
+                    <circle v-for="point in assignedTrendPoints" :key="`assigned-${point.item.month}`" :cx="point.x" :cy="point.y" r="4" fill="#102b31" stroke="#EF4444" stroke-width="2" />
+                    <circle v-for="point in completedTrendPoints" :key="`completed-${point.item.month}`" :cx="point.x" :cy="point.y" r="4" fill="#102b31" stroke="#34D399" stroke-width="2" />
                   </svg>
-                  <div class="absolute inset-0 z-10 grid" :style="chartColumnsStyle(efficiencyTrendData.length)"><button v-for="bar in efficiencyTrendData" :key="bar.month" type="button" class="group relative h-full" @mouseenter="hoveredEfficiencyMonth = bar.month" @focus="hoveredEfficiencyMonth = bar.month"><span v-if="bar.month === highlightedEfficiency?.month" class="absolute left-1/2 top-4 z-20 -translate-x-1/2 rounded-md bg-[#06111f] px-2 py-1 text-xs font-bold text-white shadow-xl">{{ bar.value }}%</span></button></div>
+                  <div class="absolute inset-0 z-10 grid" :style="chartColumnsStyle(efficiencyTrendData.length)"><button v-for="bar in efficiencyTrendData" :key="bar.month" type="button" class="group relative h-full" @mouseenter="hoveredEfficiencyMonth = bar.month" @focus="hoveredEfficiencyMonth = bar.month"><span v-if="bar.month === highlightedEfficiency?.month" class="absolute left-1/2 top-4 z-20 min-w-max -translate-x-1/2 rounded-md bg-[#06111f] px-2.5 py-1.5 text-left text-[11px] font-bold text-white shadow-xl"><span class="block text-[#34D399]">Completed: {{ bar.completed }}</span><span class="mt-0.5 block text-[#EF4444]">Assigned: {{ bar.assigned }}</span></span></button></div>
                 </div>
                 <div class="absolute bottom-0 left-10 right-0 grid text-center text-[10px] text-task-muted" :style="chartColumnsStyle(efficiencyTrendData.length)"><span v-for="item in efficiencyTrendData" :key="item.month">{{ item.month }}</span></div>
               </div>
@@ -4162,7 +4168,7 @@ const iconPath = (name: string) => {
                 </div>
               </div>
               <div v-if="analyticsStaffSearchPending || analyticsLoading" class="tf-search-overlay"><span class="tf-search-loader"/> Searching staff...</div>
-              <div class="tf-analytics-staff-table-wrap relative overflow-x-auto"><p v-if="!analyticsWorkloadRows.length && !analyticsLoading && !analyticsStaffSearchPending" class="absolute inset-0 z-10 grid place-items-center text-sm text-task-muted">No staff found.</p><table class="w-full min-w-[1120px] table-fixed text-left text-sm"><thead class="border-y border-task-line bg-slate-50/80 text-[11px] uppercase tracking-wide text-task-muted"><tr><th class="w-[285px] p-3 font-semibold"><button type="button" :class="['inline-flex items-center gap-1.5 transition hover:text-task-blue', analyticsTableOrdering.replace(/^-/, '') === 'name' ? 'text-task-blue' : '']" @click="toggleAnalyticsSort('name')">Staff <span>{{ analyticsSortMark('name') }}</span></button></th><th class="w-[170px] p-3 font-semibold"><button type="button" :class="['inline-flex items-center gap-1.5 transition hover:text-task-blue', analyticsTableOrdering.replace(/^-/, '') === 'department' ? 'text-task-blue' : '']" @click="toggleAnalyticsSort('department')">Department <span>{{ analyticsSortMark('department') }}</span></button></th><th class="w-[82px] p-3 font-semibold"><button type="button" :class="['inline-flex items-center gap-1.5 transition hover:text-task-blue', analyticsTableOrdering.replace(/^-/, '') === 'assigned' ? 'text-task-blue' : '']" @click="toggleAnalyticsSort('assigned')">Assigned <span>{{ analyticsSortMark('assigned') }}</span></button></th><th class="w-[88px] p-3 font-semibold"><button type="button" :class="['inline-flex items-center gap-1.5 transition hover:text-task-blue', analyticsTableOrdering.replace(/^-/, '') === 'completed' ? 'text-task-blue' : '']" @click="toggleAnalyticsSort('completed')">Completed <span>{{ analyticsSortMark('completed') }}</span></button></th><th class="w-[90px] p-3 font-semibold"><button type="button" :class="['inline-flex items-center gap-1.5 transition hover:text-task-blue', analyticsTableOrdering.replace(/^-/, '') === 'in_progress' ? 'text-task-blue' : '']" @click="toggleAnalyticsSort('in_progress')">In Progress <span>{{ analyticsSortMark('in_progress') }}</span></button></th><th class="w-[76px] p-3 font-semibold"><button type="button" :class="['inline-flex items-center gap-1.5 transition hover:text-task-blue', analyticsTableOrdering.replace(/^-/, '') === 'overdue' ? 'text-task-blue' : '']" @click="toggleAnalyticsSort('overdue')">Overdue <span>{{ analyticsSortMark('overdue') }}</span></button></th><th class="w-[72px] p-3 font-semibold"><button type="button" :class="['inline-flex items-center gap-1.5 transition hover:text-task-blue', analyticsTableOrdering.replace(/^-/, '') === 'on_time' ? 'text-task-blue' : '']" @click="toggleAnalyticsSort('on_time')">On-time <span>{{ analyticsSortMark('on_time') }}</span></button></th><th class="w-[82px] p-3 font-semibold"><button type="button" :class="['inline-flex items-center gap-1.5 transition hover:text-task-blue', analyticsTableOrdering.replace(/^-/, '') === 'avg_time' ? 'text-task-blue' : '']" @click="toggleAnalyticsSort('avg_time')">Avg. Time <span>{{ analyticsSortMark('avg_time') }}</span></button></th><th class="w-[205px] p-3 font-semibold"><button type="button" :class="['inline-flex items-center gap-1.5 transition hover:text-task-blue', analyticsTableOrdering.replace(/^-/, '') === 'performance' ? 'text-task-blue' : '']" @click="toggleAnalyticsSort('performance')">Performance <span>{{ analyticsSortMark('performance') }}</span></button></th><th class="w-[58px] p-3 text-right font-semibold">Actions</th></tr></thead><tbody class="divide-y divide-task-line"><tr v-for="(row, index) in analyticsWorkloadRows" :key="row.name" class="transition hover:bg-task-blueSoft/40"><td class="max-w-[285px] p-3"><div class="flex min-w-0 items-center gap-3"><span :class="['relative grid h-10 w-10 shrink-0 place-items-center overflow-hidden rounded-full text-xs font-bold', index % 4 === 0 ? 'bg-task-blueSoft text-task-blue' : index % 4 === 1 ? 'bg-[#F0E9FF] text-[#8057D5]' : index % 4 === 2 ? 'bg-task-warningSoft text-task-warning' : 'bg-task-successSoft text-task-success']"><span>{{ initials(row.name) }}</span><img v-if="row.avatar" :src="row.avatar" :alt="row.name + ' avatar'" class="absolute inset-0 h-full w-full object-cover" @error="($event.currentTarget as HTMLImageElement).remove()" /></span><div class="min-w-0 flex-1"><p class="truncate font-bold text-task-ink"><template v-for="(part, partIndex) in [highlightedSearchText(row.name, analyticsStaffSearch || analyticsGlobalSearch)]" :key="partIndex">{{ part.before }}<mark v-if="part.match" class="tf-search-highlight">{{ part.match }}</mark>{{ part.after }}</template></p><p class="tf-staff-role-clamp text-xs text-task-muted" :title="row.role"><template v-for="(part, partIndex) in [highlightedSearchText(row.role, analyticsStaffSearch || analyticsGlobalSearch)]" :key="partIndex">{{ part.before }}<mark v-if="part.match" class="tf-search-highlight">{{ part.match }}</mark>{{ part.after }}</template></p></div></div></td><td class="p-3"><span class="inline-flex min-h-7 w-max max-w-full items-center whitespace-normal break-words rounded-[12px] bg-task-blueSoft px-2.5 py-1 text-left text-xs font-semibold leading-4 text-task-blue" :title="row.department"><template v-for="(part, partIndex) in [highlightedSearchText(row.department, analyticsStaffSearch || analyticsGlobalSearch)]" :key="partIndex">{{ part.before }}<mark v-if="part.match" class="tf-search-highlight">{{ part.match }}</mark>{{ part.after }}</template></span></td><td class="p-3">{{ row.assigned }}</td><td class="p-3 text-task-success">{{ row.completed }}</td><td class="p-3 text-task-blue">{{ row.active }}</td><td :class="['p-3', row.overdue ? 'font-bold text-task-danger' : 'text-task-success']">{{ row.overdue }}</td><td class="p-3 font-semibold">{{ row.onTime }}%</td><td class="p-3 text-task-muted">{{ row.avgCompletionDays }} days</td><td class="p-3"><div class="min-w-[150px]"><div class="flex items-center justify-between gap-3"><b class="text-xs text-task-ink">{{ row.performanceScore == null ? '—' : `${row.performanceScore}%` }}</b><span :class="['tf-performance-badge', analyticsPerformanceLevelClass(analyticsRowPerformanceLevel(row))]">{{ analyticsPerformanceLevelLabel(analyticsRowPerformanceLevel(row)) }}</span></div><div class="mt-1.5 h-1.5 w-full overflow-hidden rounded-full bg-slate-200"><div :class="['h-full rounded-full', analyticsPerformanceBarClass(analyticsRowPerformanceLevel(row))]" :style="{ width: `${row.performanceScore ?? 0}%` }"/></div></div></td><td class="p-3 text-right"><button type="button" class="tf-icon-button rounded-full"><svg viewBox="0 0 24 24" class="h-4 w-4" fill="none" stroke="currentColor"><path :d="iconPath('dots')"/></svg></button></td></tr></tbody></table></div>
+              <div class="tf-analytics-staff-table-wrap relative overflow-x-auto"><p v-if="!analyticsWorkloadRows.length && !analyticsLoading && !analyticsStaffSearchPending" class="absolute inset-0 z-10 grid place-items-center text-sm text-task-muted">No staff found.</p><table class="w-full min-w-[1200px] table-fixed text-left text-sm"><thead class="border-y border-task-line bg-slate-50/80 text-[11px] uppercase tracking-wide text-task-muted"><tr><th class="w-[285px] p-3 font-semibold"><button type="button" :class="['inline-flex items-center gap-1.5 transition hover:text-task-blue', analyticsTableOrdering.replace(/^-/, '') === 'name' ? 'text-task-blue' : '']" @click="toggleAnalyticsSort('name')">Staff <span>{{ analyticsSortMark('name') }}</span></button></th><th class="w-[170px] p-3 font-semibold"><button type="button" :class="['inline-flex items-center gap-1.5 transition hover:text-task-blue', analyticsTableOrdering.replace(/^-/, '') === 'department' ? 'text-task-blue' : '']" @click="toggleAnalyticsSort('department')">Department <span>{{ analyticsSortMark('department') }}</span></button></th><th class="w-[82px] p-3 font-semibold"><button type="button" :class="['inline-flex items-center gap-1.5 transition hover:text-task-blue', analyticsTableOrdering.replace(/^-/, '') === 'assigned' ? 'text-task-blue' : '']" @click="toggleAnalyticsSort('assigned')">Assigned <span>{{ analyticsSortMark('assigned') }}</span></button></th><th class="w-[88px] p-3 font-semibold"><button type="button" :class="['inline-flex items-center gap-1.5 transition hover:text-task-blue', analyticsTableOrdering.replace(/^-/, '') === 'completed' ? 'text-task-blue' : '']" @click="toggleAnalyticsSort('completed')">Completed <span>{{ analyticsSortMark('completed') }}</span></button></th><th class="w-[90px] p-3 font-semibold"><button type="button" :class="['inline-flex items-center gap-1.5 transition hover:text-task-blue', analyticsTableOrdering.replace(/^-/, '') === 'in_progress' ? 'text-task-blue' : '']" @click="toggleAnalyticsSort('in_progress')">In Progress <span>{{ analyticsSortMark('in_progress') }}</span></button></th><th class="w-[78px] p-3 font-semibold"><button type="button" :class="['inline-flex items-center gap-1.5 transition hover:text-task-blue', analyticsTableOrdering.replace(/^-/, '') === 'on_hold' ? 'text-task-blue' : '']" @click="toggleAnalyticsSort('on_hold')">On Hold <span>{{ analyticsSortMark('on_hold') }}</span></button></th><th class="w-[76px] p-3 font-semibold"><button type="button" :class="['inline-flex items-center gap-1.5 transition hover:text-task-blue', analyticsTableOrdering.replace(/^-/, '') === 'overdue' ? 'text-task-blue' : '']" @click="toggleAnalyticsSort('overdue')">Overdue <span>{{ analyticsSortMark('overdue') }}</span></button></th><th class="w-[72px] p-3 font-semibold"><button type="button" :class="['inline-flex items-center gap-1.5 transition hover:text-task-blue', analyticsTableOrdering.replace(/^-/, '') === 'on_time' ? 'text-task-blue' : '']" @click="toggleAnalyticsSort('on_time')">On-time <span>{{ analyticsSortMark('on_time') }}</span></button></th><th class="w-[82px] p-3 font-semibold"><button type="button" :class="['inline-flex items-center gap-1.5 transition hover:text-task-blue', analyticsTableOrdering.replace(/^-/, '') === 'avg_time' ? 'text-task-blue' : '']" @click="toggleAnalyticsSort('avg_time')">Avg. Time <span>{{ analyticsSortMark('avg_time') }}</span></button></th><th class="w-[205px] p-3 font-semibold"><button type="button" :class="['inline-flex items-center gap-1.5 transition hover:text-task-blue', analyticsTableOrdering.replace(/^-/, '') === 'performance' ? 'text-task-blue' : '']" @click="toggleAnalyticsSort('performance')">Performance <span>{{ analyticsSortMark('performance') }}</span></button></th><th class="w-[58px] p-3 text-right font-semibold">Actions</th></tr></thead><tbody class="divide-y divide-task-line"><tr v-for="(row, index) in analyticsWorkloadRows" :key="row.name" class="transition hover:bg-task-blueSoft/40"><td class="max-w-[285px] p-3"><div class="flex min-w-0 items-center gap-3"><span :class="['relative grid h-10 w-10 shrink-0 place-items-center overflow-hidden rounded-full text-xs font-bold', index % 4 === 0 ? 'bg-task-blueSoft text-task-blue' : index % 4 === 1 ? 'bg-[#F0E9FF] text-[#8057D5]' : index % 4 === 2 ? 'bg-task-warningSoft text-task-warning' : 'bg-task-successSoft text-task-success']"><span>{{ initials(row.name) }}</span><img v-if="row.avatar" :src="row.avatar" :alt="row.name + ' avatar'" class="absolute inset-0 h-full w-full object-cover" @error="($event.currentTarget as HTMLImageElement).remove()" /></span><div class="min-w-0 flex-1"><p class="truncate font-bold text-task-ink"><template v-for="(part, partIndex) in [highlightedSearchText(row.name, analyticsStaffSearch || analyticsGlobalSearch)]" :key="partIndex">{{ part.before }}<mark v-if="part.match" class="tf-search-highlight">{{ part.match }}</mark>{{ part.after }}</template></p><p class="tf-staff-role-clamp text-xs text-task-muted" :title="row.role"><template v-for="(part, partIndex) in [highlightedSearchText(row.role, analyticsStaffSearch || analyticsGlobalSearch)]" :key="partIndex">{{ part.before }}<mark v-if="part.match" class="tf-search-highlight">{{ part.match }}</mark>{{ part.after }}</template></p></div></div></td><td class="p-3"><span class="inline-flex min-h-7 w-max max-w-full items-center whitespace-normal break-words rounded-[12px] bg-task-blueSoft px-2.5 py-1 text-left text-xs font-semibold leading-4 text-task-blue" :title="row.department"><template v-for="(part, partIndex) in [highlightedSearchText(row.department, analyticsStaffSearch || analyticsGlobalSearch)]" :key="partIndex">{{ part.before }}<mark v-if="part.match" class="tf-search-highlight">{{ part.match }}</mark>{{ part.after }}</template></span></td><td class="p-3">{{ row.assigned }}</td><td class="p-3 text-task-success">{{ row.completed }}</td><td class="p-3 text-task-blue">{{ row.active }}</td><td class="p-3 font-semibold text-task-warning">{{ row.onHold }}</td><td :class="['p-3', row.overdue ? 'font-bold text-task-danger' : 'text-task-success']">{{ row.overdue }}</td><td class="p-3 font-semibold">{{ row.onTime }}%</td><td class="p-3 text-task-muted">{{ row.avgCompletionDays }} days</td><td class="p-3"><div class="min-w-[150px]"><div class="flex items-center justify-between gap-3"><b class="text-xs text-task-ink">{{ row.performanceScore == null ? '—' : `${row.performanceScore}%` }}</b><span :class="['tf-performance-badge', analyticsPerformanceLevelClass(analyticsRowPerformanceLevel(row))]">{{ analyticsPerformanceLevelLabel(analyticsRowPerformanceLevel(row)) }}</span></div><div class="mt-1.5 h-1.5 w-full overflow-hidden rounded-full bg-slate-200"><div :class="['h-full rounded-full', analyticsPerformanceBarClass(analyticsRowPerformanceLevel(row))]" :style="{ width: `${row.performanceScore ?? 0}%` }"/></div></div></td><td class="p-3 text-right"><button type="button" class="tf-icon-button rounded-full"><svg viewBox="0 0 24 24" class="h-4 w-4" fill="none" stroke="currentColor"><path :d="iconPath('dots')"/></svg></button></td></tr></tbody></table></div>
               <div :class="['tf-analytics-pagination', !analyticsStaffTotal ? 'invisible' : '']"><span>Showing {{ (analyticsPage - 1) * analyticsPageSize + 1 }} to {{ Math.min(analyticsPage * analyticsPageSize, analyticsStaffTotal) }} of {{ analyticsStaffTotal }} staff members</span><div class="tf-analytics-pagination-controls"><div class="flex gap-2"><button type="button" class="tf-icon-button" :disabled="analyticsPage <= 1" @click="analyticsPage--">‹</button><button v-for="page in analyticsPageCount" :key="page" type="button" :class="[analyticsPage === page ? 'tf-primary' : 'tf-icon-button', 'h-9 w-9 p-0']" @click="analyticsPage = page">{{ page }}</button><button type="button" class="tf-icon-button" :disabled="analyticsPage >= analyticsPageCount" @click="analyticsPage++">›</button></div><div class="tf-dropdown tf-page-size-dropdown"><button type="button" class="tf-page-size-control" aria-label="Rows per page" @click="openDropdown = openDropdown === 'analyticsPageSize' ? null : 'analyticsPageSize'"><span>{{ analyticsPageSize }} per page</span><svg viewBox="0 0 20 20" :class="['h-4 w-4 transition-transform', openDropdown === 'analyticsPageSize' ? 'rotate-180' : '']" fill="none" stroke="currentColor" stroke-width="2"><path d="m5 7.5 5 5 5-5" /></svg></button><div v-if="openDropdown === 'analyticsPageSize'" class="tf-dropdown-menu bottom-[calc(100%+7px)] top-auto min-w-full"><button v-for="size in [8, 16, 24]" :key="size" type="button" class="tf-dropdown-option" @click="analyticsPageSize = size; analyticsPage = 1; openDropdown = null"><span>{{ size }} per page</span><span v-if="analyticsPageSize === size">✓</span></button></div></div></div></div>
             </section>
             <section class="tf-panel min-w-0 p-5">
@@ -4602,6 +4608,13 @@ const iconPath = (name: string) => {
                   </button>
                 </div>
               </div>
+            </label>
+            <label class="mt-4 block text-sm font-semibold">
+              Effort Score
+              <select v-model.number="form.effortScore" class="tf-input mt-2 h-12 w-full" :disabled="taskModalMode === 'view'">
+                <option v-for="option in taskEffortOptions" :key="option.value" :value="option.value">{{ option.label }}</option>
+              </select>
+              <span class="mt-1.5 block text-xs font-normal text-task-muted">Estimated effort required to complete this task.</span>
             </label>
             <div class="mt-4 grid gap-4 md:grid-cols-2">
               <label class="text-sm font-semibold">
