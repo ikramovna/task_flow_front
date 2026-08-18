@@ -1,13 +1,22 @@
 <script setup lang="ts">
-const props = withDefaults(defineProps<{ dark?: boolean }>(), { dark: false })
+const props = withDefaults(defineProps<{ dark?: boolean; muslimaMusic?: boolean }>(), { dark: false, muslimaMusic: false })
 
-const stations = [
+const defaultStations = [
   { name: 'Lo-Fi Focus', description: 'YouTube · focus beats', color: '#3b82f6', videoId: 'sjkrrmBnpGE' },
   { name: 'Deep Focus', description: 'YouTube · deep concentration', color: '#8b5cf6', videoId: 'EOAPMhaCtuw' },
   { name: 'Coffee Jazz', description: 'YouTube · coffee shop jazz', color: '#f59e0b', videoId: 'X4VbdwhkE10' },
   { name: 'Ambient', description: 'YouTube · ambient soundscape', color: '#14b8a6', videoId: '_bLX5WfDQfM' },
   { name: 'Space Focus', description: 'YouTube · space ambience', color: '#ec4899', videoId: 'V_HmhifhbNo' }
 ]
+const muslimaStations = [
+  { name: 'Zulayho Eshqobilova — Gule Gule', description: 'YouTube · Muslima private music', color: '#06b6d4', videoId: 'f_69P1yb9e8' },
+  { name: 'Lamis Kan — Mesaytara', description: 'YouTube · Muslima private music', color: '#8b5cf6', videoId: '9A4_GnALZd4' },
+  { name: 'Sherine — El Watar El Hassas', description: 'YouTube · Muslima private music', color: '#ec4899', videoId: 'KZYqugtbcG0' },
+  { name: "Ahmed Saad — Keda La'a", description: 'YouTube · Muslima private music', color: '#f97316', videoId: 'Y0mrvICGgBc' },
+  { name: 'Haifa Wahbe — Fakerne', description: 'YouTube · Muslima private music', color: '#22c55e', videoId: 'Ey_gCiBM7kU' },
+  { name: "Ahmed Batshan — Ma'aya Toul El Leil", description: 'YouTube · Muslima private music', color: '#eab308', videoId: 'rITshSYF97Y' }
+]
+const stations = computed(() => props.muslimaMusic ? [...defaultStations, ...muslimaStations] : defaultStations)
 
 const trigger = ref<HTMLElement | null>(null)
 const root = ref<HTMLElement | null>(null)
@@ -20,14 +29,14 @@ const isLoading = ref(false)
 const volume = ref(42)
 const lastAudibleVolume = ref(42)
 const elapsedSeconds = ref(0)
+const durationSeconds = ref(0)
 const errorMessage = ref('')
 const panelStyle = ref<Record<string, string>>({})
-const selectedStation = computed(() => stations[selectedIndex.value]!)
-const SESSION_DURATION_SECONDS = 30 * 60
+const selectedStation = computed(() => stations.value[selectedIndex.value] || stations.value[0]!)
 const formatTime = (seconds: number) => `${String(Math.floor(seconds / 60)).padStart(2, '0')}:${String(seconds % 60).padStart(2, '0')}`
 const formattedElapsed = computed(() => formatTime(elapsedSeconds.value))
-const formattedDuration = formatTime(SESSION_DURATION_SECONDS)
-const sessionProgress = computed(() => ((elapsedSeconds.value % SESSION_DURATION_SECONDS) / SESSION_DURATION_SECONDS) * 100)
+const formattedDuration = computed(() => formatTime(Math.ceil(durationSeconds.value)))
+const sessionProgress = computed(() => durationSeconds.value > 0 ? Math.min(100, (elapsedSeconds.value / durationSeconds.value) * 100) : 0)
 const youtubeEmbedUrl = computed(() => {
   const id = selectedStation.value.videoId
   return `https://www.youtube.com/embed/${id}?enablejsapi=1&playsinline=1&rel=0&loop=1&playlist=${id}`
@@ -37,11 +46,15 @@ let elapsedTimer: ReturnType<typeof setInterval> | null = null
 const sendYouTubeCommand = (func: string, args: Array<string | number> = []) => {
   youtubePlayer.value?.contentWindow?.postMessage(JSON.stringify({ event: 'command', func, args }), '*')
 }
+const startYouTubeListening = () => {
+  youtubePlayer.value?.contentWindow?.postMessage(JSON.stringify({ event: 'listening', id: 'taskflow-focus-radio' }), '*')
+}
 const startElapsedTimer = () => {
   if (elapsedTimer) clearInterval(elapsedTimer)
   elapsedTimer = setInterval(() => {
-    elapsedSeconds.value += 1
-  }, 1000)
+    sendYouTubeCommand('getCurrentTime')
+    sendYouTubeCommand('getDuration')
+  }, 500)
 }
 const stopElapsedTimer = () => {
   if (elapsedTimer) clearInterval(elapsedTimer)
@@ -99,10 +112,24 @@ const closeOnOutsideClick = (event: PointerEvent) => {
   if (isOpen.value && !root.value?.contains(target) && !panel.value?.contains(target)) closePanel()
 }
 
+const handleYouTubeMessage = (event: MessageEvent) => {
+  if (!/^(?:https?:\/\/)?(?:www\.)?youtube(?:-nocookie)?\.com$/i.test(event.origin)) return
+  let payload: any
+  try {
+    payload = typeof event.data === 'string' ? JSON.parse(event.data) : event.data
+  } catch {
+    return
+  }
+  const info = payload?.info
+  if (!info || typeof info !== 'object') return
+  if (Number.isFinite(Number(info.currentTime))) elapsedSeconds.value = Math.max(0, Math.floor(Number(info.currentTime)))
+  if (Number.isFinite(Number(info.duration)) && Number(info.duration) > 0) durationSeconds.value = Number(info.duration)
+}
+
 onMounted(() => {
   const savedIndex = Number(localStorage.getItem('taskflow-radio-station'))
   const savedVolume = Number(localStorage.getItem('taskflow-radio-volume'))
-  if (Number.isInteger(savedIndex) && savedIndex >= 0 && savedIndex < stations.length) selectedIndex.value = savedIndex
+  if (Number.isInteger(savedIndex) && savedIndex >= 0 && savedIndex < stations.value.length) selectedIndex.value = savedIndex
   if (Number.isFinite(savedVolume) && savedVolume >= 0 && savedVolume <= 100) {
     volume.value = savedVolume
     if (savedVolume > 0) lastAudibleVolume.value = savedVolume
@@ -110,6 +137,7 @@ onMounted(() => {
   window.addEventListener('resize', updatePanelPosition)
   window.addEventListener('scroll', updatePanelPosition, true)
   window.addEventListener('taskflow:overlay-open', closeOnOtherOverlay)
+  window.addEventListener('message', handleYouTubeMessage)
   document.addEventListener('pointerdown', closeOnOutsideClick)
 })
 
@@ -118,6 +146,7 @@ onBeforeUnmount(() => {
   window.removeEventListener('resize', updatePanelPosition)
   window.removeEventListener('scroll', updatePanelPosition, true)
   window.removeEventListener('taskflow:overlay-open', closeOnOtherOverlay)
+  window.removeEventListener('message', handleYouTubeMessage)
   document.removeEventListener('pointerdown', closeOnOutsideClick)
 })
 
@@ -125,6 +154,7 @@ const startPlayback = async () => {
   errorMessage.value = ''
   isLoading.value = true
   try {
+    startYouTubeListening()
     sendYouTubeCommand('setVolume', [volume.value])
     sendYouTubeCommand('playVideo')
     isPlaying.value = true
@@ -150,6 +180,7 @@ const selectStation = async (index: number) => {
   const wasPlaying = isPlaying.value
   selectedIndex.value = index
   elapsedSeconds.value = 0
+  durationSeconds.value = 0
   localStorage.setItem('taskflow-radio-station', String(index))
   errorMessage.value = ''
   if (wasPlaying) {
@@ -159,15 +190,26 @@ const selectStation = async (index: number) => {
 }
 
 const handleYouTubeLoad = () => {
+  startYouTubeListening()
   sendYouTubeCommand('setVolume', [volume.value])
+  sendYouTubeCommand('getCurrentTime')
+  sendYouTubeCommand('getDuration')
   if (isPlaying.value) sendYouTubeCommand('playVideo')
   isLoading.value = false
 }
 
 const changeStation = (direction: number) => {
-  const nextIndex = (selectedIndex.value + direction + stations.length) % stations.length
+  const nextIndex = (selectedIndex.value + direction + stations.value.length) % stations.value.length
   void selectStation(nextIndex)
 }
+
+watch(() => props.muslimaMusic, () => {
+  if (selectedIndex.value >= stations.value.length) {
+    stopPlayback()
+    selectedIndex.value = 0
+    elapsedSeconds.value = 0
+  }
+})
 
 const updateVolume = () => {
   if (volume.value > 0) lastAudibleVolume.value = volume.value

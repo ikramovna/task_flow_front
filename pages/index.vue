@@ -966,6 +966,7 @@ const sidebarGroups = computed(() => [
 const comingSoonPages = new Set<PageKey>(['projects', 'reports'])
 const isComingSoonPage = (key: PageKey) => comingSoonPages.has(key)
 const profileName = computed(() => `${savedProfile.firstName} ${savedProfile.lastName}`.trim())
+const isMuslimaRadioUser = computed(() => profileName.value.trim().replace(/\s+/g, ' ').toLocaleLowerCase() === 'muslima zokirjonova')
 const profileInitials = computed(() => profileName.value ? initials(profileName.value) : '')
 const dashboardTitle = computed(() => profileName.value ? `Welcome back, ${savedProfile.firstName || profileName.value}!` : 'Dashboard')
 const tashkentNowMs = useState<number>('dashboard-tashkent-clock', () => Date.now())
@@ -3725,7 +3726,7 @@ const iconPath = (name: string) => {
 
         <ClientOnly>
           <div :class="['tf-persistent-focus-radio', activePage === 'analytics' ? 'is-analytics' : '']">
-            <FocusRadio :dark="isDarkTheme" />
+            <FocusRadio :dark="isDarkTheme" :muslima-music="isMuslimaRadioUser" />
           </div>
         </ClientOnly>
 
