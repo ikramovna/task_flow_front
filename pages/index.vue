@@ -1342,8 +1342,8 @@ const formatAnalyticsCardValue = (card: AnalyticsCard) => {
   switch (card.unit) {
     case 'percent': return `${card.value}%`
     case 'days': return `${card.value} days`
-    case 'tasks_per_employee': return `${card.value} tasks/person`
-    case 'effort_points_per_employee': return `${card.value} points/person`
+    case 'tasks_per_employee': return String(card.value)
+    case 'effort_points_per_employee': return String(card.value)
     default: return String(card.value)
   }
 }
