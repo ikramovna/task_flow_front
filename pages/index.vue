@@ -1341,11 +1341,10 @@ const analyticsKpiCards = computed(() => {
   ]
 })
 const analyticsDepartmentPerformanceMax = computed(() => {
-  const highestScore = Math.max(0, ...analyticsDepartmentPerformance.value.map(item => item.value))
-  return Math.max(100, Math.ceil(highestScore / 20) * 20)
+  const highestTaskTotal = Math.max(0, ...analyticsDepartmentPerformance.value.map(item => item.completed + item.inProgress + item.overdue))
+  return Math.max(10, Math.ceil(highestTaskTotal / 10) * 10)
 })
-const analyticsDepartmentPerformanceColors = ['#2689ef', '#8b5cf6', '#49d28e', '#f59e0b', '#ec4899', '#06b6d4']
-const analyticsDepartmentPerformanceColor = (index: number) => analyticsDepartmentPerformanceColors[index % analyticsDepartmentPerformanceColors.length]
+const analyticsDepartmentStackTotal = (item: AnalyticsDepartmentPerformanceChartItem) => item.completed + item.inProgress + item.overdue
 const productivityTrendData = computed(() =>
   heatmap.value.map((value, index) => ({
     day: ['Sat', 'Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri'][index % 7],
@@ -4137,14 +4136,14 @@ const iconPath = (name: string) => {
 
             <section class="tf-panel p-5">
               <header class="flex flex-wrap items-start justify-between gap-3">
-                <div><h2 class="text-base font-extrabold text-task-ink">Department Performance</h2><p class="mt-1 text-xs text-task-muted">Backend-reported completion rate by department</p></div>
-                <div class="flex flex-wrap justify-end gap-3 text-[10px] text-task-muted"><span v-for="(item, index) in analyticsDepartmentPerformance" :key="`legend-${item.key}`" class="flex items-center gap-1.5"><i class="h-2 w-2 rounded-full" :style="{ backgroundColor: analyticsDepartmentPerformanceColor(index) }"/>{{ item.label }}</span></div>
+                <div><h2 class="text-base font-extrabold text-task-ink">Department Performance</h2><p class="mt-1 text-xs text-task-muted">Task status mix and backend completion rate by department</p></div>
+                <div class="flex flex-wrap justify-end gap-3 text-[10px] text-task-muted"><span class="flex items-center gap-1.5"><i class="h-2 w-2 rounded-full bg-[#49d28e]"/>Completed</span><span class="flex items-center gap-1.5"><i class="h-2 w-2 rounded-full bg-[#2689ef]"/>In Progress</span><span class="flex items-center gap-1.5"><i class="h-2 w-2 rounded-full bg-[#ff6b57]"/>Overdue</span></div>
               </header>
               <div class="relative mt-4 h-[340px] pl-9">
-                <div class="absolute inset-y-3 left-0 flex flex-col justify-between pb-7 text-[10px] text-task-muted"><span>{{ analyticsDepartmentPerformanceMax }}%</span><span>{{ Math.round(analyticsDepartmentPerformanceMax * .75) }}%</span><span>{{ Math.round(analyticsDepartmentPerformanceMax * .5) }}%</span><span>{{ Math.round(analyticsDepartmentPerformanceMax * .25) }}%</span><span>0%</span></div>
+                <div class="absolute inset-y-3 left-0 flex flex-col justify-between pb-7 text-[10px] text-task-muted"><span>{{ analyticsDepartmentPerformanceMax }}</span><span>{{ Math.round(analyticsDepartmentPerformanceMax * .75) }}</span><span>{{ Math.round(analyticsDepartmentPerformanceMax * .5) }}</span><span>{{ Math.round(analyticsDepartmentPerformanceMax * .25) }}</span><span>0</span></div>
                 <div class="absolute bottom-7 left-9 right-0 top-3 flex items-end justify-around gap-3 border-b border-[#203650] bg-[repeating-linear-gradient(to_bottom,transparent_0,transparent_calc(25%-1px),#203650_calc(25%-1px),#203650_25%)] px-3">
-                  <div v-for="(item, index) in analyticsDepartmentPerformance" :key="item.key" class="group relative flex h-full min-w-0 flex-1 items-end justify-center">
-                    <div class="relative w-full max-w-12 rounded-t-sm transition-opacity group-hover:opacity-80" :style="{ height: `${Math.max(5, (item.value / analyticsDepartmentPerformanceMax) * 100)}%`, backgroundColor: analyticsDepartmentPerformanceColor(index) }"><span class="absolute -top-5 left-1/2 -translate-x-1/2 text-[10px] font-bold text-task-ink">{{ item.value }}%</span></div>
+                  <div v-for="item in analyticsDepartmentPerformance" :key="item.key" class="group relative flex h-full min-w-0 flex-1 items-end justify-center">
+                    <div class="relative w-full max-w-12" :style="{ height: `${Math.max(5, (analyticsDepartmentStackTotal(item) / analyticsDepartmentPerformanceMax) * 100)}%` }"><span class="absolute -top-5 left-1/2 -translate-x-1/2 text-[10px] font-bold text-task-ink">{{ item.value }}%</span><div class="absolute inset-0 flex flex-col-reverse overflow-hidden rounded-t-sm shadow-[0_0_0_1px_rgba(255,255,255,.04)] transition-opacity group-hover:opacity-80"><i class="min-h-0 bg-[#49d28e]" :style="{ flexGrow: item.completed, flexBasis: 0 }"/><i class="min-h-0 bg-[#2689ef]" :style="{ flexGrow: item.inProgress, flexBasis: 0 }"/><i class="min-h-0 bg-[#ff6b57]" :style="{ flexGrow: item.overdue, flexBasis: 0 }"/></div></div>
                     <div class="pointer-events-none absolute bottom-1/2 left-1/2 z-20 hidden w-44 -translate-x-1/2 rounded-lg border border-[#29425e] bg-[#071426] p-3 text-[10px] shadow-2xl group-hover:block"><b class="block text-xs text-white">{{ item.label }}</b><p class="mt-2 text-white">Completion rate: {{ item.value }}%</p><p class="mt-1 text-slate-300">Completed {{ item.completed }} · In progress {{ item.inProgress }} · Overdue {{ item.overdue }} · Total {{ item.total }}</p></div>
                   </div>
                   <p v-if="!analyticsDepartmentPerformance.length" class="m-auto text-xs text-task-muted">No department performance data.</p>
