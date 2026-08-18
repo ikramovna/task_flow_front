@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import type { Ref } from 'vue'
+import type { AnalyticsSummary } from '~/composables/useTaskFlowApi'
 import GreetingCard from '~/components/GreetingCard.vue'
 import { greetingConfig } from '~/constants/greetings'
 
@@ -88,11 +89,12 @@ const analyticsFilters = reactive({
   granularity: 'day'
 })
 const analyticsLoading = ref(false)
-const analyticsExporting = ref(false)
 const analyticsFilterError = ref('')
 const analyticsPerformanceLevel = ref('')
 const analyticsGlobalSearch = ref('')
+const analyticsStaffSearchInput = ref('')
 const analyticsStaffSearch = ref('')
+const analyticsStaffSearchPending = ref(false)
 type AnalyticsStaffRow = {
   id: string
   name: string
@@ -111,6 +113,60 @@ type AnalyticsStaffRow = {
 const analyticsStaffRows = ref<AnalyticsStaffRow[]>([])
 const analyticsStaffTotal = ref(0)
 const analyticsStaffTotalPages = ref(1)
+const analyticsSummary = ref<AnalyticsSummary | null>(null)
+type AnalyticsDepartmentPerformanceChartItem = {
+  key: string
+  label: string
+  value: number
+  completed: number
+  inProgress: number
+  overdue: number
+  total: number
+}
+const analyticsDepartmentPerformance = ref<AnalyticsDepartmentPerformanceChartItem[]>([])
+const analyticsMetricNumber = (value: unknown) => {
+  const rawValue = value && typeof value === 'object' && 'value' in value
+    ? (value as { value?: unknown }).value
+    : value
+  const numericValue = Number(rawValue)
+  return Number.isFinite(numericValue) ? numericValue : 0
+}
+const normalizeAnalyticsDepartmentPerformance = (value: unknown): AnalyticsDepartmentPerformanceChartItem[] => {
+  const payload = value as any
+  const rows = Array.isArray(payload)
+    ? payload
+    : Array.isArray(payload?.results)
+      ? payload.results
+      : payload && typeof payload === 'object'
+        ? Object.entries(payload).map(([key, item]) => item && typeof item === 'object' ? { ...(item as object), __key: key } : { __key: key, value: item })
+        : []
+
+  return rows.map((rawItem: any, index: number) => {
+    const item = rawItem && typeof rawItem === 'object' ? rawItem : { value: rawItem }
+    const department = item.department
+    const departmentDetail = department && typeof department === 'object' ? department : {}
+    const label = String(
+      item.department_name
+      ?? departmentDetail.name
+      ?? departmentDetail.title
+      ?? (typeof department === 'string' && department.trim() ? department : undefined)
+      ?? item.name
+      ?? item.label
+      ?? item.__key
+      ?? `Department ${index + 1}`
+    ).trim()
+    const score = item.completion_rate
+    return {
+      key: String(item.department_id ?? departmentDetail.id ?? item.__key ?? label ?? index),
+      label: label || `Department ${index + 1}`,
+      value: Math.max(0, analyticsMetricNumber(score)),
+      completed: analyticsMetricNumber(item.completed),
+      inProgress: analyticsMetricNumber(item.in_progress),
+      overdue: analyticsMetricNumber(item.overdue),
+      total: analyticsMetricNumber(item.total)
+    }
+  })
+}
 const absoluteMediaUrl = (value: unknown) => {
   const mediaPath = String(value || '').trim()
   if (!mediaPath || /^(?:https?:)?\/\//i.test(mediaPath) || mediaPath.startsWith('data:') || mediaPath.startsWith('blob:')) return mediaPath
@@ -155,7 +211,9 @@ const resetAnalyticsFilters = () => {
   Object.assign(analyticsFilters, { department: '', employee: '', priority: '', status: '', days: '30', start_date: '', end_date: '', granularity: 'day' })
   analyticsPerformanceLevel.value = ''
   analyticsGlobalSearch.value = ''
+  analyticsStaffSearchInput.value = ''
   analyticsStaffSearch.value = ''
+  analyticsStaffSearchPending.value = false
   analyticsOrdering.value = '-performance'
   analyticsPage.value = 1
   analyticsPageSize.value = 8
@@ -175,9 +233,6 @@ const loadFilteredAnalytics = async () => {
   const sequence = ++analyticsRequestSequence
   analyticsLoading.value = true
   analyticsFilterError.value = ''
-  analyticsStaffRows.value = []
-  analyticsStaffTotal.value = 0
-  analyticsStaffTotalPages.value = 1
   try {
     const query = {
       ...Object.fromEntries(Object.entries(analyticsFilters).filter(([, value]) => value)),
@@ -190,8 +245,17 @@ const loadFilteredAnalytics = async () => {
     } as any
     if (query.start_date || query.end_date) delete query.days
     if (query.days) delete query.granularity
-    const analytics: any = await taskFlowApi.getAnalytics(query)
+    const analytics = await taskFlowApi.getAnalytics(query)
     if (sequence !== analyticsRequestSequence) return
+    const summary = analytics.summary
+    analyticsSummary.value = summary || null
+    const analyticsPayload = analytics as any
+    const departmentPerformancePayload = analyticsPayload.department_performance
+      ?? analyticsPayload.charts?.department_performance
+      ?? analyticsPayload.data?.department_performance
+      ?? analyticsPayload.results?.department_performance
+      ?? analyticsPayload.analytics?.department_performance
+    analyticsDepartmentPerformance.value = normalizeAnalyticsDepartmentPerformance(departmentPerformancePayload)
     const staffPerformance = analytics.staff_performance || {}
     const staffResults = Array.isArray(staffPerformance.results) ? staffPerformance.results : []
     analyticsStaffRows.value = staffResults.map((item: any) => {
@@ -215,63 +279,46 @@ const loadFilteredAnalytics = async () => {
     })
     analyticsStaffTotal.value = Number(staffPerformance.count ?? analyticsStaffRows.value.length)
     analyticsStaffTotalPages.value = Math.max(1, Number(staffPerformance.total_pages ?? Math.ceil(analyticsStaffTotal.value / analyticsPageSize.value)))
-    const completionRate = Number(analytics.task_completion_rate ?? analytics.completion_rate ?? 0)
-    const overdue = Number(analytics.overdue_tasks ?? analytics.overdue_count ?? 0)
-    const velocity = Number(analytics.team_velocity ?? analytics.active_workload ?? 0)
-    const avgTime = Number(analytics.avg_completion_time ?? analytics.average_completion_time ?? 0)
-    const activeWorkload = Number(analytics.active_workload ?? analytics.active_tasks ?? analytics.total_active_tasks ?? velocity)
-    state.value.analyticsStats = [
-      [`${completionRate}%`, 'Task Completion Rate', 'bg-[#EAF2FC]'],
-      [`${Number(analytics.on_time_completion ?? analytics.on_time_rate ?? 0)}%`, 'On-Time Completion', 'bg-task-mint'],
-      [`${Number(analytics.overdue_rate ?? overdue)}%`, 'Overdue Rate', 'bg-task-rose'],
-      [avgTime ? `${avgTime} days` : '0 days', 'Avg. Completion Time', 'bg-task-lavender'],
-      [String(activeWorkload), 'Active Workload', 'bg-[#EAF2FC]']
-    ]
+    state.value.analyticsStats = summary ? [
+      [`${summary.task_completion_rate.value}%`, 'Performance', 'bg-[#EAF2FC]'],
+      [String(summary.active_tasks.value), 'Active', 'bg-task-mint'],
+      [String(summary.completed_tasks.value), 'Completed', 'bg-task-successSoft'],
+      [String(summary.archived_tasks.value), 'Verified & Archived', 'bg-task-lavender'],
+      [String(summary.on_hold_tasks.value), 'On Hold', 'bg-task-warningSoft'],
+      [String(summary.postponed_tasks.value), 'Postponed', 'bg-slate-100']
+    ] : []
     state.value.monthlyProgress = taskFlowApi.mapAnalyticsMonthlyProgress(analytics)
     state.value.tasksByCategory = taskFlowApi.mapAnalyticsTasksByCategory(analytics)
   } catch (error) {
     if (sequence === analyticsRequestSequence) analyticsFilterError.value = taskFlowApiErrorMessage(error, 'Analytics data could not be loaded')
   } finally {
-    if (sequence === analyticsRequestSequence) analyticsLoading.value = false
-  }
-}
-
-const exportAnalyticsReport = async () => {
-  if (!import.meta.client) return
-  if (analyticsExporting.value) return
-  if (!analyticsFilteredMembers.value.length) {
-    notifyError('There is no Staff Performance data to export')
-    return
-  }
-  analyticsExporting.value = true
-  const animationStartedAt = Date.now()
-  await nextTick()
-  await new Promise<void>(resolve => requestAnimationFrame(() => requestAnimationFrame(() => resolve())))
-  const remainingAnimationTime = Math.max(0, 900 - (Date.now() - animationStartedAt))
-  if (remainingAnimationTime) await new Promise(resolve => setTimeout(resolve, remainingAnimationTime))
-
-  analyticsExporting.value = false
-  await nextTick()
-  const previousTitle = document.title
-  try {
-    document.title = `TaskFlow Analytics ${new Date().toISOString().slice(0, 10)}`
-    document.documentElement.classList.add('tf-analytics-print-mode')
-    await new Promise<void>(resolve => requestAnimationFrame(() => requestAnimationFrame(() => resolve())))
-    window.print()
-  } finally {
-    window.setTimeout(() => {
-      document.documentElement.classList.remove('tf-analytics-print-mode')
-      document.title = previousTitle
-    }, 300)
+    if (sequence === analyticsRequestSequence) {
+      analyticsLoading.value = false
+      if (analyticsStaffSearchInput.value.trim() === analyticsStaffSearch.value.trim()) analyticsStaffSearchPending.value = false
+    }
   }
 }
 
 let analyticsFilterTimer: ReturnType<typeof setTimeout> | undefined
-watch([activePage, () => ({ ...analyticsFilters }), analyticsPerformanceLevel, analyticsGlobalSearch, analyticsStaffSearch, analyticsOrdering, analyticsPage, analyticsPageSize], () => {
+let analyticsStaffSearchTimer: ReturnType<typeof setTimeout> | undefined
+watch(analyticsStaffSearchInput, (value) => {
+  analyticsStaffSearchPending.value = true
+  clearTimeout(analyticsStaffSearchTimer)
+  analyticsStaffSearchTimer = setTimeout(() => {
+    if (analyticsStaffSearch.value === value) {
+      analyticsStaffSearchPending.value = false
+      return
+    }
+    analyticsStaffSearch.value = value
+    if (analyticsPage.value !== 1) analyticsPage.value = 1
+    else void loadFilteredAnalytics()
+  }, 300)
+})
+watch([activePage, () => ({ ...analyticsFilters }), analyticsPerformanceLevel, analyticsGlobalSearch, analyticsOrdering, analyticsPage, analyticsPageSize], () => {
   clearTimeout(analyticsFilterTimer)
   analyticsFilterTimer = setTimeout(loadFilteredAnalytics, 250)
 }, { deep: true })
-watch([() => analyticsFilters.department, () => analyticsFilters.employee, () => analyticsFilters.status, () => analyticsFilters.days, analyticsPerformanceLevel, analyticsGlobalSearch, analyticsStaffSearch, analyticsOrdering, analyticsPageSize], () => {
+watch([() => analyticsFilters.department, () => analyticsFilters.employee, () => analyticsFilters.status, () => analyticsFilters.days, analyticsPerformanceLevel, analyticsGlobalSearch, analyticsOrdering, analyticsPageSize], () => {
   if (analyticsPage.value !== 1) analyticsPage.value = 1
 })
 watch(analyticsOrdering, (value) => {
@@ -774,8 +821,14 @@ const matchesTaskAttentionFilter = (task: Array<string | number>) => {
   return !String(task[1] || '').trim() || String(task[1] || '').toLowerCase() === 'unassigned'
 }
 
+const isArchivedTaskRow = (task: Array<string | number>) => String(task[14] || '').toLowerCase() === 'true' || String(task[3] || '').toLowerCase() === 'archived'
 const filteredTasks = computed(() =>
-  tasks.value.filter((task) => includesQuery(task, taskSearch.value) && matchesTaskAttentionFilter(task) && (dropdownValues.priority === 'All Priorities' || String(task[2]) === dropdownValues.priority))
+  tasks.value.filter((task) =>
+    (taskScope.value === 'archived' || !isArchivedTaskRow(task)) &&
+    includesQuery(task, taskSearch.value) &&
+    matchesTaskAttentionFilter(task) &&
+    (dropdownValues.priority === 'All Priorities' || String(task[2]) === dropdownValues.priority)
+  )
 )
 const taskOverviewCards = computed(() => [
   { label: 'All Active Tasks', value: tasks.value.length, color: 'blue', status: 'all' },
@@ -993,13 +1046,17 @@ const tashkentDate = computed(() => new Intl.DateTimeFormat('en-GB', { timeZone:
 const tashkentTime = computed(() => new Intl.DateTimeFormat('en-US', { timeZone: 'Asia/Tashkent', hour: '2-digit', minute: '2-digit', hour12: true }).format(tashkentNow.value))
 let dashboardClockTimer: ReturnType<typeof setInterval> | null = null
 const dashboardDepartmentTotal = computed(() => dashboardDepartments.value.reduce((total, department) => total + Number(department.task_count || 0), 0))
+const dashboardDepartmentPercentage = (department: Record<string, any>) => {
+  const total = dashboardDepartmentTotal.value
+  return total > 0 ? (Number(department.task_count || 0) / total) * 100 : 0
+}
 const dashboardDepartmentColors = ['#2877ED', '#6366E8', '#18A875', '#F59E0B', '#EC4899', '#06B6D4', '#8B5CF6']
 const dashboardDepartmentColor = (index: number) => dashboardDepartmentColors[index % dashboardDepartmentColors.length]
 const dashboardDepartmentGradient = computed(() => {
   let cursor = 0
   const segments = dashboardDepartments.value.map((department, index) => {
     const start = cursor
-    cursor = Math.min(100, cursor + Number(department.percentage || 0))
+    cursor = Math.min(100, cursor + dashboardDepartmentPercentage(department))
     return `${dashboardDepartmentColor(index)} ${start}% ${cursor}%`
   })
   return segments.length ? `conic-gradient(${segments.join(', ')})` : 'conic-gradient(#E2E8F0 0 100%)'
@@ -1272,31 +1329,23 @@ const analyticsPerformanceBarClass = (level: string) => {
   return 'bg-slate-400'
 }
 const analyticsKpiCards = computed(() => {
-  const totalStaff = team.value.length
-  const averagePerformance = totalStaff ? Math.round(team.value.reduce((sum, member) => sum + Number(member[4] || 0), 0) / totalStaff) : 0
-  const completed = tasks.value.filter(task => String(task[3] || '').toLowerCase() === 'completed').length
-  const completion = tasks.value.length ? Math.round((completed / tasks.value.length) * 100) : 0
-  const overdue = tasks.value.filter(isTaskOverdue).length
+  const summary = analyticsSummary.value
+  if (!summary) return []
   return [
-    { label: 'Total Staff', value: String(totalStaff), change: '7% vs previous 30 days', positive: true },
-    { label: 'Average Performance', value: `${averagePerformance}%`, change: '6% vs previous 30 days', positive: true },
-    { label: 'Task Completion', value: `${completion}%`, change: '5% vs previous 30 days', positive: true },
-    { label: 'Overdue Tasks', value: String(overdue), change: '12% vs previous 30 days', positive: false }
+    { label: 'Performance', value: `${summary.task_completion_rate.value}%` },
+    { label: 'Active', value: String(summary.active_tasks.value) },
+    { label: 'Completed', value: String(summary.completed_tasks.value) },
+    { label: 'Verified & Archived', value: String(summary.archived_tasks.value) },
+    { label: 'On Hold', value: String(summary.on_hold_tasks.value) },
+    { label: 'Postponed', value: String(summary.postponed_tasks.value) }
   ]
 })
-const analyticsDepartmentWorkload = computed(() => {
-  const groups = new Map<string, { name: string; completed: number; inProgress: number; overdue: number }>()
-  team.value.forEach((member) => {
-    const name = departmentNameById(member[11], String(member[10] || ''))
-    const group = groups.get(name) || { name, completed: 0, inProgress: 0, overdue: 0 }
-    group.completed += Number(member[5] || 0)
-    group.inProgress += Number(member[6] || 0)
-    group.overdue += tasks.value.filter(task => isTaskOverdue(task) && String(task[1] || '') === String(member[0] || '')).length
-    groups.set(name, group)
-  })
-  return Array.from(groups.values()).sort((a, b) => (b.completed + b.inProgress + b.overdue) - (a.completed + a.inProgress + a.overdue)).slice(0, 6)
+const analyticsDepartmentPerformanceMax = computed(() => {
+  const highestScore = Math.max(0, ...analyticsDepartmentPerformance.value.map(item => item.value))
+  return Math.max(100, Math.ceil(highestScore / 20) * 20)
 })
-const analyticsWorkloadMax = computed(() => Math.max(20, ...analyticsDepartmentWorkload.value.map(item => item.completed + item.inProgress + item.overdue)))
+const analyticsDepartmentPerformanceColors = ['#2689ef', '#8b5cf6', '#49d28e', '#f59e0b', '#ec4899', '#06b6d4']
+const analyticsDepartmentPerformanceColor = (index: number) => analyticsDepartmentPerformanceColors[index % analyticsDepartmentPerformanceColors.length]
 const productivityTrendData = computed(() =>
   heatmap.value.map((value, index) => ({
     day: ['Sat', 'Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri'][index % 7],
@@ -3620,7 +3669,6 @@ const iconPath = (name: string) => {
 <template>
   <main :class="['tf-shell', isDarkTheme ? 'tf-dark' : '']">
     <LoadingPulse v-if="tikoPageLoading" overlay title="Loading data" subtitle="Tiko is preparing this page for you…" image="/images/tiko-loading-ui.png" />
-    <LoadingPulse v-else-if="analyticsExporting" overlay title="Exporting analytics" subtitle="Tiko is preparing your PDF report…" image="/images/tiko-loading-ui.png" />
     <LoadingPulse v-else-if="feedbackSending" overlay title="Sending your message" subtitle="Tiko is delivering your feedback to the team…" image="/images/tiko-message-sent.png" />
     <section v-else class="tf-window">
       <div v-if="mobileSidebarOpen" class="tf-mobile-overlay" @click="mobileSidebarOpen = false" />
@@ -3760,15 +3808,15 @@ const iconPath = (name: string) => {
                   <div v-for="(department, index) in dashboardDepartments" :key="String(department.department_id)" class="rounded-[14px] border border-task-line px-4 py-4">
                     <div class="flex min-w-0 items-center justify-between gap-3">
                       <span class="flex min-w-0 items-center gap-2"><i class="h-2.5 w-2.5 shrink-0 rounded-full" :style="{ backgroundColor: dashboardDepartmentColor(index) }" /><b class="truncate text-xs text-task-ink">{{ department.department_name }}</b></span>
-                      <span class="shrink-0 text-xs"><b class="text-task-ink">{{ department.task_count }}</b><span class="text-task-muted"> ({{ Number(department.percentage).toFixed(0) }}%)</span></span>
+                      <span class="shrink-0 text-xs"><b class="text-task-ink">{{ department.task_count }}</b><span class="text-task-muted"> ({{ dashboardDepartmentPercentage(department).toFixed(1) }}%)</span></span>
                     </div>
-                    <span class="mt-3 block h-1.5 overflow-hidden rounded-full bg-slate-200"><i class="block h-full rounded-full transition-all duration-500" :style="{ width: `${Math.min(100, Number(department.percentage))}%`, backgroundColor: dashboardDepartmentColor(index) }" /></span>
+                    <span class="mt-3 block h-1.5 overflow-hidden rounded-full bg-slate-200"><i class="block h-full rounded-full transition-all duration-500" :style="{ width: `${Math.min(100, dashboardDepartmentPercentage(department))}%`, backgroundColor: dashboardDepartmentColor(index) }" /></span>
                   </div>
                 </div>
               </div>
               <div v-else class="grid flex-1 place-items-center p-5"><p class="text-center text-sm text-task-muted">No department statistics available.</p></div>
             </section>
-            <section class="tf-panel overflow-hidden p-0"><header class="flex items-center justify-between border-b border-task-line px-5 py-4"><div><h2 class="font-bold">Recent Tasks</h2><p class="mt-1 text-xs text-task-muted">Latest activity</p></div><button type="button" class="text-xs font-bold text-task-blue" @click="setPage('tasks')">View all</button></header><div class="overflow-x-auto"><table class="w-full min-w-[760px] text-left text-sm"><thead class="bg-slate-50 text-xs text-task-muted"><tr><th class="px-5 py-3">Task</th><th class="px-4 py-3">Department</th><th class="px-4 py-3">Created by</th><th class="px-4 py-3">Created</th><th class="px-5 py-3">Status</th></tr></thead><tbody class="divide-y divide-task-line"><tr v-for="task in dashboardRecentTasks" :key="String(task.id)"><td class="px-5 py-3.5 font-semibold">{{ task.title }}</td><td class="px-4 py-3.5 text-task-muted">{{ task.department?.name || '—' }}</td><td class="px-4 py-3.5 font-medium text-task-ink">{{ dashboardTaskCreatorName(task) }}</td><td class="px-4 py-3.5 text-task-muted">{{ dashboardDateTime(task.created_at) }}</td><td class="px-5 py-3.5"><span :class="['tf-pill', badgeClass(dashboardStatus(task.status))]">{{ dashboardStatus(task.status) }}</span></td></tr></tbody></table><p v-if="!dashboardRecentTasks.length" class="py-10 text-center text-sm text-task-muted">No recent tasks.</p></div></section>
+            <section class="tf-panel flex h-full min-h-[330px] flex-col overflow-hidden p-0 xl:min-h-0"><header class="shrink-0 flex items-center justify-between border-b border-task-line px-5 py-4"><div><h2 class="font-bold">Recent Tasks</h2><p class="mt-1 text-xs text-task-muted">Latest activity</p></div><button type="button" class="text-xs font-bold text-task-blue" @click="setPage('tasks')">View all</button></header><div class="min-h-0 flex-1 overflow-auto"><table class="w-full min-w-[760px] text-left text-sm"><thead class="sticky top-0 z-10 bg-slate-50 text-xs text-task-muted"><tr><th class="px-5 py-3">Task</th><th class="px-4 py-3">Department</th><th class="px-4 py-3">Created by</th><th class="px-4 py-3">Created</th><th class="px-5 py-3">Status</th></tr></thead><tbody class="divide-y divide-task-line"><tr v-for="task in dashboardRecentTasks" :key="String(task.id)"><td class="px-5 py-3.5 font-semibold">{{ task.title }}</td><td class="px-4 py-3.5 text-task-muted">{{ task.department?.name || '—' }}</td><td class="px-4 py-3.5 font-medium text-task-ink">{{ dashboardTaskCreatorName(task) }}</td><td class="px-4 py-3.5 text-task-muted">{{ dashboardDateTime(task.created_at) }}</td><td class="px-5 py-3.5"><span :class="['tf-pill', badgeClass(dashboardStatus(task.status))]">{{ dashboardStatus(task.status) }}</span></td></tr></tbody></table><p v-if="!dashboardRecentTasks.length" class="py-10 text-center text-sm text-task-muted">No recent tasks.</p></div></section>
           </div>
           <p v-if="dashboardGeneratedAt" class="text-right text-[11px] text-task-muted">Last updated {{ dashboardDateTime(dashboardGeneratedAt) }} at {{ dashboardDateTime(dashboardGeneratedAt, 'time') }}</p>
         </section>
@@ -4058,9 +4106,9 @@ const iconPath = (name: string) => {
             </div>
             <p v-if="analyticsFilterError" class="mt-3 text-xs font-semibold text-task-danger">{{ analyticsFilterError }}</p><p v-else-if="analyticsLoading" class="mt-3 text-xs text-task-muted">Updating analytics…</p>
           </div>
-          <div class="tf-analytics-kpis grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
+          <div class="tf-analytics-kpis grid gap-3 sm:grid-cols-2 xl:grid-cols-3 2xl:grid-cols-6">
             <div v-for="(item, index) in analyticsKpiCards" :key="item.label" class="tf-panel relative min-h-[104px] overflow-hidden p-4">
-              <div class="flex items-center gap-3"><span class="tf-analytics-kpi-icon"><svg viewBox="0 0 24 24" class="h-5 w-5" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path :d="index === 0 ? iconPath('users') : index === 1 ? 'M5.6 19a8 8 0 1 1 12.8 0M12 12l4-4' : index === 2 ? 'M8 12l3 3 5-6M7 3h10v3H7zM6 5H4v16h16V5h-2' : 'M12 7v6m0 4h.01M21 12a9 9 0 1 1-18 0 9 9 0 0 1 18 0Z'" /></svg></span><div class="min-w-0"><p class="truncate text-[11px] font-bold text-task-muted">{{ item.label }}</p><p class="mt-0.5 text-2xl font-extrabold text-task-ink">{{ item.value }}</p><span :class="['mt-1 block truncate text-[9px] font-bold', item.positive ? 'text-task-success' : 'text-task-danger']">{{ item.positive ? '↗' : '↗' }} {{ item.change }}</span></div></div>
+              <div class="flex items-center gap-3"><span class="tf-analytics-kpi-icon"><svg viewBox="0 0 24 24" class="h-5 w-5" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path :d="index === 0 ? 'M5.6 19a8 8 0 1 1 12.8 0M12 12l4-4' : index === 1 ? 'M12 7v5l3 2m7-2a9 9 0 1 1-18 0 9 9 0 0 1 18 0Z' : index === 2 ? 'M8 12l3 3 5-6M7 3h10v3H7zM6 5H4v16h16V5h-2' : index === 3 ? 'M4 7h16v13H4V7Zm-1-4h18v4H3V3Zm6 9h6' : index === 4 ? 'M9 9h6v6H9z' : 'M4 5h16v14H4V5Zm4 4h8m-8 4h8'" /></svg></span><div class="min-w-0"><p class="truncate text-[11px] font-bold text-task-muted">{{ item.label }}</p><p class="mt-0.5 text-2xl font-extrabold text-task-ink">{{ item.value }}</p></div></div>
               <svg viewBox="0 0 120 25" :class="['absolute bottom-3 right-3 h-7 w-20 opacity-80', dashboardStatStyles[index % dashboardStatStyles.length]?.line]" fill="none" preserveAspectRatio="none"><path d="M2 18 12 15l10 5 12-6 10 4 14-9 12 6 10-3 12 4 12-8 14 6" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" /></svg>
             </div>
           </div>
@@ -4089,19 +4137,19 @@ const iconPath = (name: string) => {
 
             <section class="tf-panel p-5">
               <header class="flex flex-wrap items-start justify-between gap-3">
-                <div><h2 class="text-base font-extrabold text-task-ink">Workload Distribution</h2><p class="mt-1 text-xs text-task-muted">Tasks by status across the team</p></div>
-                <div class="flex gap-4 text-[10px] text-task-muted"><span class="flex items-center gap-1.5"><i class="h-2 w-2 rounded-full bg-[#49d28e]"/>Completed</span><span class="flex items-center gap-1.5"><i class="h-2 w-2 rounded-full bg-[#2689ef]"/>In Progress</span><span class="flex items-center gap-1.5"><i class="h-2 w-2 rounded-full bg-[#ff7148]"/>Overdue</span></div>
+                <div><h2 class="text-base font-extrabold text-task-ink">Department Performance</h2><p class="mt-1 text-xs text-task-muted">Backend-reported completion rate by department</p></div>
+                <div class="flex flex-wrap justify-end gap-3 text-[10px] text-task-muted"><span v-for="(item, index) in analyticsDepartmentPerformance" :key="`legend-${item.key}`" class="flex items-center gap-1.5"><i class="h-2 w-2 rounded-full" :style="{ backgroundColor: analyticsDepartmentPerformanceColor(index) }"/>{{ item.label }}</span></div>
               </header>
               <div class="relative mt-4 h-[340px] pl-9">
-                <div class="absolute inset-y-3 left-0 flex flex-col justify-between pb-7 text-[10px] text-task-muted"><span>{{ analyticsWorkloadMax }}</span><span>{{ Math.round(analyticsWorkloadMax * .75) }}</span><span>{{ Math.round(analyticsWorkloadMax * .5) }}</span><span>{{ Math.round(analyticsWorkloadMax * .25) }}</span><span>0</span></div>
+                <div class="absolute inset-y-3 left-0 flex flex-col justify-between pb-7 text-[10px] text-task-muted"><span>{{ analyticsDepartmentPerformanceMax }}%</span><span>{{ Math.round(analyticsDepartmentPerformanceMax * .75) }}%</span><span>{{ Math.round(analyticsDepartmentPerformanceMax * .5) }}%</span><span>{{ Math.round(analyticsDepartmentPerformanceMax * .25) }}%</span><span>0%</span></div>
                 <div class="absolute bottom-7 left-9 right-0 top-3 flex items-end justify-around gap-3 border-b border-[#203650] bg-[repeating-linear-gradient(to_bottom,transparent_0,transparent_calc(25%-1px),#203650_calc(25%-1px),#203650_25%)] px-3">
-                  <div v-for="item in analyticsDepartmentWorkload" :key="item.name" class="group relative flex h-full min-w-0 flex-1 items-end justify-center">
-                    <div class="flex w-full max-w-10 flex-col-reverse overflow-hidden rounded-t-sm" :style="{ height: `${Math.max(5, ((item.completed + item.inProgress + item.overdue) / analyticsWorkloadMax) * 100)}%` }"><span class="bg-[#49d28e]" :style="{ flex: item.completed || .01 }"/><span class="bg-[#2689ef]" :style="{ flex: item.inProgress || .01 }"/><span class="bg-[#ff7148]" :style="{ flex: item.overdue || .01 }"/></div>
-                    <div class="pointer-events-none absolute bottom-1/2 left-1/2 z-20 hidden w-32 -translate-x-1/2 rounded-lg border border-[#29425e] bg-[#071426] p-3 text-[10px] shadow-2xl group-hover:block"><b class="mb-2 block text-xs text-white">{{ item.name }}</b><p class="text-[#49d28e]">Completed: {{ item.completed }}</p><p class="mt-1 text-[#58a9ff]">In Progress: {{ item.inProgress }}</p><p class="mt-1 text-[#ff805e]">Overdue: {{ item.overdue }}</p><p class="mt-2 border-t border-[#29425e] pt-2 text-white">Total: {{ item.completed + item.inProgress + item.overdue }}</p></div>
+                  <div v-for="(item, index) in analyticsDepartmentPerformance" :key="item.key" class="group relative flex h-full min-w-0 flex-1 items-end justify-center">
+                    <div class="relative w-full max-w-12 rounded-t-sm transition-opacity group-hover:opacity-80" :style="{ height: `${Math.max(5, (item.value / analyticsDepartmentPerformanceMax) * 100)}%`, backgroundColor: analyticsDepartmentPerformanceColor(index) }"><span class="absolute -top-5 left-1/2 -translate-x-1/2 text-[10px] font-bold text-task-ink">{{ item.value }}%</span></div>
+                    <div class="pointer-events-none absolute bottom-1/2 left-1/2 z-20 hidden w-44 -translate-x-1/2 rounded-lg border border-[#29425e] bg-[#071426] p-3 text-[10px] shadow-2xl group-hover:block"><b class="block text-xs text-white">{{ item.label }}</b><p class="mt-2 text-white">Completion rate: {{ item.value }}%</p><p class="mt-1 text-slate-300">Completed {{ item.completed }} · In progress {{ item.inProgress }} · Overdue {{ item.overdue }} · Total {{ item.total }}</p></div>
                   </div>
-                  <p v-if="!analyticsDepartmentWorkload.length" class="m-auto text-xs text-task-muted">No workload data.</p>
+                  <p v-if="!analyticsDepartmentPerformance.length" class="m-auto text-xs text-task-muted">No department performance data.</p>
                 </div>
-                <div class="absolute bottom-0 left-9 right-0 flex justify-around gap-3 px-3 text-center text-[10px] text-task-muted"><span v-for="item in analyticsDepartmentWorkload" :key="item.name" class="min-w-0 flex-1 truncate">{{ item.name }}</span></div>
+                <div class="absolute bottom-0 left-9 right-0 flex justify-around gap-3 px-3 text-center text-[10px] text-task-muted"><span v-for="item in analyticsDepartmentPerformance" :key="item.key" class="min-w-0 flex-1 truncate" :title="item.label">{{ item.label }}</span></div>
               </div>
             </section>
           </div>
@@ -4111,12 +4159,12 @@ const iconPath = (name: string) => {
               <div class="mb-4 flex flex-col gap-3 xl:flex-row xl:items-center xl:justify-between">
                 <h2 class="flex items-center gap-2 text-lg font-bold text-task-ink">Staff Performance <span class="h-1 w-1 rounded-full bg-task-blue"/><span class="text-sm font-semibold text-task-muted">{{ analyticsStaffTotal }}</span></h2>
                 <div class="flex flex-col gap-2 sm:flex-row sm:flex-wrap sm:items-center xl:justify-end">
-                  <label class="relative w-full sm:w-60"><svg viewBox="0 0 24 24" class="pointer-events-none absolute left-3.5 top-1/2 h-4 w-4 -translate-y-1/2 text-task-muted" fill="none" stroke="currentColor" stroke-width="1.8"><path :d="iconPath('search')"/></svg><input v-model="analyticsStaffSearch" class="tf-input h-10 w-full pl-10" placeholder="Search staff..."/></label>
-                  <button type="button" class="tf-primary h-10 rounded-[11px] px-4 text-xs" @click="exportAnalyticsReport"><svg viewBox="0 0 24 24" class="h-4 w-4" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M12 3v12m0 0 4-4m-4 4-4-4M5 21h14"/></svg>Export PDF</button>
+                  <label class="relative w-full sm:w-60"><svg viewBox="0 0 24 24" class="pointer-events-none absolute left-3.5 top-1/2 h-4 w-4 -translate-y-1/2 text-task-muted" fill="none" stroke="currentColor" stroke-width="1.8"><path :d="iconPath('search')"/></svg><input v-model="analyticsStaffSearchInput" class="tf-input h-10 w-full pl-10 pr-10" placeholder="Search staff..."/><button v-if="analyticsStaffSearchInput && !analyticsStaffSearchPending && !analyticsLoading" type="button" class="tf-search-clear" aria-label="Clear analytics staff search" @click="analyticsStaffSearchInput = ''">×</button><span v-if="analyticsStaffSearchPending || analyticsLoading" class="tf-search-spinner"/></label>
                 </div>
               </div>
-              <div class="tf-analytics-staff-table-wrap overflow-x-auto"><table class="w-full min-w-[1120px] table-fixed text-left text-sm"><thead class="border-y border-task-line bg-slate-50/80 text-[11px] uppercase tracking-wide text-task-muted"><tr><th class="w-[285px] p-3 font-semibold"><button type="button" :class="['inline-flex items-center gap-1.5 transition hover:text-task-blue', analyticsTableOrdering.replace(/^-/, '') === 'name' ? 'text-task-blue' : '']" @click="toggleAnalyticsSort('name')">Staff <span>{{ analyticsSortMark('name') }}</span></button></th><th class="w-[130px] p-3 font-semibold"><button type="button" :class="['inline-flex items-center gap-1.5 transition hover:text-task-blue', analyticsTableOrdering.replace(/^-/, '') === 'department' ? 'text-task-blue' : '']" @click="toggleAnalyticsSort('department')">Department <span>{{ analyticsSortMark('department') }}</span></button></th><th class="w-[82px] p-3 font-semibold"><button type="button" :class="['inline-flex items-center gap-1.5 transition hover:text-task-blue', analyticsTableOrdering.replace(/^-/, '') === 'assigned' ? 'text-task-blue' : '']" @click="toggleAnalyticsSort('assigned')">Assigned <span>{{ analyticsSortMark('assigned') }}</span></button></th><th class="w-[88px] p-3 font-semibold"><button type="button" :class="['inline-flex items-center gap-1.5 transition hover:text-task-blue', analyticsTableOrdering.replace(/^-/, '') === 'completed' ? 'text-task-blue' : '']" @click="toggleAnalyticsSort('completed')">Completed <span>{{ analyticsSortMark('completed') }}</span></button></th><th class="w-[90px] p-3 font-semibold"><button type="button" :class="['inline-flex items-center gap-1.5 transition hover:text-task-blue', analyticsTableOrdering.replace(/^-/, '') === 'in_progress' ? 'text-task-blue' : '']" @click="toggleAnalyticsSort('in_progress')">In Progress <span>{{ analyticsSortMark('in_progress') }}</span></button></th><th class="w-[76px] p-3 font-semibold"><button type="button" :class="['inline-flex items-center gap-1.5 transition hover:text-task-blue', analyticsTableOrdering.replace(/^-/, '') === 'overdue' ? 'text-task-blue' : '']" @click="toggleAnalyticsSort('overdue')">Overdue <span>{{ analyticsSortMark('overdue') }}</span></button></th><th class="w-[72px] p-3 font-semibold"><button type="button" :class="['inline-flex items-center gap-1.5 transition hover:text-task-blue', analyticsTableOrdering.replace(/^-/, '') === 'on_time' ? 'text-task-blue' : '']" @click="toggleAnalyticsSort('on_time')">On-time <span>{{ analyticsSortMark('on_time') }}</span></button></th><th class="w-[82px] p-3 font-semibold"><button type="button" :class="['inline-flex items-center gap-1.5 transition hover:text-task-blue', analyticsTableOrdering.replace(/^-/, '') === 'avg_time' ? 'text-task-blue' : '']" @click="toggleAnalyticsSort('avg_time')">Avg. Time <span>{{ analyticsSortMark('avg_time') }}</span></button></th><th class="w-[205px] p-3 font-semibold"><button type="button" :class="['inline-flex items-center gap-1.5 transition hover:text-task-blue', analyticsTableOrdering.replace(/^-/, '') === 'performance' ? 'text-task-blue' : '']" @click="toggleAnalyticsSort('performance')">Performance <span>{{ analyticsSortMark('performance') }}</span></button></th><th class="w-[58px] p-3 text-right font-semibold">Actions</th></tr></thead><tbody class="divide-y divide-task-line"><tr v-for="(row, index) in analyticsWorkloadRows" :key="row.name" class="transition hover:bg-task-blueSoft/40"><td class="max-w-[285px] p-3"><div class="flex min-w-0 items-center gap-3"><span :class="['relative grid h-10 w-10 shrink-0 place-items-center overflow-hidden rounded-full text-xs font-bold', index % 4 === 0 ? 'bg-task-blueSoft text-task-blue' : index % 4 === 1 ? 'bg-[#F0E9FF] text-[#8057D5]' : index % 4 === 2 ? 'bg-task-warningSoft text-task-warning' : 'bg-task-successSoft text-task-success']"><span>{{ initials(row.name) }}</span><img v-if="row.avatar" :src="row.avatar" :alt="row.name + ' avatar'" class="absolute inset-0 h-full w-full object-cover" @error="($event.currentTarget as HTMLImageElement).remove()" /></span><div class="min-w-0 flex-1"><p class="truncate font-bold text-task-ink"><template v-for="(part, partIndex) in [highlightedSearchText(row.name, analyticsStaffSearch || analyticsGlobalSearch)]" :key="partIndex">{{ part.before }}<mark v-if="part.match" class="tf-search-highlight">{{ part.match }}</mark>{{ part.after }}</template></p><p class="tf-staff-role-clamp text-xs text-task-muted" :title="row.role"><template v-for="(part, partIndex) in [highlightedSearchText(row.role, analyticsStaffSearch || analyticsGlobalSearch)]" :key="partIndex">{{ part.before }}<mark v-if="part.match" class="tf-search-highlight">{{ part.match }}</mark>{{ part.after }}</template></p></div></div></td><td class="p-3"><span class="inline-flex max-w-full truncate rounded-full bg-task-blueSoft px-2.5 py-1 text-xs font-semibold text-task-blue"><template v-for="(part, partIndex) in [highlightedSearchText(row.department, analyticsStaffSearch || analyticsGlobalSearch)]" :key="partIndex">{{ part.before }}<mark v-if="part.match" class="tf-search-highlight">{{ part.match }}</mark>{{ part.after }}</template></span></td><td class="p-3">{{ row.assigned }}</td><td class="p-3 text-task-success">{{ row.completed }}</td><td class="p-3 text-task-blue">{{ row.active }}</td><td :class="['p-3', row.overdue ? 'font-bold text-task-danger' : 'text-task-success']">{{ row.overdue }}</td><td class="p-3 font-semibold">{{ row.onTime }}%</td><td class="p-3 text-task-muted">{{ row.avgCompletionDays }} days</td><td class="p-3"><div class="min-w-[150px]"><div class="flex items-center justify-between gap-3"><b class="text-xs text-task-ink">{{ row.performanceScore == null ? '—' : `${row.performanceScore}%` }}</b><span :class="['tf-performance-badge', analyticsPerformanceLevelClass(analyticsRowPerformanceLevel(row))]">{{ analyticsPerformanceLevelLabel(analyticsRowPerformanceLevel(row)) }}</span></div><div class="mt-1.5 h-1.5 w-full overflow-hidden rounded-full bg-slate-200"><div :class="['h-full rounded-full', analyticsPerformanceBarClass(analyticsRowPerformanceLevel(row))]" :style="{ width: `${row.performanceScore ?? 0}%` }"/></div></div></td><td class="p-3 text-right"><button type="button" class="tf-icon-button rounded-full"><svg viewBox="0 0 24 24" class="h-4 w-4" fill="none" stroke="currentColor"><path :d="iconPath('dots')"/></svg></button></td></tr></tbody></table></div>
-              <p v-if="!analyticsWorkloadRows.length && !analyticsLoading" class="py-10 text-center text-sm text-task-muted">No staff found.</p><div v-if="analyticsStaffTotal" class="tf-analytics-pagination"><span>Showing {{ (analyticsPage - 1) * analyticsPageSize + 1 }} to {{ Math.min(analyticsPage * analyticsPageSize, analyticsStaffTotal) }} of {{ analyticsStaffTotal }} staff members</span><div class="tf-analytics-pagination-controls"><div class="flex gap-2"><button type="button" class="tf-icon-button" :disabled="analyticsPage <= 1" @click="analyticsPage--">‹</button><button v-for="page in analyticsPageCount" :key="page" type="button" :class="[analyticsPage === page ? 'tf-primary' : 'tf-icon-button', 'h-9 w-9 p-0']" @click="analyticsPage = page">{{ page }}</button><button type="button" class="tf-icon-button" :disabled="analyticsPage >= analyticsPageCount" @click="analyticsPage++">›</button></div><div class="tf-dropdown tf-page-size-dropdown"><button type="button" class="tf-page-size-control" aria-label="Rows per page" @click="openDropdown = openDropdown === 'analyticsPageSize' ? null : 'analyticsPageSize'"><span>{{ analyticsPageSize }} per page</span><svg viewBox="0 0 20 20" :class="['h-4 w-4 transition-transform', openDropdown === 'analyticsPageSize' ? 'rotate-180' : '']" fill="none" stroke="currentColor" stroke-width="2"><path d="m5 7.5 5 5 5-5" /></svg></button><div v-if="openDropdown === 'analyticsPageSize'" class="tf-dropdown-menu bottom-[calc(100%+7px)] top-auto min-w-full"><button v-for="size in [8, 16, 24]" :key="size" type="button" class="tf-dropdown-option" @click="analyticsPageSize = size; analyticsPage = 1; openDropdown = null"><span>{{ size }} per page</span><span v-if="analyticsPageSize === size">✓</span></button></div></div></div></div>
+              <div v-if="analyticsStaffSearchPending || analyticsLoading" class="tf-search-overlay"><span class="tf-search-loader"/> Searching staff...</div>
+              <div class="tf-analytics-staff-table-wrap relative overflow-x-auto"><p v-if="!analyticsWorkloadRows.length && !analyticsLoading && !analyticsStaffSearchPending" class="absolute inset-0 z-10 grid place-items-center text-sm text-task-muted">No staff found.</p><table class="w-full min-w-[1120px] table-fixed text-left text-sm"><thead class="border-y border-task-line bg-slate-50/80 text-[11px] uppercase tracking-wide text-task-muted"><tr><th class="w-[285px] p-3 font-semibold"><button type="button" :class="['inline-flex items-center gap-1.5 transition hover:text-task-blue', analyticsTableOrdering.replace(/^-/, '') === 'name' ? 'text-task-blue' : '']" @click="toggleAnalyticsSort('name')">Staff <span>{{ analyticsSortMark('name') }}</span></button></th><th class="w-[170px] p-3 font-semibold"><button type="button" :class="['inline-flex items-center gap-1.5 transition hover:text-task-blue', analyticsTableOrdering.replace(/^-/, '') === 'department' ? 'text-task-blue' : '']" @click="toggleAnalyticsSort('department')">Department <span>{{ analyticsSortMark('department') }}</span></button></th><th class="w-[82px] p-3 font-semibold"><button type="button" :class="['inline-flex items-center gap-1.5 transition hover:text-task-blue', analyticsTableOrdering.replace(/^-/, '') === 'assigned' ? 'text-task-blue' : '']" @click="toggleAnalyticsSort('assigned')">Assigned <span>{{ analyticsSortMark('assigned') }}</span></button></th><th class="w-[88px] p-3 font-semibold"><button type="button" :class="['inline-flex items-center gap-1.5 transition hover:text-task-blue', analyticsTableOrdering.replace(/^-/, '') === 'completed' ? 'text-task-blue' : '']" @click="toggleAnalyticsSort('completed')">Completed <span>{{ analyticsSortMark('completed') }}</span></button></th><th class="w-[90px] p-3 font-semibold"><button type="button" :class="['inline-flex items-center gap-1.5 transition hover:text-task-blue', analyticsTableOrdering.replace(/^-/, '') === 'in_progress' ? 'text-task-blue' : '']" @click="toggleAnalyticsSort('in_progress')">In Progress <span>{{ analyticsSortMark('in_progress') }}</span></button></th><th class="w-[76px] p-3 font-semibold"><button type="button" :class="['inline-flex items-center gap-1.5 transition hover:text-task-blue', analyticsTableOrdering.replace(/^-/, '') === 'overdue' ? 'text-task-blue' : '']" @click="toggleAnalyticsSort('overdue')">Overdue <span>{{ analyticsSortMark('overdue') }}</span></button></th><th class="w-[72px] p-3 font-semibold"><button type="button" :class="['inline-flex items-center gap-1.5 transition hover:text-task-blue', analyticsTableOrdering.replace(/^-/, '') === 'on_time' ? 'text-task-blue' : '']" @click="toggleAnalyticsSort('on_time')">On-time <span>{{ analyticsSortMark('on_time') }}</span></button></th><th class="w-[82px] p-3 font-semibold"><button type="button" :class="['inline-flex items-center gap-1.5 transition hover:text-task-blue', analyticsTableOrdering.replace(/^-/, '') === 'avg_time' ? 'text-task-blue' : '']" @click="toggleAnalyticsSort('avg_time')">Avg. Time <span>{{ analyticsSortMark('avg_time') }}</span></button></th><th class="w-[205px] p-3 font-semibold"><button type="button" :class="['inline-flex items-center gap-1.5 transition hover:text-task-blue', analyticsTableOrdering.replace(/^-/, '') === 'performance' ? 'text-task-blue' : '']" @click="toggleAnalyticsSort('performance')">Performance <span>{{ analyticsSortMark('performance') }}</span></button></th><th class="w-[58px] p-3 text-right font-semibold">Actions</th></tr></thead><tbody class="divide-y divide-task-line"><tr v-for="(row, index) in analyticsWorkloadRows" :key="row.name" class="transition hover:bg-task-blueSoft/40"><td class="max-w-[285px] p-3"><div class="flex min-w-0 items-center gap-3"><span :class="['relative grid h-10 w-10 shrink-0 place-items-center overflow-hidden rounded-full text-xs font-bold', index % 4 === 0 ? 'bg-task-blueSoft text-task-blue' : index % 4 === 1 ? 'bg-[#F0E9FF] text-[#8057D5]' : index % 4 === 2 ? 'bg-task-warningSoft text-task-warning' : 'bg-task-successSoft text-task-success']"><span>{{ initials(row.name) }}</span><img v-if="row.avatar" :src="row.avatar" :alt="row.name + ' avatar'" class="absolute inset-0 h-full w-full object-cover" @error="($event.currentTarget as HTMLImageElement).remove()" /></span><div class="min-w-0 flex-1"><p class="truncate font-bold text-task-ink"><template v-for="(part, partIndex) in [highlightedSearchText(row.name, analyticsStaffSearch || analyticsGlobalSearch)]" :key="partIndex">{{ part.before }}<mark v-if="part.match" class="tf-search-highlight">{{ part.match }}</mark>{{ part.after }}</template></p><p class="tf-staff-role-clamp text-xs text-task-muted" :title="row.role"><template v-for="(part, partIndex) in [highlightedSearchText(row.role, analyticsStaffSearch || analyticsGlobalSearch)]" :key="partIndex">{{ part.before }}<mark v-if="part.match" class="tf-search-highlight">{{ part.match }}</mark>{{ part.after }}</template></p></div></div></td><td class="p-3"><span class="inline-flex min-h-7 w-max max-w-full items-center whitespace-normal break-words rounded-[12px] bg-task-blueSoft px-2.5 py-1 text-left text-xs font-semibold leading-4 text-task-blue" :title="row.department"><template v-for="(part, partIndex) in [highlightedSearchText(row.department, analyticsStaffSearch || analyticsGlobalSearch)]" :key="partIndex">{{ part.before }}<mark v-if="part.match" class="tf-search-highlight">{{ part.match }}</mark>{{ part.after }}</template></span></td><td class="p-3">{{ row.assigned }}</td><td class="p-3 text-task-success">{{ row.completed }}</td><td class="p-3 text-task-blue">{{ row.active }}</td><td :class="['p-3', row.overdue ? 'font-bold text-task-danger' : 'text-task-success']">{{ row.overdue }}</td><td class="p-3 font-semibold">{{ row.onTime }}%</td><td class="p-3 text-task-muted">{{ row.avgCompletionDays }} days</td><td class="p-3"><div class="min-w-[150px]"><div class="flex items-center justify-between gap-3"><b class="text-xs text-task-ink">{{ row.performanceScore == null ? '—' : `${row.performanceScore}%` }}</b><span :class="['tf-performance-badge', analyticsPerformanceLevelClass(analyticsRowPerformanceLevel(row))]">{{ analyticsPerformanceLevelLabel(analyticsRowPerformanceLevel(row)) }}</span></div><div class="mt-1.5 h-1.5 w-full overflow-hidden rounded-full bg-slate-200"><div :class="['h-full rounded-full', analyticsPerformanceBarClass(analyticsRowPerformanceLevel(row))]" :style="{ width: `${row.performanceScore ?? 0}%` }"/></div></div></td><td class="p-3 text-right"><button type="button" class="tf-icon-button rounded-full"><svg viewBox="0 0 24 24" class="h-4 w-4" fill="none" stroke="currentColor"><path :d="iconPath('dots')"/></svg></button></td></tr></tbody></table></div>
+              <div :class="['tf-analytics-pagination', !analyticsStaffTotal ? 'invisible' : '']"><span>Showing {{ (analyticsPage - 1) * analyticsPageSize + 1 }} to {{ Math.min(analyticsPage * analyticsPageSize, analyticsStaffTotal) }} of {{ analyticsStaffTotal }} staff members</span><div class="tf-analytics-pagination-controls"><div class="flex gap-2"><button type="button" class="tf-icon-button" :disabled="analyticsPage <= 1" @click="analyticsPage--">‹</button><button v-for="page in analyticsPageCount" :key="page" type="button" :class="[analyticsPage === page ? 'tf-primary' : 'tf-icon-button', 'h-9 w-9 p-0']" @click="analyticsPage = page">{{ page }}</button><button type="button" class="tf-icon-button" :disabled="analyticsPage >= analyticsPageCount" @click="analyticsPage++">›</button></div><div class="tf-dropdown tf-page-size-dropdown"><button type="button" class="tf-page-size-control" aria-label="Rows per page" @click="openDropdown = openDropdown === 'analyticsPageSize' ? null : 'analyticsPageSize'"><span>{{ analyticsPageSize }} per page</span><svg viewBox="0 0 20 20" :class="['h-4 w-4 transition-transform', openDropdown === 'analyticsPageSize' ? 'rotate-180' : '']" fill="none" stroke="currentColor" stroke-width="2"><path d="m5 7.5 5 5 5-5" /></svg></button><div v-if="openDropdown === 'analyticsPageSize'" class="tf-dropdown-menu bottom-[calc(100%+7px)] top-auto min-w-full"><button v-for="size in [8, 16, 24]" :key="size" type="button" class="tf-dropdown-option" @click="analyticsPageSize = size; analyticsPage = 1; openDropdown = null"><span>{{ size }} per page</span><span v-if="analyticsPageSize === size">✓</span></button></div></div></div></div>
             </section>
             <section class="tf-panel min-w-0 p-5">
               <div class="flex items-center justify-between"><div><h2 class="text-base font-extrabold text-task-ink">Overdue Tasks Trend</h2><p class="mt-1 text-xs text-task-muted">Current overdue workload by staff</p></div><span class="tf-pill bg-task-dangerSoft text-task-danger">{{ overdueTaskRows.length }} overdue</span></div>

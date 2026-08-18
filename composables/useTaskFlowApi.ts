@@ -167,7 +167,54 @@ type ReportPayload = {
   parameters: string
 }
 
+export type AnalyticsMetric = {
+  value: number
+  unit: 'percent' | 'tasks' | 'staff' | 'days'
+  label?: string
+}
+
+export type AnalyticsSummary = {
+  task_completion_rate: AnalyticsMetric
+  active_tasks: AnalyticsMetric
+  completed_tasks: AnalyticsMetric
+  archived_tasks: AnalyticsMetric
+  on_hold_tasks: AnalyticsMetric
+  postponed_tasks: AnalyticsMetric
+}
+
+export type AnalyticsStatusChartItem = {
+  key: string
+  value: number
+  label?: string
+}
+
+export type AnalyticsDepartmentPerformanceItem = {
+  department_id?: string | number
+  department_name?: string
+  department?: string | { id?: string | number; name?: string; title?: string }
+  name?: string
+  label?: string
+  average_performance?: number | AnalyticsMetric
+  performance_score?: number | AnalyticsMetric
+  performance?: number | AnalyticsMetric
+  weighted_score?: number | AnalyticsMetric
+  task_completion_rate?: number | AnalyticsMetric
+  completion_rate?: number | AnalyticsMetric
+  value?: number | AnalyticsMetric
+  completed?: number
+  in_progress?: number
+  overdue?: number
+  total?: number
+  staff_count?: number
+}
+
 type ApiAnalytics = {
+  summary?: AnalyticsSummary
+  department_performance?: AnalyticsDepartmentPerformanceItem[] | { results?: AnalyticsDepartmentPerformanceItem[] }
+  status_chart?: AnalyticsStatusChartItem[]
+  task_status_chart?: AnalyticsStatusChartItem[]
+  tasks_by_status?: AnalyticsStatusChartItem[]
+  status_breakdown?: AnalyticsStatusChartItem[]
   task_completion_rate?: number
   team_velocity?: number
   overdue_tasks?: number
@@ -845,7 +892,7 @@ export const useTaskFlowApi = () => {
       events,
       stats: {
         activeProjects: projects.length,
-        utilization: Math.round(analytics.task_completion_rate || 0),
+        utilization: Number(analytics.summary?.task_completion_rate.value ?? 0),
         teamVelocity: analytics.team_velocity || 0,
         overdueTasks: analytics.overdue_tasks || 0,
         projectSummary
@@ -1000,7 +1047,12 @@ export const useTaskFlowApi = () => {
   const mapAnalyticsTasksByCategory = (analytics: ApiAnalytics) =>
     (analytics.tasks_by_category || []).map((entry) => {
       const item = parseAnalyticsItem(entry)
-      const name = String(item.category || item.name || item.label || item.title || 'Uncategorized')
+      const key = String(item.key || item.status || '').trim().toLowerCase()
+      const name = key === 'archived'
+        ? 'Verified & Archived'
+        : key === 'backlog' || key === 'postponed'
+          ? 'Postponed'
+          : String(item.category || item.name || item.label || item.title || key || 'Uncategorized')
       const value = asNumber(item.percent ?? item.percentage ?? item.value ?? item.count)
       const count = asNumber(item.count ?? item.tasks ?? item.total, value)
 
