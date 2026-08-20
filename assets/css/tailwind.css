@@ -442,6 +442,19 @@ body {
 .tf-task-list-table tbody tr:has(.tf-action-menu) { position: relative; z-index: 90; }
 .tf-task-list-table .tf-action-menu { z-index: 120; }
 
+/* Keep action menus on the final table rows above the table footer instead of
+   letting the horizontal scroll container clip them below the fold. */
+.tf-panel tbody tr:nth-last-child(-n + 2):has(.tf-action-menu) {
+  position: relative;
+  z-index: 90;
+}
+
+.tf-panel tbody tr:nth-last-child(-n + 2) .tf-action-menu {
+  top: auto;
+  bottom: calc(100% + 6px);
+  z-index: 120;
+}
+
   .tf-action-danger {
     @apply text-task-danger hover:bg-task-dangerSoft hover:text-task-danger;
   }

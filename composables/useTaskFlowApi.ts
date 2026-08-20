@@ -335,6 +335,7 @@ export type NotificationPreferences = {
 
 type ApiEvent = {
   id?: string
+  department?: string | number | ApiDepartment
   title: string
   event_type?: string
   description?: string
