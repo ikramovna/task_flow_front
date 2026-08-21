@@ -2934,6 +2934,14 @@ const returnToAnalyticsUserTasks = () => {
   modal.value = 'analytics-user-tasks'
 }
 
+const handleModalCloseCapture = (event: MouseEvent) => {
+  const closeButton = (event.target as HTMLElement | null)?.closest('button[aria-label="Close modal"]')
+  if (!closeButton || modal.value !== 'task' || !taskModalReturnToAnalytics.value) return
+  event.preventDefault()
+  event.stopImmediatePropagation()
+  returnToAnalyticsUserTasks()
+}
+
 const deleteTask = async (task: Array<string | number>) => {
   actionMenu.value = null
   const id = String(task[6] || '')
@@ -4579,7 +4587,7 @@ const iconPath = (name: string) => {
     </section>
 
     <div v-if="modal" class="fixed inset-0 z-50 grid place-items-center bg-slate-900/45 p-3 backdrop-blur-[2px] sm:p-6" @click.self="closeModalFromBackdrop">
-      <div :class="['tf-app-modal flex max-h-[calc(100vh-24px)] w-full flex-col overflow-hidden rounded-[22px] border border-white/70 bg-[#E3EAF2] shadow-[0_30px_90px_-20px_rgba(15,23,42,0.45)] sm:max-h-[calc(100vh-48px)]', modal === 'project' ? 'tf-project-modal max-w-[600px]' : modal === 'task' ? 'max-w-[620px]' : modal === 'member' ? 'tf-member-modal max-w-[760px]' : modal === 'member-remove' ? 'max-w-[660px]' : modal === 'event' || modal === 'event-detail' || modal === 'report' ? 'max-w-[620px]' : 'max-w-[520px]']" @keydown="handleModalKeydown">
+      <div :class="['tf-app-modal flex max-h-[calc(100vh-24px)] w-full flex-col overflow-hidden rounded-[22px] border border-white/70 bg-[#E3EAF2] shadow-[0_30px_90px_-20px_rgba(15,23,42,0.45)] sm:max-h-[calc(100vh-48px)]', modal === 'project' ? 'tf-project-modal max-w-[600px]' : modal === 'task' ? 'max-w-[620px]' : modal === 'member' ? 'tf-member-modal max-w-[760px]' : modal === 'member-remove' ? 'max-w-[660px]' : modal === 'event' || modal === 'event-detail' || modal === 'report' ? 'max-w-[620px]' : 'max-w-[520px]']" @click.capture="handleModalCloseCapture" @keydown="handleModalKeydown">
         <div class="flex shrink-0 items-center justify-between px-5 py-3.5 sm:px-6 sm:py-4"><h2 class="text-[21px] font-semibold tracking-[-0.025em] sm:text-[22px]">{{ modal === 'task' ? (taskModalMode === 'view' ? 'Task Details' : taskModalMode === 'edit' ? 'Edit Task' : 'Create Task') : modal === 'project' ? 'Create New Project' : modal === 'event' ? (editingEventId ? 'Edit Event' : 'Add New Event') : modal === 'event-detail' ? 'Event Details' : modal === 'event-delete' ? 'Delete Event' : modal === 'report' ? 'Custom Report Builder' : modal === 'member' ? (editingMemberId ? 'Edit Department Member' : 'Add Department Member') : modal === 'member-profile' ? 'Staff Profile' : modal === 'member-remove' ? 'Remove Member' : modal === 'analytics-user-tasks' ? `${selectedAnalyticsStaff?.name || 'Staff'} Tasks` : modal === 'logout' ? 'Log out' : 'Filter Staff' }}</h2><button type="button" class="grid h-9 w-9 place-items-center rounded-full text-[28px] font-light leading-none transition hover:bg-white/60 hover:text-task-blue" aria-label="Close modal" @click="modal === 'event-delete' ? cancelEventDelete() : modal = null">×</button></div>
         <div :class="['min-h-0 overflow-y-auto bg-white', modal === 'project' || modal === 'task' ? 'mx-3 mb-3 rounded-[18px] p-5' : 'mx-2 mb-2 rounded-[16px] p-4', modal === 'member' ? 'tf-member-modal-body' : '']">
           <template v-if="modal === 'logout'">
@@ -4653,11 +4661,6 @@ const iconPath = (name: string) => {
             <label class="mb-5 mt-4 flex items-center justify-between gap-4 rounded-ui border border-task-line px-4 py-3 text-sm font-semibold"><span><span class="block">Active member</span><span class="mt-0.5 block text-xs font-normal text-task-muted">Allow this member to sign in immediately.</span></span><input v-model="memberIsActive" type="checkbox" class="h-5 w-5 accent-task-blue" /></label>
           </template>
           <template v-else-if="modal === 'task'">
-            <button v-if="taskModalReturnToAnalytics" type="button" class="group mb-4 inline-flex items-center gap-2.5 rounded-full border border-[#BFD4F5] bg-gradient-to-r from-[#EEF5FF] via-white to-[#F4EEFF] py-2 pl-2 pr-4 text-sm font-bold text-[#245A9A] shadow-[0_6px_18px_-10px_rgba(37,103,173,.7)] transition hover:-translate-y-0.5 hover:border-[#8FB5E5] hover:shadow-[0_10px_24px_-12px_rgba(37,103,173,.85)]" @click="returnToAnalyticsUserTasks">
-              <span class="grid h-7 w-7 place-items-center rounded-full bg-gradient-to-br from-[#76A9DE] to-[#7658C9] text-white shadow-sm transition group-hover:scale-105"><svg viewBox="0 0 24 24" class="h-4 w-4" fill="none" stroke="currentColor" stroke-width="2.4"><path d="m15 18-6-6 6-6" /></svg></span>
-              <span class="max-w-[260px] truncate">{{ selectedAnalyticsStaff?.name || 'User' }} tasks</span>
-              <span class="rounded-full bg-[#DFEBFC] px-2 py-0.5 text-[10px] font-extrabold uppercase tracking-wide text-[#487BB8]">Back</span>
-            </button>
             <section v-if="false" class="mb-4 overflow-hidden rounded-[16px] border border-[#C9B7FF] bg-gradient-to-br from-[#F8F5FF] via-white to-task-blueSoft/60 shadow-sm">
               <button type="button" class="flex w-full items-center gap-3 px-4 py-3.5 text-left" @click="aiTaskAssistantOpen = !aiTaskAssistantOpen">
                 <span class="grid h-10 w-10 shrink-0 place-items-center rounded-[13px] bg-gradient-to-br from-[#8B5CF6] to-task-blue text-white shadow-button"><svg viewBox="0 0 24 24" class="h-5 w-5" fill="none" stroke="currentColor" stroke-width="1.8"><path d="m12 3 1.4 4.1L17.5 8.5l-4.1 1.4L12 14l-1.4-4.1-4.1-1.4 4.1-1.4L12 3Z"/><path d="m18.5 14 .8 2.2 2.2.8-2.2.8-.8 2.2-.8-2.2-2.2-.8 2.2-.8.8-2.2Z"/></svg></span>
