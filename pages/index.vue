@@ -5,7 +5,7 @@ import GreetingCard from '~/components/GreetingCard.vue'
 import { greetingConfig } from '~/constants/greetings'
 
 type PageKey = 'dashboard' | 'tasks' | 'projects' | 'analytics' | 'calendar' | 'team' | 'reports' | 'messages' | 'notifications' | 'settings' | 'help'
-type ModalKey = 'task' | 'project' | 'event' | 'event-detail' | 'event-delete' | 'report' | 'member' | 'member-profile' | 'member-remove' | 'team-filter' | 'logout' | null
+type ModalKey = 'task' | 'project' | 'event' | 'event-detail' | 'event-delete' | 'report' | 'member' | 'member-profile' | 'member-remove' | 'analytics-user-tasks' | 'team-filter' | 'logout' | null
 type ProjectCardMember = {
   id?: string | number
   email?: string
@@ -112,6 +112,7 @@ type AnalyticsStaffRow = {
   avgCompletionDays: number
 }
 const analyticsStaffRows = ref<AnalyticsStaffRow[]>([])
+const selectedAnalyticsStaff = ref<AnalyticsStaffRow | null>(null)
 const analyticsStaffTotal = ref(0)
 const analyticsStaffTotalPages = ref(1)
 const analyticsSummary = ref<AnalyticsSummary | null>(null)
@@ -470,6 +471,7 @@ const draggedTaskId = ref('')
 const updatingTaskId = ref('')
 const editingTaskId = ref('')
 const taskModalMode = ref<'create' | 'edit' | 'view'>('create')
+const taskModalReturnToAnalytics = ref(false)
 const taskSaving = ref(false)
 const projectPage = ref(1)
 const reportPage = ref(1)
@@ -849,6 +851,36 @@ const taskOverviewCards = computed(() => [
   { label: 'Completed', value: archivedTaskCount.value, color: 'slate', status: 'archived' }
 ])
 const overdueTaskRows = computed(() => tasks.value.filter(isTaskOverdue))
+const analyticsUserTasks = computed(() => {
+  const selected = selectedAnalyticsStaff.value
+  if (!selected) return []
+  const selectedId = String(selected.id || '')
+  const selectedName = selected.name.trim().toLowerCase()
+
+  return tasks.value.filter((task) => {
+    const assigneeName = String(task[1] || '').toLowerCase()
+    if (selectedName && assigneeName.split(',').some(name => name.trim() === selectedName)) return true
+    return selectedId && [task[9], task[13], task[18]].some((value) => {
+      try {
+        const parsed = typeof value === 'string' ? JSON.parse(value) : value
+        const entries = Array.isArray(parsed) ? parsed : parsed ? [parsed] : []
+        return entries.some((entry: any) => String(entry?.id ?? entry?.user_id ?? entry) === selectedId)
+      } catch {
+        return String(value || '') === selectedId
+      }
+    }) || String(task[17] || '') === selectedId
+  })
+})
+const openAnalyticsUserTasks = (row: AnalyticsStaffRow) => {
+  selectedAnalyticsStaff.value = row
+  modal.value = 'analytics-user-tasks'
+}
+const handleAnalyticsStaffTableClick = (event: MouseEvent) => {
+  const rowElement = (event.target as HTMLElement | null)?.closest('tbody tr') as HTMLTableRowElement | null
+  if (!rowElement) return
+  const row = analyticsWorkloadRows.value[rowElement.sectionRowIndex]
+  if (row) openAnalyticsUserTasks(row)
+}
 const analyticsOverdueByStaff = computed(() => {
   const groups = new Map<string, Array<Array<string | number>>>()
   overdueTaskRows.value.forEach((task) => {
@@ -2843,6 +2875,7 @@ const replaceTaskRow = (id: string, task: Array<string | number>) => {
 }
 
 const openTask = async (task: Array<string | number>, mode: 'view' | 'edit', fromNotification = false) => {
+  taskModalReturnToAnalytics.value = false
   actionMenu.value = null
   const id = String(task[6] || '')
   if (!id) return notifyError('Task backend bilan hali sinxronlanmagan')
@@ -2890,6 +2923,16 @@ const openTask = async (task: Array<string | number>, mode: 'view' | 'edit', fro
 
 const openTaskFromCard = (task: Array<string | number>) =>
   openTask(task, canManageDepartment.value ? 'edit' : 'view')
+
+const openAnalyticsTaskDetails = async (task: Array<string | number>) => {
+  await openTask(task, canManageDepartment.value ? 'edit' : 'view')
+  if (modal.value === 'task') taskModalReturnToAnalytics.value = true
+}
+
+const returnToAnalyticsUserTasks = () => {
+  taskModalReturnToAnalytics.value = false
+  modal.value = 'analytics-user-tasks'
+}
 
 const deleteTask = async (task: Array<string | number>) => {
   actionMenu.value = null
@@ -4250,7 +4293,7 @@ const iconPath = (name: string) => {
           </div>
 
           <div class="tf-analytics-workload grid gap-3 xl:grid-cols-[minmax(0,1.35fr)_minmax(300px,.65fr)]">
-            <section class="tf-panel relative min-w-0 p-5">
+            <section class="tf-panel relative min-w-0 p-5" @click="handleAnalyticsStaffTableClick">
               <div class="mb-4 flex flex-col gap-3 xl:flex-row xl:items-center xl:justify-between">
                 <h2 class="flex items-center gap-2 text-lg font-bold text-task-ink">Staff Performance <span class="h-1 w-1 rounded-full bg-task-blue"/><span class="text-sm font-semibold text-task-muted">{{ analyticsStaffTotal }}</span></h2>
                 <div class="flex flex-col gap-2 sm:flex-row sm:flex-wrap sm:items-center xl:justify-end">
@@ -4537,7 +4580,7 @@ const iconPath = (name: string) => {
 
     <div v-if="modal" class="fixed inset-0 z-50 grid place-items-center bg-slate-900/45 p-3 backdrop-blur-[2px] sm:p-6" @click.self="closeModalFromBackdrop">
       <div :class="['tf-app-modal flex max-h-[calc(100vh-24px)] w-full flex-col overflow-hidden rounded-[22px] border border-white/70 bg-[#E3EAF2] shadow-[0_30px_90px_-20px_rgba(15,23,42,0.45)] sm:max-h-[calc(100vh-48px)]', modal === 'project' ? 'tf-project-modal max-w-[600px]' : modal === 'task' ? 'max-w-[620px]' : modal === 'member' ? 'tf-member-modal max-w-[760px]' : modal === 'member-remove' ? 'max-w-[660px]' : modal === 'event' || modal === 'event-detail' || modal === 'report' ? 'max-w-[620px]' : 'max-w-[520px]']" @keydown="handleModalKeydown">
-        <div class="flex shrink-0 items-center justify-between px-5 py-3.5 sm:px-6 sm:py-4"><h2 class="text-[21px] font-semibold tracking-[-0.025em] sm:text-[22px]">{{ modal === 'task' ? (taskModalMode === 'view' ? 'Task Details' : taskModalMode === 'edit' ? 'Edit Task' : 'Create Task') : modal === 'project' ? 'Create New Project' : modal === 'event' ? (editingEventId ? 'Edit Event' : 'Add New Event') : modal === 'event-detail' ? 'Event Details' : modal === 'event-delete' ? 'Delete Event' : modal === 'report' ? 'Custom Report Builder' : modal === 'member' ? (editingMemberId ? 'Edit Department Member' : 'Add Department Member') : modal === 'member-profile' ? 'Staff Profile' : modal === 'member-remove' ? 'Remove Member' : modal === 'logout' ? 'Log out' : 'Filter Staff' }}</h2><button type="button" class="grid h-9 w-9 place-items-center rounded-full text-[28px] font-light leading-none transition hover:bg-white/60 hover:text-task-blue" aria-label="Close modal" @click="modal === 'event-delete' ? cancelEventDelete() : modal = null">×</button></div>
+        <div class="flex shrink-0 items-center justify-between px-5 py-3.5 sm:px-6 sm:py-4"><h2 class="text-[21px] font-semibold tracking-[-0.025em] sm:text-[22px]">{{ modal === 'task' ? (taskModalMode === 'view' ? 'Task Details' : taskModalMode === 'edit' ? 'Edit Task' : 'Create Task') : modal === 'project' ? 'Create New Project' : modal === 'event' ? (editingEventId ? 'Edit Event' : 'Add New Event') : modal === 'event-detail' ? 'Event Details' : modal === 'event-delete' ? 'Delete Event' : modal === 'report' ? 'Custom Report Builder' : modal === 'member' ? (editingMemberId ? 'Edit Department Member' : 'Add Department Member') : modal === 'member-profile' ? 'Staff Profile' : modal === 'member-remove' ? 'Remove Member' : modal === 'analytics-user-tasks' ? `${selectedAnalyticsStaff?.name || 'Staff'} Tasks` : modal === 'logout' ? 'Log out' : 'Filter Staff' }}</h2><button type="button" class="grid h-9 w-9 place-items-center rounded-full text-[28px] font-light leading-none transition hover:bg-white/60 hover:text-task-blue" aria-label="Close modal" @click="modal === 'event-delete' ? cancelEventDelete() : modal = null">×</button></div>
         <div :class="['min-h-0 overflow-y-auto bg-white', modal === 'project' || modal === 'task' ? 'mx-3 mb-3 rounded-[18px] p-5' : 'mx-2 mb-2 rounded-[16px] p-4', modal === 'member' ? 'tf-member-modal-body' : '']">
           <template v-if="modal === 'logout'">
             <div class="flex gap-4 rounded-[14px] border border-task-danger/20 bg-task-dangerSoft/60 p-4">
@@ -4551,6 +4594,21 @@ const iconPath = (name: string) => {
             <div class="flex flex-col items-center text-center"><span class="grid h-20 w-20 place-items-center overflow-hidden rounded-full bg-task-blueSoft text-xl font-bold text-task-blue"><img v-if="selectedTeamMember[8]" :src="String(selectedTeamMember[8])" :alt="teamMemberName(selectedTeamMember)" class="h-full w-full object-cover" /><span v-else>{{ initials(teamMemberName(selectedTeamMember)) }}</span></span><h3 class="mt-3 text-xl font-bold text-task-ink">{{ teamMemberName(selectedTeamMember) }}</h3><p class="mt-1 text-sm text-task-muted">{{ selectedTeamMember[1] || 'Team member' }}</p><span :class="['mt-2 rounded-full px-3 py-1 text-xs font-bold', String(selectedTeamMember[12]) === 'Inactive' ? 'bg-slate-100 text-slate-500' : 'bg-task-successSoft text-task-success']">{{ selectedTeamMember[12] || 'Active' }}</span></div>
             <div class="mt-5 grid gap-3 sm:grid-cols-2"><div class="rounded-[12px] bg-slate-50 p-3"><p class="text-[10px] font-bold uppercase tracking-wide text-task-muted">Department</p><p class="mt-1.5 text-sm font-semibold text-task-ink">{{ memberDepartmentNameOf(selectedTeamMember) }}</p></div><div class="rounded-[12px] bg-slate-50 p-3"><p class="text-[10px] font-bold uppercase tracking-wide text-task-muted">Email</p><p class="mt-1.5 truncate text-sm font-semibold text-task-ink">{{ selectedTeamMember[2] }}</p></div><div class="rounded-[12px] bg-slate-50 p-3"><p class="text-[10px] font-bold uppercase tracking-wide text-task-muted">Phone</p><p class="mt-1.5 text-sm font-semibold text-task-ink">{{ selectedTeamMember[3] }}</p></div><div class="rounded-[12px] bg-slate-50 p-3"><p class="text-[10px] font-bold uppercase tracking-wide text-task-muted">Efficiency</p><p class="mt-1.5 text-sm font-semibold text-task-ink">{{ selectedTeamMember[4] }}%</p></div></div>
             <div class="mb-3 mt-3 grid grid-cols-2 gap-3"><div class="rounded-[12px] border border-task-line p-3 text-center"><p class="text-xl font-bold text-task-success">{{ selectedTeamMember[5] }}</p><p class="mt-1 text-xs text-task-muted">Completed tasks</p></div><div class="rounded-[12px] border border-task-line p-3 text-center"><p class="text-xl font-bold text-task-blue">{{ selectedTeamMember[6] }}</p><p class="mt-1 text-xs text-task-muted">In progress</p></div></div>
+          </template>
+          <template v-else-if="modal === 'analytics-user-tasks' && selectedAnalyticsStaff">
+            <div class="flex items-center gap-3 border-b border-task-line pb-4">
+              <span class="relative grid h-12 w-12 shrink-0 place-items-center overflow-hidden rounded-full bg-task-blueSoft text-sm font-bold text-task-blue"><span>{{ initials(selectedAnalyticsStaff.name) }}</span><img v-if="selectedAnalyticsStaff.avatar" :src="selectedAnalyticsStaff.avatar" :alt="selectedAnalyticsStaff.name" class="absolute inset-0 h-full w-full object-cover" /></span>
+              <div class="min-w-0"><h3 class="truncate font-bold text-task-ink">{{ selectedAnalyticsStaff.name }}</h3><p class="truncate text-xs text-task-muted">{{ selectedAnalyticsStaff.role }} · {{ selectedAnalyticsStaff.department }}</p></div>
+              <span class="ml-auto rounded-full bg-task-blueSoft px-3 py-1 text-xs font-bold text-task-blue">{{ analyticsUserTasks.length }} tasks</span>
+            </div>
+            <div v-if="analyticsUserTasks.length" class="mt-3 space-y-2">
+              <button v-for="task in analyticsUserTasks" :key="String(task[6] || task[0])" type="button" class="flex w-full items-center gap-3 rounded-[13px] border border-task-line p-3 text-left transition hover:border-task-blue hover:bg-task-blueSoft/40" @click="openAnalyticsTaskDetails(task)">
+                <span :class="['h-2.5 w-2.5 shrink-0 rounded-full', String(task[3]).toLowerCase() === 'completed' ? 'bg-task-success' : String(task[3]).toLowerCase() === 'overdue' ? 'bg-task-danger' : 'bg-task-blue']" />
+                <span class="min-w-0 flex-1"><b class="block truncate text-sm text-task-ink">{{ task[0] }}</b><small class="mt-1 block text-xs text-task-muted">{{ task[3] || 'Not started' }} · Due {{ task[4] || '—' }}</small></span>
+                <span class="text-lg text-task-muted">›</span>
+              </button>
+            </div>
+            <div v-else class="mt-4 rounded-[14px] border border-dashed border-task-line py-10 text-center"><p class="font-bold text-task-ink">No tasks found</p><p class="mt-1 text-sm text-task-muted">This staff member has no assigned tasks.</p></div>
           </template>
           <template v-else-if="modal === 'member-remove' && selectedTeamMember">
             <p class="text-lg font-bold leading-7 text-task-ink sm:text-xl">Are you sure you want to remove this member<br class="hidden sm:block" /> from the <span class="text-task-blue">{{ memberDepartmentNameOf(selectedTeamMember) }}</span> department?</p>
@@ -4595,6 +4653,11 @@ const iconPath = (name: string) => {
             <label class="mb-5 mt-4 flex items-center justify-between gap-4 rounded-ui border border-task-line px-4 py-3 text-sm font-semibold"><span><span class="block">Active member</span><span class="mt-0.5 block text-xs font-normal text-task-muted">Allow this member to sign in immediately.</span></span><input v-model="memberIsActive" type="checkbox" class="h-5 w-5 accent-task-blue" /></label>
           </template>
           <template v-else-if="modal === 'task'">
+            <button v-if="taskModalReturnToAnalytics" type="button" class="group mb-4 inline-flex items-center gap-2.5 rounded-full border border-[#BFD4F5] bg-gradient-to-r from-[#EEF5FF] via-white to-[#F4EEFF] py-2 pl-2 pr-4 text-sm font-bold text-[#245A9A] shadow-[0_6px_18px_-10px_rgba(37,103,173,.7)] transition hover:-translate-y-0.5 hover:border-[#8FB5E5] hover:shadow-[0_10px_24px_-12px_rgba(37,103,173,.85)]" @click="returnToAnalyticsUserTasks">
+              <span class="grid h-7 w-7 place-items-center rounded-full bg-gradient-to-br from-[#76A9DE] to-[#7658C9] text-white shadow-sm transition group-hover:scale-105"><svg viewBox="0 0 24 24" class="h-4 w-4" fill="none" stroke="currentColor" stroke-width="2.4"><path d="m15 18-6-6 6-6" /></svg></span>
+              <span class="max-w-[260px] truncate">{{ selectedAnalyticsStaff?.name || 'User' }} tasks</span>
+              <span class="rounded-full bg-[#DFEBFC] px-2 py-0.5 text-[10px] font-extrabold uppercase tracking-wide text-[#487BB8]">Back</span>
+            </button>
             <section v-if="false" class="mb-4 overflow-hidden rounded-[16px] border border-[#C9B7FF] bg-gradient-to-br from-[#F8F5FF] via-white to-task-blueSoft/60 shadow-sm">
               <button type="button" class="flex w-full items-center gap-3 px-4 py-3.5 text-left" @click="aiTaskAssistantOpen = !aiTaskAssistantOpen">
                 <span class="grid h-10 w-10 shrink-0 place-items-center rounded-[13px] bg-gradient-to-br from-[#8B5CF6] to-task-blue text-white shadow-button"><svg viewBox="0 0 24 24" class="h-5 w-5" fill="none" stroke="currentColor" stroke-width="1.8"><path d="m12 3 1.4 4.1L17.5 8.5l-4.1 1.4L12 14l-1.4-4.1-4.1-1.4 4.1-1.4L12 3Z"/><path d="m18.5 14 .8 2.2 2.2.8-2.2.8-.8 2.2-.8-2.2-2.2-.8 2.2-.8.8-2.2Z"/></svg></span>
@@ -5005,7 +5068,7 @@ const iconPath = (name: string) => {
             <button v-if="modal === 'logout'" type="button" class="h-10 rounded-full bg-task-danger px-6 text-sm font-semibold text-white shadow-button transition hover:-translate-y-0.5 hover:bg-rose-700" @click="confirmLogout">Log out</button>
             <button v-else-if="modal === 'member-remove'" type="button" :disabled="memberDeleting" class="h-10 rounded-full bg-task-danger px-6 text-sm font-semibold text-white shadow-button transition hover:-translate-y-0.5 hover:bg-rose-600 disabled:cursor-not-allowed disabled:opacity-60" @click="confirmMemberRemoval">{{ memberDeleting ? 'Removing...' : 'Remove Member' }}</button>
             <button v-else-if="modal === 'event-delete'" type="button" :disabled="eventDeleting" class="inline-flex h-10 items-center gap-2 rounded-full bg-task-danger px-6 text-sm font-semibold text-white shadow-button transition hover:-translate-y-0.5 hover:bg-rose-600 disabled:cursor-not-allowed disabled:opacity-60" @click="deleteSelectedEvent"><span v-if="eventDeleting" class="h-4 w-4 animate-spin rounded-full border-2 border-white/40 border-t-white" />{{ eventDeleting ? 'Deleting...' : 'Delete Event' }}</button>
-            <button v-else-if="modal !== 'event-detail' && modal !== 'member-profile' && !(modal === 'task' && taskModalMode === 'view')" :disabled="taskSaving" class="h-10 rounded-full bg-gradient-to-b from-[#72A4D7] to-[#2567AD] px-6 text-sm font-semibold text-white shadow-button transition hover:-translate-y-0.5 disabled:cursor-not-allowed disabled:opacity-60" @click="submitModal">{{ taskSaving ? 'Saving...' : modal === 'report' ? 'Generate Report' : modal === 'event' ? (editingEventId ? 'Update Event' : 'Create Event') : modal === 'project' ? (editingProjectId ? 'Update Project' : 'Create Project') : modal === 'member' ? (editingMemberId ? 'Update Member' : 'Add Member') : modal === 'team-filter' ? 'Apply' : taskModalMode === 'edit' ? 'Save Changes' : 'Create Task' }}</button>
+            <button v-else-if="modal !== 'event-detail' && modal !== 'member-profile' && modal !== 'analytics-user-tasks' && !(modal === 'task' && taskModalMode === 'view')" :disabled="taskSaving" class="h-10 rounded-full bg-gradient-to-b from-[#72A4D7] to-[#2567AD] px-6 text-sm font-semibold text-white shadow-button transition hover:-translate-y-0.5 disabled:cursor-not-allowed disabled:opacity-60" @click="submitModal">{{ taskSaving ? 'Saving...' : modal === 'report' ? 'Generate Report' : modal === 'event' ? (editingEventId ? 'Update Event' : 'Create Event') : modal === 'project' ? (editingProjectId ? 'Update Project' : 'Create Project') : modal === 'member' ? (editingMemberId ? 'Update Member' : 'Add Member') : modal === 'team-filter' ? 'Apply' : taskModalMode === 'edit' ? 'Save Changes' : 'Create Task' }}</button>
           </div>
         </div>
       </div>

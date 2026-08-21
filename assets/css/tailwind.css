@@ -10,6 +10,10 @@ html.tf-dark .tf-loading-screen,
   color: #d8e8ff !important;
 }
 
+.tf-analytics-staff-table-wrap tbody tr {
+  cursor: pointer;
+}
+
 html.tf-dark .tf-loading-screen .tf-loading-ambient,
 .tf-dark .tf-loading-screen .tf-loading-ambient {
   background: radial-gradient(circle, rgb(37 99 235 / .18), rgb(30 64 175 / .06) 42%, transparent 70%) !important;
