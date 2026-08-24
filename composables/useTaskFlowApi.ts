@@ -164,9 +164,35 @@ type ApiReport = {
 }
 
 type ReportPayload = {
+  department: string
   name: string
   report_type: string
   parameters: string
+}
+
+export type ApiConversation = {
+  id: string
+  department?: string | null
+  title?: string
+  is_group?: boolean
+  participants?: number[]
+  participant_details?: UserBrief[]
+  last_message?: Record<string, unknown> | null
+  unread_count?: number
+  created_at?: string
+  updated_at?: string
+}
+
+export type ApiChatMessage = {
+  id: string
+  conversation: string
+  sender: number
+  sender_detail?: UserBrief
+  body?: string
+  attachment?: string | null
+  edited_at?: string | null
+  is_deleted?: boolean
+  created_at?: string
 }
 
 export type AnalyticsMetric = {
@@ -854,6 +880,32 @@ export const useTaskFlowApi = () => {
       body: report
     })
 
+  const listConversations = async (query: { search?: string; ordering?: string; page?: number; page_size?: number } = {}) => {
+    const params = new URLSearchParams()
+    Object.entries(query).forEach(([key, value]) => {
+      if (value !== undefined && value !== '') params.set(key, String(value))
+    })
+    const suffix = params.toString() ? `?${params}` : ''
+    return await apiFetch<ListResponse<ApiConversation>>(`/conversations/${suffix}`)
+  }
+
+  const listMessages = async (conversation: string, pageSize = 200) =>
+    await apiFetch<ListResponse<ApiChatMessage>>(`/messages/?conversation=${encodeURIComponent(conversation)}&ordering=created_at&page_size=${pageSize}`)
+
+  const createMessage = async (payload: { conversation: string; body: string; attachment?: File | null }) => {
+    if (payload.attachment) {
+      const form = new FormData()
+      form.append('conversation', payload.conversation)
+      form.append('body', payload.body)
+      form.append('attachment', payload.attachment)
+      return await apiFetch<ApiChatMessage>('/messages/', { method: 'POST', body: form })
+    }
+    return await apiFetch<ApiChatMessage>('/messages/', { method: 'POST', body: { conversation: payload.conversation, body: payload.body } })
+  }
+
+  const markConversationRead = async (id: string) =>
+    await apiFetch<ApiConversation>(`/conversations/${id}/mark_read/`, { method: 'POST', body: {} })
+
   const getReport = async (id: string) => await apiFetch<ApiReport>(`/reports/${id}/`)
 
   const loadDashboardData = async (onCoreLoaded?: (core: { dashboard: DashboardResponse; profile: MeProfile }) => void) => {
@@ -1120,6 +1172,10 @@ export const useTaskFlowApi = () => {
     getEvent,
     createEvent,
     createReport,
+    listConversations,
+    listMessages,
+    createMessage,
+    markConversationRead,
     getReport,
     patchEvent,
     deleteEvent,

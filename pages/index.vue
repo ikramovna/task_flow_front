@@ -1,10 +1,11 @@
 <script setup lang="ts">
 import type { Ref } from 'vue'
-import type { AnalyticsCard, AnalyticsSummary } from '~/composables/useTaskFlowApi'
+import type { AnalyticsCard, AnalyticsSummary, ApiChatMessage, ApiConversation } from '~/composables/useTaskFlowApi'
 import GreetingCard from '~/components/GreetingCard.vue'
 import { greetingConfig } from '~/constants/greetings'
+import { taskFlowSidebarGroups, type TaskFlowPageKey } from '~/constants/navigation'
 
-type PageKey = 'dashboard' | 'tasks' | 'projects' | 'analytics' | 'calendar' | 'team' | 'reports' | 'messages' | 'notifications' | 'settings' | 'help'
+type PageKey = TaskFlowPageKey
 type ModalKey = 'task' | 'project' | 'event' | 'event-detail' | 'event-delete' | 'report' | 'member' | 'member-profile' | 'member-remove' | 'analytics-user-tasks' | 'team-filter' | 'logout' | null
 type ProjectCardMember = {
   id?: string | number
@@ -371,10 +372,26 @@ const teamSearchInput = ref('')
 const teamSearch = ref('')
 const reportSearchInput = ref('')
 const reportSearch = ref('')
+const reportStatusFilter = ref('All statuses')
+const reportSort = ref<'newest' | 'oldest'>('newest')
+const reportTemplates = [
+  { title: 'Weekly Progress Report', description: 'A focused summary of completed and in-progress tasks for the week.', type: 'Weekly Progress', tone: 'blue', icon: 'M4 19V5m0 14h16M7 15l3-4 3 2 5-7' },
+  { title: 'Team Performance Report', description: 'Individual output, team momentum and productivity insights.', type: 'Team Performance', tone: 'green', icon: 'M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2m7-10a4 4 0 1 0 0-8 4 4 0 0 0 0 8Zm8 0a4 4 0 0 0 0-8m5 18v-2a4 4 0 0 0-3-3.87' },
+  { title: 'Project Status Report', description: 'Project health, delivery risks and milestone tracking in one view.', type: 'Project Status', tone: 'orange', icon: 'M3 7h18v13H3V7Zm0 0 3-4h5l2 4' },
+  { title: 'Time Tracking Report', description: 'Hours logged by team members across active projects.', type: 'Time Tracking', tone: 'violet', icon: 'M12 8v5l3 2m6-3a9 9 0 1 1-18 0 9 9 0 0 1 18 0Z' }
+]
 const messageSearchInput = ref('')
 const messageSearch = ref('')
 const helpSearchInput = ref('')
 const helpSearch = ref('')
+const openFaq = ref<number | null>(0)
+const helpFaqs = [
+  { question: 'How do I create a new task?', answer: 'Open Tasks from the sidebar, select Create Task, complete the details and assign it to a team member.' },
+  { question: 'How do I add team members?', answer: 'Open Staff List and select Add Member. Owners, admins and managers can invite people to their department.' },
+  { question: 'How can I track project progress?', answer: 'Use Projects for milestone progress and Analytics for detailed team performance, workload and completion trends.' },
+  { question: 'How do I assign tasks to team members?', answer: 'Create or edit a task, open the assignee picker and select one or more available department members.' },
+  { question: 'How do I generate a report?', answer: 'Open Reports, choose a ready-made template or Custom Report, select the date range and filters, then generate it.' }
+]
 const feedbackDraft = ref('')
 const feedbackType = ref<'Bug' | 'Suggestion' | 'Feedback'>('Feedback')
 const feedbackScreenshotInput = ref<HTMLInputElement | null>(null)
@@ -448,6 +465,12 @@ const selectedTeamMember = ref<Array<string | number> | null>(null)
 const memberDeleting = ref(false)
 const activeMessage = ref('')
 const chatDraft = ref('')
+const conversations = ref<ApiConversation[]>([])
+const conversationMessages = ref<ApiChatMessage[]>([])
+const conversationsLoading = ref(false)
+const messagesLoading = ref(false)
+const messageSending = ref(false)
+const messageTab = ref<'inbox' | 'archived'>('inbox')
 const toast = ref('')
 const toastType = ref<'info' | 'success' | 'error'>('info')
 const actionMenu = ref<string | null>(null)
@@ -746,9 +769,16 @@ const eventColorById = reactive<Record<string, string>>({})
 const selectedCalendarEvent = ref<CalendarEvent | null>(null)
 const editingEventId = ref('')
 const eventDeleting = ref(false)
-const reportType = ref('Productivity')
+const reportType = ref('Weekly Progress')
 const reportStatus = ref('All Statuses')
-const reportTypeOptions = ['Productivity', 'Team Performance', 'Project Status', 'Time Tracking']
+const reportPriority = ref('All Priorities')
+const reportTypeOptions = ['Weekly Progress', 'Team Performance', 'Project Status', 'Time Tracking']
+const reportTypeApiValues: Record<string, string> = {
+  'Weekly Progress': 'weekly_progress',
+  'Team Performance': 'team_performance',
+  'Project Status': 'project_status',
+  'Time Tracking': 'time_tracking'
+}
 const openProjectDatePicker = ref<'startDate' | 'dueDate' | 'analyticsStart' | 'analyticsEnd' | null>(null)
 const datePickerView = reactive({
   year: currentYear,
@@ -924,14 +954,32 @@ const filteredTeam = computed(() => {
     return collator.compare(String(a[0] || ''), String(b[0] || ''))
   })
 })
-const filteredReports = computed(() => reports.value.filter((report) => includesQuery(report, reportSearch.value)))
+const filteredReports = computed(() => {
+  const rows = reports.value.filter((report) =>
+    includesQuery(report, reportSearch.value) &&
+    (reportStatusFilter.value === 'All statuses' || String(report[4]).toLowerCase() === reportStatusFilter.value.toLowerCase())
+  )
+  return reportSort.value === 'oldest' ? [...rows].reverse() : rows
+})
 const reportStats = computed(() => [
   { value: reports.value.length, label: 'Total Reports', icon: 'file' },
   { value: reports.value.filter((report) => String(report[4]).toLowerCase() === 'ready').length, label: 'Ready Reports', icon: 'check' },
   { value: new Set(reports.value.map((report) => String(report[1])).filter(Boolean)).size, label: 'Report Types', icon: 'analytics' }
 ])
-const filteredMessages = computed(() => messages.value.filter((name) => includesQuery(name, messageSearch.value)))
-const filteredFaqs = computed<string[]>(() => [])
+const filteredMessages = computed(() => {
+  const query = messageSearch.value.trim().toLowerCase()
+  return conversations.value.filter(conversation => !query || `${conversation.title || ''} ${conversation.participant_details?.map(item => item.full_name || item.email).join(' ') || ''}`.toLowerCase().includes(query))
+})
+const selectedConversation = computed(() => conversations.value.find(item => item.id === activeMessage.value) || null)
+const conversationDisplayUser = (conversation: ApiConversation) => conversation.participant_details?.find(item => String(item.id) !== String(currentUserId.value)) || conversation.participant_details?.[0]
+const conversationTitle = (conversation: ApiConversation) => conversation.title || conversationDisplayUser(conversation)?.full_name || conversationDisplayUser(conversation)?.email || 'Conversation'
+const conversationAvatar = (conversation: ApiConversation) => absoluteMediaUrl(conversationDisplayUser(conversation)?.avatar)
+const conversationLastMessage = (conversation: ApiConversation) => String(conversation.last_message?.body || 'No messages yet')
+const messageIsMine = (message: ApiChatMessage) => String(message.sender) === String(currentUserId.value)
+const filteredFaqs = computed(() => {
+  const query = helpSearch.value.trim().toLowerCase()
+  return helpFaqs.map((item, index) => ({ ...item, index })).filter(item => !query || `${item.question} ${item.answer}`.toLowerCase().includes(query))
+})
 const pageCount = (length: number) => Math.max(1, Math.ceil(length / pageSize))
 const paginate = <T>(items: T[], page: number) => items.slice((page - 1) * pageSize, page * pageSize)
 // Tasks stay in one continuous list/board; backend responses must not be split
@@ -974,7 +1022,7 @@ watch([() => filteredTasks.value.length, taskPageCount], () => {
 })
 watch([projectSearch, projectPriorityFilter], () => { projectPage.value = 1 })
 watch([teamSearch, workloadFilter], () => { teamPage.value = 1 })
-watch(reportSearch, () => { reportPage.value = 1 })
+watch([reportSearch, reportStatusFilter, reportSort], () => { reportPage.value = 1 })
 const taskStatusCounts = computed(() => {
   const total = tasks.value.length
   const countByStatus = (status: string) => tasks.value.filter((task) => String(task[3]).toLowerCase() === status).length
@@ -1054,14 +1102,11 @@ const quickInsights = computed(() => {
     `Team members: ${team.value.length}`
   ]
 })
-const menuPages = computed(() => pages.value.filter((page) => page.group === 'menu'))
-const generalPages = computed(() => pages.value.filter((page) => page.group === 'general'))
-const sidebarGroups = computed(() => [
-  { label: 'MAIN', items: menuPages.value.filter((page) => ['dashboard', 'tasks', 'projects', 'analytics', 'calendar'].includes(page.key)) },
-  { label: 'TEAM', items: menuPages.value.filter((page) => page.key === 'team') },
-  { label: 'REPORTS', items: menuPages.value.filter((page) => page.key === 'reports') }
-].filter((group) => group.items.length))
-const comingSoonPages = new Set<PageKey>(['projects', 'reports'])
+const sidebarGroups = computed(() => taskFlowSidebarGroups.map(group => ({
+  label: group.label,
+  items: pages.value.filter(page => (group.keys as readonly string[]).includes(page.key))
+})).filter(group => group.items.length))
+const comingSoonPages = new Set<PageKey>()
 const isComingSoonPage = (key: PageKey) => comingSoonPages.has(key)
 const profileName = computed(() => `${savedProfile.firstName} ${savedProfile.lastName}`.trim())
 const isMuslimaRadioUser = computed(() => profileName.value.trim().replace(/\s+/g, ' ').toLocaleLowerCase() === 'muslima zokirjonova')
@@ -1291,6 +1336,12 @@ const completedTrendPoints = computed(() => buildPerformancePoints('completed'))
 const assignedTrendPoints = computed(() => buildPerformancePoints('assigned'))
 const completedTrendPath = computed(() => buildSmoothPath(completedTrendPoints.value))
 const assignedTrendPath = computed(() => buildSmoothPath(assignedTrendPoints.value))
+const completedTrendAreaPath = computed(() => completedTrendPoints.value.length && completedTrendPath.value
+  ? `${completedTrendPath.value} L${completedTrendPoints.value.at(-1)!.x} ${performanceChartBottom} L${completedTrendPoints.value[0].x} ${performanceChartBottom} Z`
+  : '')
+const assignedTrendAreaPath = computed(() => assignedTrendPoints.value.length && assignedTrendPath.value
+  ? `${assignedTrendPath.value} L${assignedTrendPoints.value.at(-1)!.x} ${performanceChartBottom} L${assignedTrendPoints.value[0].x} ${performanceChartBottom} Z`
+  : '')
 const monthlyAreaPath = computed(() => {
   if (!monthlyCompletedPoints.value.length || !monthlyCompletedPath.value) return ''
   const first = monthlyCompletedPoints.value[0]
@@ -1675,6 +1726,7 @@ const setPage = (key: PageKey) => {
   if (key === 'tasks') void loadTaskScope(taskScope.value)
   if (key === 'team') void loadMembersFromBackend()
   if (key === 'analytics') void loadFilteredAnalytics()
+  if (key === 'messages') void loadConversations()
   actionMenu.value = null
   mobileSidebarOpen.value = false
 }
@@ -2361,8 +2413,9 @@ const openModal = (value: Exclude<ModalKey, null>) => {
     projectMemberSearch.value = ''
   }
   if (value === 'report') {
-    reportType.value = 'Productivity'
+    reportType.value = 'Weekly Progress'
     reportStatus.value = 'All Statuses'
+    reportPriority.value = 'All Priorities'
   }
   modal.value = value
 }
@@ -3324,14 +3377,29 @@ const submitModal = async () => {
       notifyError('Report name is required')
       return
     }
+    const reportStartDate = parseProjectDate(form.startDate)
+    const reportEndDate = parseProjectDate(form.dueDate)
+    if (!reportStartDate || !reportEndDate) {
+      notifyError('Start and end dates are required')
+      return
+    }
+    if (reportStartDate > reportEndDate) {
+      notifyError('End date cannot be before start date')
+      return
+    }
+    if (!effectiveDepartmentId.value) {
+      notifyError('Your account must be assigned to a department before generating reports')
+      return
+    }
     try {
       const created = await taskFlowApi.createReport({
+        department: effectiveDepartmentId.value,
         name: title,
-        report_type: reportType.value.toLowerCase().replace(/\s+/g, '_'),
+        report_type: reportTypeApiValues[reportType.value] || 'weekly_progress',
         parameters: JSON.stringify({
-          start_date: parseProjectDate(form.startDate),
-          end_date: parseProjectDate(form.dueDate),
-          priority: dropdownValues.priority === 'All Priorities' ? null : projectEnum(dropdownValues.priority),
+          start_date: reportStartDate,
+          end_date: reportEndDate,
+          priority: reportPriority.value === 'All Priorities' ? null : projectEnum(reportPriority.value),
           status: reportStatus.value === 'All Statuses' ? null : projectEnum(reportStatus.value)
         })
       })
@@ -3414,10 +3482,54 @@ const submitModal = async () => {
   modal.value = null
 }
 
-const sendMessage = () => {
-  if (!chatDraft.value.trim()) return
-  chatDraft.value = ''
-  notify('Messages can be sent after backend endpoint is connected')
+const loadConversations = async () => {
+  conversationsLoading.value = true
+  try {
+    const response = await taskFlowApi.listConversations({ ordering: '-updated_at', page_size: 100 })
+    conversations.value = taskFlowApi.listItems(response) as ApiConversation[]
+    if (!activeMessage.value && conversations.value.length) await openConversation(conversations.value[0])
+  } catch (error) {
+    notifyError(taskFlowApiErrorMessage(error, 'Could not load conversations'))
+  } finally {
+    conversationsLoading.value = false
+  }
+}
+
+const openConversation = async (conversation: ApiConversation) => {
+  activeMessage.value = conversation.id
+  messagesLoading.value = true
+  try {
+    const [response] = await Promise.all([
+      taskFlowApi.listMessages(conversation.id),
+      conversation.unread_count ? taskFlowApi.markConversationRead(conversation.id) : Promise.resolve(null)
+    ])
+    conversationMessages.value = taskFlowApi.listItems(response) as ApiChatMessage[]
+    conversation.unread_count = 0
+  } catch (error) {
+    notifyError(taskFlowApiErrorMessage(error, 'Could not load messages'))
+  } finally {
+    messagesLoading.value = false
+  }
+}
+
+const sendMessage = async () => {
+  const body = chatDraft.value.trim()
+  if (!body || !activeMessage.value || messageSending.value) return
+  messageSending.value = true
+  try {
+    const created = await taskFlowApi.createMessage({ conversation: activeMessage.value, body })
+    conversationMessages.value.push(created)
+    chatDraft.value = ''
+    const conversation = selectedConversation.value
+    if (conversation) {
+      conversation.last_message = created as unknown as Record<string, unknown>
+      conversation.updated_at = created.created_at
+    }
+  } catch (error) {
+    notifyError(taskFlowApiErrorMessage(error, 'Message could not be sent'))
+  } finally {
+    messageSending.value = false
+  }
 }
 
 const generateReport = (name: string) => {
@@ -3855,8 +3967,8 @@ const iconPath = (name: string) => {
           </button>
         </div>
 
-        <nav :key="sidebarNavigationKey" :class="['flex min-h-0 flex-1 flex-col overflow-hidden pt-5', sidebarCollapsed ? 'px-1' : 'px-2']">
-          <section v-for="(group, groupIndex) in sidebarGroups" :key="group.label" :class="['tf-sidebar-group', groupIndex ? 'mt-5 border-t border-task-line pt-5' : '']">
+        <nav :key="sidebarNavigationKey" :class="['tf-sidebar-nav flex min-h-0 flex-1 flex-col overflow-y-auto pt-2', sidebarCollapsed ? 'px-1' : 'px-2']">
+          <section v-for="(group, groupIndex) in sidebarGroups" :key="group.label" :class="['tf-sidebar-group shrink-0', groupIndex ? 'mt-3 border-t border-task-line pt-3' : '']">
             <p v-if="!sidebarCollapsed" class="tf-sidebar-group-label">{{ group.label }}</p>
             <div class="mt-2 space-y-1.5">
               <button v-for="item in group.items" :key="item.key" type="button" :disabled="isComingSoonPage(item.key)" :aria-current="activePage === item.key ? 'page' : undefined" :class="['tf-nav-item relative flex h-11 w-full items-center rounded-[12px] text-left text-sm transition', sidebarCollapsed ? 'justify-center px-2' : 'gap-3 px-3', isComingSoonPage(item.key) ? 'cursor-not-allowed text-slate-400' : activePage === item.key ? 'is-active font-semibold text-task-blue' : 'text-task-muted']" :title="isComingSoonPage(item.key) ? `${item.label} — Coming soon` : sidebarCollapsed ? item.label : undefined" @click="navigateSidebar($event, item.key)">
@@ -3867,7 +3979,7 @@ const iconPath = (name: string) => {
               </button>
             </div>
           </section>
-          <div :class="['tf-sidebar-user mt-auto', sidebarCollapsed ? 'flex-col justify-center p-1.5' : '']">
+          <div :class="['tf-sidebar-user sticky bottom-0 z-10 mt-3 shrink-0 bg-white', sidebarCollapsed ? 'flex-col justify-center p-1.5' : '']">
           <button type="button" :class="['flex min-w-0 items-center gap-2 text-left', sidebarCollapsed ? 'justify-center' : 'flex-1']" :title="sidebarCollapsed ? profileName : undefined" @click="setPage('settings')">
             <span class="tf-sidebar-avatar">
               <img v-if="savedProfile.avatar" :src="savedProfile.avatar" alt="Profile avatar" class="h-full w-full rounded-full object-cover" />
@@ -4236,18 +4348,18 @@ const iconPath = (name: string) => {
           </div>
         </section>
 
-        <section v-else-if="activePage === 'projects'" class="space-y-4">
-          <div class="tf-panel grid gap-4 p-4 sm:grid-cols-2 xl:grid-cols-4">
-            <div v-for="(item, index) in projectStats" :key="String(item[1])" :class="['group relative h-36 overflow-hidden rounded-[18px] border bg-gradient-to-br p-5', dashboardStatStyles[index]?.card]">
+        <section v-else-if="activePage === 'projects'" class="tf-projects-page space-y-5">
+          <div class="tf-project-stats grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
+            <div v-for="(item, index) in projectStats" :key="String(item[1])" :class="['tf-project-stat group relative h-40 overflow-hidden rounded-[18px] border bg-gradient-to-br p-5', dashboardStatStyles[index]?.card]">
               <div class="flex items-start gap-4"><span :class="['grid h-12 w-12 shrink-0 place-items-center rounded-[15px] bg-white/85 shadow-sm ring-1', dashboardStatStyles[index]?.icon]"><svg viewBox="0 0 24 24" class="h-6 w-6" fill="none" stroke="currentColor" stroke-width="1.8"><path :d="index === 0 ? iconPath('projects') : index === 1 ? 'M8 2h8M8 22h8M9 2v5l3 3 3-3V2M9 22v-5l3-3 3 3v5' : index === 2 ? 'm5 12 4 4L19 6' : 'M12 9v4m0 4h.01M10.3 3.5 2.6 17a2 2 0 0 0 1.7 3h15.4a2 2 0 0 0 1.7-3L13.7 3.5a2 2 0 0 0-3.4 0Z'" /></svg></span><div><p :class="['text-3xl font-bold', index === 0 ? 'text-task-blue' : index === 1 ? 'text-[#8057D5]' : index === 2 ? 'text-task-success' : 'text-task-danger']">{{ item[0] }}</p><p class="mt-1 text-sm font-medium text-task-muted">{{ item[1] }}</p></div></div>
               <div class="absolute bottom-4 left-5 right-5 flex items-end justify-between"><svg viewBox="0 0 90 28" :class="['h-7 w-28', dashboardStatStyles[index]?.line]" fill="none"><path d="M2 23 12 18l10 4 11-10 10 8 12-11 11 9 10-12 12 3" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" /></svg><span class="text-xs font-medium text-task-muted">Live overview</span></div>
             </div>
           </div>
-          <div class="tf-panel relative overflow-hidden p-5 sm:p-6">
+          <div class="tf-panel tf-project-list-panel relative overflow-visible p-5 sm:p-6">
             <div class="mb-6 flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between"><div><h2 class="text-xl font-bold">All Projects</h2><p class="mt-1 text-sm text-task-muted">Track progress, deadlines and assigned team members.</p></div><div class="flex flex-col gap-3 sm:flex-row"><label class="relative w-full sm:w-auto"><svg viewBox="0 0 24 24" class="pointer-events-none absolute left-3.5 top-1/2 h-4 w-4 -translate-y-1/2 text-task-muted" fill="none" stroke="currentColor" stroke-width="1.8"><path :d="iconPath('search')" /></svg><input v-model="projectSearchInput" class="tf-input h-11 w-full pl-10 pr-10 sm:w-72" placeholder="Search projects..." /><button v-if="projectSearchInput && !searchLoading.project" type="button" class="tf-search-clear" aria-label="Clear project search" @click="clearSearch('project')">×</button><span v-if="searchLoading.project" class="tf-search-spinner" /></label><div class="tf-dropdown"><button type="button" class="inline-flex h-11 w-full items-center justify-center gap-2 rounded-[12px] border border-task-line bg-white px-4 text-sm font-semibold text-task-muted transition hover:border-task-blue hover:text-task-blue sm:w-auto" @click="openDropdown = openDropdown === 'projectFilter' ? null : 'projectFilter'"><svg viewBox="0 0 24 24" class="h-4 w-4" fill="none" stroke="currentColor" stroke-width="1.8"><path :d="iconPath('filter')" /></svg>{{ projectPriorityFilter === 'All Priorities' ? 'Filter' : projectPriorityFilter }}</button><div v-if="openDropdown === 'projectFilter'" class="tf-dropdown-menu min-w-48"><button v-for="option in dropdownOptions.priority" :key="option" type="button" class="tf-dropdown-option" @click="projectPriorityFilter = option; openDropdown = null">{{ option }}</button></div></div><button class="tf-primary h-11 w-full rounded-[12px] px-5 sm:w-auto" type="button" @click="openModal('project')"><svg viewBox="0 0 24 24" class="h-4 w-4" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 5v14M5 12h14" /></svg>Create New Project</button></div></div>
             <div v-if="searchLoading.project" class="tf-search-overlay"><span class="tf-search-loader" /> Searching projects...</div>
-            <div class="grid gap-4 lg:grid-cols-3">
-              <article v-for="(project, index) in paginatedProjects" :key="project[0]" :class="['relative overflow-visible rounded-[16px] border border-task-line bg-white p-5 shadow-[0_8px_25px_-22px_rgba(15,23,42,.5)] transition hover:-translate-y-0.5 hover:shadow-lg', String(project[1]).toLowerCase() === 'completed' ? 'before:bg-task-success' : index % 2 ? 'before:bg-[#8057D5]' : 'before:bg-task-blue', 'before:absolute before:inset-y-0 before:left-0 before:w-1 before:rounded-l-[16px]']">
+            <div class="tf-project-grid grid gap-5 lg:grid-cols-3">
+              <article v-for="(project, index) in paginatedProjects" :key="project[0]" class="tf-project-card relative overflow-visible rounded-[17px] border border-task-line bg-white p-5 transition">
                 <div class="mb-3 flex items-start justify-between"><h3 class="text-lg font-bold">{{ project[0] }}</h3><div class="relative"><button type="button" class="tf-icon-button" @click="toggleActionMenu(`project-${project[0]}`)"><svg viewBox="0 0 24 24" class="h-4 w-4" fill="none" stroke="currentColor"><path :d="iconPath('dots')" /></svg></button><div v-if="actionMenu === `project-${project[0]}`" class="tf-action-menu"><button type="button" class="tf-action-item" @click="viewProject(project)">View</button><button v-if="canManageDepartment" type="button" class="tf-action-item" @click="editProject(project)">Edit</button><button v-if="canManageDepartment" type="button" class="tf-action-item" @click="patchProjectStatus(project, 'completed')">Mark Completed</button><button v-if="canManageDepartment" type="button" class="tf-action-item" @click="patchProjectStatus(project, 'archived')">Archive</button><button v-if="canManageDepartment" type="button" class="tf-action-item tf-action-danger" @click="deleteProject(project)">Delete</button></div></div></div>
                 <div class="mb-4 flex gap-2"><span :class="['tf-pill', badgeClass(String(project[1]))]">{{ project[1] }}</span><span :class="['tf-pill', badgeClass(String(project[2]))]">{{ project[2] }}</span></div>
                 <div class="rounded-[13px] bg-slate-50 p-3"><div class="mb-2 flex justify-between text-sm"><span class="text-task-muted">Progress</span><b>{{ project[3] }}%</b></div><div class="h-2 overflow-hidden rounded-full bg-slate-200"><div :class="['h-full rounded-full transition-all', String(project[1]).toLowerCase() === 'completed' ? 'bg-task-success' : 'bg-gradient-to-r from-task-blue to-[#7654ED]']" :style="{ width: `${project[3]}%` }" /></div><p class="mt-3 text-sm text-task-muted">{{ project[4] }}</p><div class="mt-3 flex items-center justify-between gap-3 text-sm text-task-muted"><div class="flex min-h-7 -space-x-2"><span v-for="member in projectMemberDetailsOf(project).slice(0, 4)" :key="String(member.id || member.email)" class="grid h-8 w-8 place-items-center overflow-hidden rounded-full border-2 border-white bg-task-blueSoft text-[9px] font-bold text-task-blue" :title="projectMemberName(member)"><img v-if="member.avatar" :src="member.avatar" :alt="projectMemberName(member)" class="h-full w-full object-cover" /><span v-else>{{ initials(projectMemberName(member)) }}</span></span><span v-if="projectMemberDetailsOf(project).length > 4" class="grid h-8 w-8 place-items-center rounded-full border-2 border-white bg-task-blue text-[10px] font-bold text-white">+{{ projectMemberDetailsOf(project).length - 4 }}</span></div><span class="flex shrink-0 items-center gap-1.5"><svg viewBox="0 0 24 24" class="h-4 w-4" fill="none" stroke="currentColor" stroke-width="1.8"><path :d="iconPath('calendar')" /></svg>Due: {{ project[5] }}</span></div></div>
@@ -4280,22 +4392,25 @@ const iconPath = (name: string) => {
           </div>
 
           <div class="tf-analytics-trends grid gap-3 xl:grid-cols-2">
-            <section class="tf-panel p-5">
+            <section class="tf-panel tf-performance-trend-card p-5">
               <header class="flex items-start justify-between gap-4">
                 <div><h2 class="text-base font-extrabold text-task-ink">Performance Trend</h2><p class="mt-1 text-xs text-task-muted">Assigned and completed tasks over time</p></div>
-                <div class="flex flex-wrap justify-end gap-3 text-[11px] text-task-muted"><span class="flex items-center gap-2"><i class="h-0.5 w-5 bg-[#34D399]" />Completed</span><span class="flex items-center gap-2"><i class="h-0.5 w-5 bg-[#EF4444]" />Assigned</span></div>
+                <button type="button" class="tf-icon-button h-8 w-8 rounded-full" aria-label="Performance trend options"><svg viewBox="0 0 24 24" class="h-4 w-4" fill="none" stroke="currentColor"><path :d="iconPath('dots')"/></svg></button>
               </header>
-              <div class="relative mt-4 h-[340px] overflow-hidden" @mouseleave="hoveredEfficiencyMonth = null">
+              <div class="relative mt-4 h-[270px] overflow-hidden" @mouseleave="hoveredEfficiencyMonth = null">
                 <div class="absolute inset-y-3 left-0 flex flex-col justify-between pb-7 text-[10px] text-task-muted"><span v-for="tick in performanceTrendTicks" :key="tick">{{ tick }}</span></div>
                 <div class="absolute bottom-7 left-10 right-0 top-3">
                   <svg viewBox="0 0 560 230" class="absolute inset-0 h-full w-full" preserveAspectRatio="none">
-                    <path d="M0 0H560M0 57.5H560M0 115H560M0 172.5H560M0 230H560" fill="none" stroke="#203650" stroke-dasharray="4 5"/>
-                    <path :d="assignedTrendPath" fill="none" stroke="#EF4444" stroke-width="3" stroke-linecap="round" />
-                    <path :d="completedTrendPath" fill="none" stroke="#34D399" stroke-width="3" stroke-linecap="round" />
-                    <circle v-for="point in assignedTrendPoints" :key="`assigned-${point.item.month}`" :cx="point.x" :cy="point.y" r="4" fill="#102b31" stroke="#EF4444" stroke-width="2" />
-                    <circle v-for="point in completedTrendPoints" :key="`completed-${point.item.month}`" :cx="point.x" :cy="point.y" r="4" fill="#102b31" stroke="#34D399" stroke-width="2" />
+                    <defs><linearGradient id="performance-completed-fill" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#5B8FC8" stop-opacity=".38"/><stop offset="1" stop-color="#5B8FC8" stop-opacity=".03"/></linearGradient><linearGradient id="performance-assigned-fill" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#AFC2D8" stop-opacity=".2"/><stop offset="1" stop-color="#AFC2D8" stop-opacity=".02"/></linearGradient></defs>
+                    <path d="M0 0H560M0 57.5H560M0 115H560M0 172.5H560M0 230H560" fill="none" stroke="currentColor" class="tf-performance-grid" stroke-dasharray="3 5"/>
+                    <path :d="assignedTrendAreaPath" fill="url(#performance-assigned-fill)" />
+                    <path :d="completedTrendAreaPath" fill="url(#performance-completed-fill)" />
+                    <path :d="assignedTrendPath" fill="none" stroke="#A8B7C9" stroke-width="1.7" stroke-linecap="round" />
+                    <path :d="completedTrendPath" fill="none" stroke="#4E7EAE" stroke-width="2.2" stroke-linecap="round" />
+                    <circle v-for="point in assignedTrendPoints" :key="`assigned-${point.item.month}`" :cx="point.x" :cy="point.y" r="3" fill="#fff" stroke="#A8B7C9" stroke-width="1.5" />
+                    <circle v-for="point in completedTrendPoints" :key="`completed-${point.item.month}`" :cx="point.x" :cy="point.y" r="3.5" fill="#fff" stroke="#4E7EAE" stroke-width="2" />
                   </svg>
-                  <div class="absolute inset-0 z-10 grid" :style="chartColumnsStyle(efficiencyTrendData.length)"><button v-for="(bar, barIndex) in efficiencyTrendData" :key="bar.month" type="button" class="group relative h-full" @mouseenter="hoveredEfficiencyMonth = bar.month" @focus="hoveredEfficiencyMonth = bar.month"><span v-if="bar.month === highlightedEfficiency?.month" :class="['absolute top-4 z-20 min-w-max rounded-md bg-[#06111f] px-2.5 py-1.5 text-left text-[11px] font-bold text-white shadow-xl', barIndex === 0 ? 'left-0' : barIndex === efficiencyTrendData.length - 1 ? 'right-0' : 'left-1/2 -translate-x-1/2']"><span class="block text-[#34D399]">Completed: {{ bar.completed }}</span><span class="mt-0.5 block text-[#EF4444]">Assigned: {{ bar.assigned }}</span></span></button></div>
+                  <div class="absolute inset-0 z-10 grid" :style="chartColumnsStyle(efficiencyTrendData.length)"><button v-for="(bar, barIndex) in efficiencyTrendData" :key="bar.month" type="button" class="group relative h-full" @mouseenter="hoveredEfficiencyMonth = bar.month" @focus="hoveredEfficiencyMonth = bar.month"><span v-if="bar.month === highlightedEfficiency?.month" :class="['tf-performance-tooltip absolute top-4 z-20 min-w-max rounded-[10px] px-3 py-2 text-left text-[11px] shadow-xl', barIndex === 0 ? 'left-0' : barIndex === efficiencyTrendData.length - 1 ? 'right-0' : 'left-1/2 -translate-x-1/2']"><b class="mb-1 block text-task-ink">{{ bar.month }}</b><span class="block"><i class="mr-1.5 inline-block h-2 w-2 rounded-full bg-[#4E7EAE]"/>Completed: {{ bar.completed }}</span><span class="mt-1 block"><i class="mr-1.5 inline-block h-2 w-2 rounded-full bg-[#A8B7C9]"/>Assigned: {{ bar.assigned }}</span></span></button></div>
                 </div>
                 <div class="absolute bottom-0 left-10 right-0 grid text-center text-[10px] text-task-muted" :style="chartColumnsStyle(efficiencyTrendData.length)"><span v-for="item in efficiencyTrendData" :key="item.month">{{ item.month }}</span></div>
               </div>
@@ -4486,32 +4601,33 @@ const iconPath = (name: string) => {
           </div>
         </section>
 
-        <section v-else-if="activePage === 'reports'" class="space-y-4">
-          <div class="tf-panel grid gap-4 p-5 sm:grid-cols-3">
-            <div v-for="(item, index) in reportStats" :key="item.label" :class="['group relative flex h-28 items-center gap-4 overflow-hidden rounded-[18px] border bg-gradient-to-br px-5', dashboardStatStyles[index]?.card]">
-              <span :class="['grid h-12 w-12 shrink-0 place-items-center rounded-[15px] bg-white/85 shadow-sm ring-1', dashboardStatStyles[index]?.icon]"><svg viewBox="0 0 24 24" class="h-6 w-6" fill="none" stroke="currentColor" stroke-width="1.8"><path :d="iconPath(item.icon)" /></svg></span>
-              <div class="relative z-10"><p class="text-3xl font-bold">{{ item.value }}</p><p class="mt-1 text-sm font-medium text-task-muted">{{ item.label }}</p></div>
-              <svg viewBox="0 0 90 35" :class="['absolute bottom-3 right-3 h-9 w-24 opacity-75', dashboardStatStyles[index]?.line]" fill="none"><path d="M3 30 22 17l18 4 18-7 14-11 15 4" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" /><circle cx="87" cy="7" r="2.5" fill="currentColor" /></svg>
-            </div>
+        <section v-else-if="activePage === 'reports'" class="tf-reports-page space-y-5">
+          <div class="tf-report-templates grid gap-4 lg:grid-cols-2">
+            <article v-for="template in reportTemplates" :key="template.title" :class="['tf-report-template', `is-${template.tone}`]">
+              <span class="tf-report-template-icon"><svg viewBox="0 0 24 24" class="h-6 w-6" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path :d="template.icon" /></svg></span>
+              <div class="min-w-0 flex-1"><h2 class="text-base font-extrabold text-task-ink">{{ template.title }}</h2><p class="mt-1 max-w-md text-sm leading-5 text-task-muted">{{ template.description }}</p></div>
+              <button type="button" class="tf-report-generate" @click="openModal('report'); form.title = template.title; reportType = template.type"><svg viewBox="0 0 24 24" class="h-4 w-4" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 3v11m0 0 4-4m-4 4-4-4M5 19h14" /></svg>Generate</button>
+            </article>
           </div>
 
-          <div class="tf-panel relative overflow-hidden p-5 sm:p-6">
+          <div class="tf-panel relative p-4 sm:p-6">
             <div class="mb-6 flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
-              <div><h2 class="text-xl font-bold">Recent Reports</h2><p class="mt-1 text-sm text-task-muted">View and manage generated team reports.</p></div>
-              <div class="flex flex-col gap-3 sm:flex-row">
+              <div><div class="flex items-center gap-3"><h2 class="text-xl font-extrabold">Recent Reports</h2><span class="rounded-full bg-task-blueSoft px-2.5 py-1 text-[11px] font-bold text-task-blue">{{ filteredReports.length }}</span></div><p class="mt-1 text-sm text-task-muted">Search, filter and download generated team reports.</p></div>
+              <div class="flex flex-wrap items-center gap-2 lg:justify-end">
                 <label class="relative w-full sm:w-auto"><svg viewBox="0 0 24 24" class="pointer-events-none absolute left-3.5 top-1/2 h-4 w-4 -translate-y-1/2 text-task-muted" fill="none" stroke="currentColor" stroke-width="1.8"><path :d="iconPath('search')" /></svg><input v-model="reportSearchInput" class="tf-input h-11 w-full pl-10 pr-10 sm:w-72" placeholder="Search reports..." /><button v-if="reportSearchInput && !searchLoading.report" type="button" class="tf-search-clear" aria-label="Clear report search" @click="clearSearch('report')">×</button><span v-if="searchLoading.report" class="tf-search-spinner" /></label>
+                <div class="tf-dropdown sm:w-40"><button type="button" class="tf-dropdown-button h-11" @click="openDropdown = openDropdown === 'reportStatusFilter' ? null : 'reportStatusFilter'"><span>{{ reportStatusFilter }}</span><svg viewBox="0 0 20 20" class="h-4 w-4 shrink-0" fill="none" stroke="currentColor" stroke-width="2"><path d="m5 7.5 5 5 5-5" /></svg></button><div v-if="openDropdown === 'reportStatusFilter'" class="tf-dropdown-menu"><button v-for="option in ['All statuses', 'Ready', 'Processing']" :key="option" type="button" class="tf-dropdown-option" @click="reportStatusFilter = option; openDropdown = null"><span>{{ option }}</span><span v-if="reportStatusFilter === option" class="text-task-blue">✓</span></button></div></div>
                 <button class="tf-primary h-11 w-full rounded-[12px] px-5 sm:w-auto" @click="openModal('report')"><svg viewBox="0 0 24 24" class="h-4 w-4" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M12 5v14M5 12h14" /></svg>Custom Report</button>
               </div>
             </div>
             <div v-if="searchLoading.report" class="tf-search-overlay"><span class="tf-search-loader" /> Searching reports...</div>
             <div class="overflow-x-auto rounded-[16px] border border-task-line">
               <table class="w-full min-w-[820px] text-left text-sm">
-                <thead class="text-task-muted"><tr><th class="p-4 font-semibold">Report Name</th><th class="p-4 font-semibold">Type</th><th class="p-4 font-semibold">Date Generated</th><th class="p-4 font-semibold">Generated By</th><th class="p-4 font-semibold">Status</th><th class="p-4 text-right font-semibold">Action</th></tr></thead>
-                <tbody class="divide-y divide-task-line"><tr v-for="(report, index) in paginatedReports" :key="String(report[5] || report[0])"><td class="p-4"><div class="flex items-center gap-3"><span :class="['grid h-10 w-10 shrink-0 place-items-center rounded-[12px]', index % 3 === 0 ? 'bg-task-blueSoft text-task-blue' : index % 3 === 1 ? 'bg-[#F0E9FF] text-[#8057D5]' : 'bg-task-successSoft text-task-success']"><svg viewBox="0 0 24 24" class="h-5 w-5" fill="none" stroke="currentColor" stroke-width="1.8"><path :d="iconPath('file')" /></svg></span><span class="font-bold text-task-ink">{{ report[0] }}</span></div></td><td class="p-4 text-task-muted">{{ report[1] }}</td><td class="p-4 text-task-muted">{{ report[2] }}</td><td class="p-4 font-medium">{{ report[3] }}</td><td class="p-4"><span :class="['tf-pill', badgeClass(report[4])]">{{ report[4] }}</span></td><td class="p-4 text-right"><button type="button" class="tf-icon-button rounded-[12px]" title="Download report" aria-label="Download report" @click="notify(`${report[0]} downloaded`)"><svg viewBox="0 0 24 24" class="h-4 w-4" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 3v12m0 0 4-4m-4 4-4-4M5 21h14" /></svg></button></td></tr></tbody>
+                <thead class="bg-slate-50/80 text-task-muted"><tr><th class="p-4 font-semibold">Report Name</th><th class="p-4 font-semibold">Type</th><th class="p-4 font-semibold"><button type="button" class="inline-flex items-center gap-1.5 hover:text-task-blue" @click="reportSort = reportSort === 'newest' ? 'oldest' : 'newest'">Date Generated <span>{{ reportSort === 'newest' ? '↓' : '↑' }}</span></button></th><th class="p-4 font-semibold">Generated By</th><th class="p-4 font-semibold">Status</th><th class="p-4 text-right font-semibold">Action</th></tr></thead>
+                <tbody class="divide-y divide-task-line"><tr v-for="(report, index) in paginatedReports" :key="String(report[5] || report[0])" class="transition hover:bg-task-blueSoft/40"><td class="p-4"><div class="flex items-center gap-3"><span :class="['grid h-10 w-10 shrink-0 place-items-center rounded-[12px]', index % 3 === 0 ? 'bg-task-blueSoft text-task-blue' : index % 3 === 1 ? 'bg-[#F0E9FF] text-[#8057D5]' : 'bg-task-successSoft text-task-success']"><svg viewBox="0 0 24 24" class="h-5 w-5" fill="none" stroke="currentColor" stroke-width="1.8"><path :d="iconPath('file')" /></svg></span><span class="font-bold text-task-ink">{{ report[0] }}</span></div></td><td class="p-4"><span class="rounded-full bg-task-blueSoft px-2.5 py-1 text-xs font-semibold text-task-blue">{{ report[1] }}</span></td><td class="p-4 text-task-muted">{{ report[2] }}</td><td class="p-4 font-medium">{{ report[3] }}</td><td class="p-4"><span :class="['tf-pill', badgeClass(report[4])]">{{ report[4] }}</span></td><td class="p-4 text-right"><button type="button" class="tf-icon-button rounded-[12px]" title="Download report" aria-label="Download report" @click="downloadReport(report)"><svg viewBox="0 0 24 24" class="h-4 w-4" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 3v12m0 0 4-4m-4 4-4-4M5 21h14" /></svg></button></td></tr></tbody>
               </table>
             </div>
             <div v-if="!filteredReports.length && !searchLoading.report" class="grid min-h-48 place-items-center text-center"><div><span class="mx-auto grid h-12 w-12 place-items-center rounded-[15px] bg-task-blueSoft text-task-blue"><svg viewBox="0 0 24 24" class="h-6 w-6" fill="none" stroke="currentColor" stroke-width="1.8"><path :d="iconPath('file')" /></svg></span><p class="mt-3 font-bold">No reports found</p><p class="mt-1 text-sm text-task-muted">Create a custom report or try another search.</p></div></div>
-            <div v-if="filteredReports.length > pageSize" class="mt-5 flex flex-col gap-3 text-xs text-task-muted sm:flex-row sm:items-center sm:justify-between"><span>Showing {{ paginatedReports.length }} of {{ filteredReports.length }} reports</span><div class="flex gap-2"><button class="tf-icon-button" type="button" @click="setListPage('report', reportPage - 1)">‹</button><button v-for="page in reportPageCount" :key="page" :class="[reportPage === page ? 'tf-primary' : 'tf-icon-button', 'h-9 w-9 p-0']" type="button" @click="setListPage('report', page)">{{ page }}</button><button class="tf-icon-button" type="button" @click="setListPage('report', reportPage + 1)">›</button></div></div>
+            <div v-if="filteredReports.length" class="mt-5 flex flex-col gap-3 text-xs text-task-muted sm:flex-row sm:items-center sm:justify-between"><span>Showing {{ (reportPage - 1) * pageSize + 1 }}–{{ Math.min(reportPage * pageSize, filteredReports.length) }} of {{ filteredReports.length }} reports</span><div v-if="filteredReports.length > pageSize" class="flex gap-2"><button class="tf-icon-button" type="button" @click="setListPage('report', reportPage - 1)">‹</button><button v-for="page in reportPageCount" :key="page" :class="[reportPage === page ? 'tf-primary' : 'tf-icon-button', 'h-9 w-9 p-0']" type="button" @click="setListPage('report', page)">{{ page }}</button><button class="tf-icon-button" type="button" @click="setListPage('report', reportPage + 1)">›</button></div></div>
           </div>
         </section>
 
@@ -4519,11 +4635,21 @@ const iconPath = (name: string) => {
           <NotificationsView @navigate="navigateFromNotification" />
         </section>
 
-        <section v-else-if="activePage === 'messages'" class="tf-panel grid h-[650px] overflow-hidden p-0 lg:grid-cols-[290px_1fr]">
-          <aside class="relative border-r border-task-line p-5"><h2 class="font-bold">Recent Messages</h2><label class="relative mt-4 block"><input v-model="messageSearchInput" class="tf-input w-full pr-10" placeholder="Search here..." /><button v-if="messageSearchInput && !searchLoading.message" type="button" class="tf-search-clear" aria-label="Clear message search" @click="clearSearch('message')">×</button><span v-if="searchLoading.message" class="tf-search-spinner" /></label><div v-if="searchLoading.message" class="tf-search-overlay"><span class="tf-search-loader" /> Searching...</div><div class="mt-4 divide-y divide-task-line"><button v-for="name in filteredMessages" :key="name" :class="['flex w-full items-center gap-3 py-3 text-left', activeMessage === name ? 'bg-task-blueSoft' : '']" @click="activeMessage = name"><span class="grid h-11 w-11 place-items-center rounded-full bg-slate-300 font-bold text-white">{{ initials(name) }}</span><span class="min-w-0 flex-1"><b class="block truncate">{{ name }}</b></span></button><p v-if="!filteredMessages.length" class="py-8 text-sm text-task-muted">No messages.</p></div></aside>
-          <div class="flex min-w-0 flex-col items-center justify-center p-6 text-center text-task-muted">
-            <p class="text-base font-semibold text-task-ink">{{ activeMessage || 'No conversation selected' }}</p>
-            <p class="mt-2 text-sm">Messages data will appear here when it comes from backend.</p>
+        <section v-else-if="activePage === 'messages'" class="tf-messages-page tf-panel grid h-[calc(100vh-112px)] min-h-[620px] overflow-hidden p-0 lg:grid-cols-[310px_1fr]">
+          <aside class="relative flex min-h-0 flex-col border-r border-task-line">
+            <div class="shrink-0 p-4">
+              <div class="grid grid-cols-2 gap-2"><button type="button" :class="['tf-message-tab', messageTab === 'inbox' ? 'is-active' : '']" @click="messageTab = 'inbox'"><svg viewBox="0 0 24 24" class="h-4 w-4" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M4 6h16v13H4V6Zm0 7h5l1.5 2h3L15 13h5"/></svg>Inbox <span>{{ conversations.reduce((sum, item) => sum + Number(item.unread_count || 0), 0) }}</span></button><button type="button" :class="['tf-message-tab', messageTab === 'archived' ? 'is-active' : '']" title="Backend archive field is not available" @click="messageTab = 'archived'"><svg viewBox="0 0 24 24" class="h-4 w-4" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M4 7h16v13H4V7Zm-1-4h18v4H3V3Zm6 9h6"/></svg>Archived</button></div>
+              <label class="relative mt-3 block"><svg viewBox="0 0 24 24" class="absolute left-3.5 top-1/2 h-4 w-4 -translate-y-1/2 text-task-muted" fill="none" stroke="currentColor" stroke-width="1.8"><path :d="iconPath('search')"/></svg><input v-model="messageSearchInput" class="tf-input h-10 w-full pl-10 pr-10" placeholder="Search conversations..." /></label>
+            </div>
+            <div class="min-h-0 flex-1 overflow-y-auto pb-3">
+              <div v-if="conversationsLoading" class="grid h-40 place-items-center"><span class="tf-search-loader"/></div>
+              <p v-else-if="messageTab === 'archived'" class="px-5 py-12 text-center text-sm text-task-muted">Archived conversations are not supported by the current API yet.</p>
+              <template v-else><button v-for="conversation in filteredMessages" :key="conversation.id" :class="['tf-message-contact rounded-none border-t border-task-line px-4 py-4', activeMessage === conversation.id ? 'is-active' : '']" @click="openConversation(conversation)"><span class="relative grid h-11 w-11 shrink-0 place-items-center overflow-hidden rounded-full bg-task-blueSoft text-xs font-bold text-task-blue"><img v-if="conversationAvatar(conversation)" :src="conversationAvatar(conversation)" :alt="conversationTitle(conversation)" class="h-full w-full object-cover"/><span v-else>{{ initials(conversationTitle(conversation)) }}</span><i class="absolute bottom-0 right-0 h-2.5 w-2.5 rounded-full border-2 border-white bg-task-success"/></span><span class="min-w-0 flex-1"><span class="flex items-center justify-between gap-2"><b class="truncate text-sm">{{ conversationTitle(conversation) }}</b><small>{{ conversation.updated_at ? new Date(conversation.updated_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : '' }}</small></span><span class="mt-1 block truncate text-[11px] text-task-muted">{{ conversationLastMessage(conversation) }}</span></span><i v-if="conversation.unread_count" class="grid h-5 min-w-5 place-items-center rounded-full bg-task-blue px-1 text-[10px] font-bold text-white">{{ conversation.unread_count }}</i></button><p v-if="!filteredMessages.length" class="py-10 text-center text-sm text-task-muted">No conversations found.</p></template>
+            </div>
+          </aside>
+          <div class="flex min-h-0 min-w-0 flex-col bg-slate-50/40">
+            <template v-if="selectedConversation"><header class="flex h-[72px] shrink-0 items-center gap-3 border-b border-task-line bg-white px-5"><span class="grid h-11 w-11 place-items-center overflow-hidden rounded-full bg-task-blueSoft text-xs font-bold text-task-blue"><img v-if="conversationAvatar(selectedConversation)" :src="conversationAvatar(selectedConversation)" :alt="conversationTitle(selectedConversation)" class="h-full w-full object-cover"/><span v-else>{{ initials(conversationTitle(selectedConversation)) }}</span></span><div class="min-w-0 flex-1"><h2 class="truncate text-base font-extrabold">{{ conversationTitle(selectedConversation) }}</h2><p class="mt-0.5 flex items-center gap-1.5 text-[11px] text-task-success"><i class="h-1.5 w-1.5 rounded-full bg-task-success"/>Online</p></div><button type="button" class="tf-icon-button rounded-full"><svg viewBox="0 0 24 24" class="h-4 w-4" fill="none" stroke="currentColor"><path :d="iconPath('phone')"/></svg></button><button type="button" class="tf-icon-button rounded-full"><svg viewBox="0 0 24 24" class="h-4 w-4" fill="none" stroke="currentColor"><path :d="iconPath('dots')"/></svg></button></header><div class="tf-chat-body min-h-0 flex-1 space-y-5 overflow-y-auto p-5 sm:p-7"><div v-if="messagesLoading" class="grid h-full place-items-center"><span class="tf-search-loader"/></div><template v-else><div v-for="message in conversationMessages" :key="message.id" :class="['flex items-end gap-2', messageIsMine(message) ? 'justify-end' : '']"><span v-if="!messageIsMine(message)" class="grid h-8 w-8 shrink-0 place-items-center overflow-hidden rounded-full bg-task-blueSoft text-[9px] font-bold text-task-blue"><img v-if="absoluteMediaUrl(message.sender_detail?.avatar)" :src="absoluteMediaUrl(message.sender_detail?.avatar)" :alt="message.sender_detail?.full_name || 'Sender'" class="h-full w-full object-cover"/><span v-else>{{ initials(message.sender_detail?.full_name || 'U') }}</span></span><div :class="messageIsMine(message) ? 'text-right' : ''"><p class="mb-1 text-[10px] text-task-muted">{{ messageIsMine(message) ? 'You' : message.sender_detail?.full_name || 'Member' }} · {{ message.created_at ? new Date(message.created_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : '' }}</p><p :class="['tf-chat-bubble', messageIsMine(message) ? 'is-outgoing' : 'is-incoming']">{{ message.is_deleted ? 'Message deleted' : message.body }}</p><a v-if="message.attachment" :href="absoluteMediaUrl(message.attachment)" target="_blank" class="mt-1 block text-[10px] font-bold text-task-blue">Open attachment</a></div></div><p v-if="!conversationMessages.length" class="py-16 text-center text-sm text-task-muted">No messages yet. Start the conversation.</p></template></div><form class="shrink-0 border-t border-task-line bg-white p-4" @submit.prevent="sendMessage"><div class="tf-message-composer"><input v-model="chatDraft" class="min-w-0 flex-1 bg-transparent text-sm outline-none" placeholder="Type a message..."/><button type="button" class="text-task-muted hover:text-task-blue" aria-label="Add emoji">☺</button><button type="submit" class="tf-primary h-9 rounded-[10px] px-4 text-xs" :disabled="messageSending || !chatDraft.trim()">{{ messageSending ? 'Sending...' : 'Send' }} <span>↗</span></button></div></form></template>
+            <div v-else class="grid h-full place-items-center p-8 text-center"><div><span class="mx-auto grid h-16 w-16 place-items-center rounded-[20px] bg-task-blueSoft text-task-blue"><svg viewBox="0 0 24 24" class="h-7 w-7" fill="none" stroke="currentColor" stroke-width="1.7"><path :d="iconPath('message')"/></svg></span><h2 class="mt-4 text-lg font-extrabold text-task-ink">Select a conversation</h2><p class="mt-2 text-sm text-task-muted">Choose a team member to view the conversation.</p></div></div>
           </div>
         </section>
 
@@ -4567,40 +4693,19 @@ const iconPath = (name: string) => {
           </div>
         </section>
 
-        <section v-else-if="activePage === 'help'" class="flex min-h-[calc(100vh-120px)] justify-center px-4 py-14">
-          <div class="w-full max-w-[980px] space-y-5">
-            <div class="tf-panel flex items-start gap-5 p-7">
-              <span class="grid h-14 w-14 shrink-0 place-items-center rounded-ui bg-task-blueSoft text-task-blue">
-                <svg viewBox="0 0 24 24" class="h-6 w-6" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path :d="iconPath('robot')" /></svg>
-              </span>
-              <p class="max-w-[760px] text-xl font-semibold leading-8 text-task-ink">
-                Found a bug or have feedback? Describe it and attach a screenshot - it comes straight to our team for review.
-              </p>
-            </div>
-            <textarea
-              v-model="feedbackDraft"
-              class="min-h-[260px] w-full resize-y rounded-ui border border-task-line bg-white p-7 text-xl font-semibold leading-8 text-task-ink outline-none transition placeholder:text-task-muted focus:border-task-blue focus:ring-4 focus:ring-task-blueSoft"
-              placeholder="What went wrong, or what would you improve?"
-            />
-            <button type="button" class="flex h-16 w-full items-center justify-center gap-3 rounded-ui border border-dashed border-task-line bg-white text-lg font-semibold text-task-muted transition hover:border-task-blue hover:text-task-blue" @click="attachFeedbackScreenshot">
-              <svg viewBox="0 0 24 24" class="h-6 w-6" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M4 5h16v14H4V5Zm4 10 3-3 2 2 3-4 4 5M8 8h.01" /></svg>
-              {{ feedbackScreenshotName || 'Attach screenshot' }}
-            </button>
-            <input ref="feedbackScreenshotInput" class="hidden" type="file" accept="image/*" @change="handleFeedbackScreenshot" />
-            <div v-if="feedbackScreenshotPreview" class="tf-panel flex items-center gap-5 p-4 shadow-none">
-              <img :src="feedbackScreenshotPreview" :alt="feedbackScreenshotName" class="h-24 w-36 rounded-ui object-cover" />
-              <div class="min-w-0 flex-1">
-                <p class="truncate text-base font-bold">{{ feedbackScreenshotName }}</p>
-                <p class="text-sm text-task-muted">Screenshot attached</p>
-              </div>
-              <button type="button" class="tf-icon-button" aria-label="Remove screenshot" title="Remove screenshot" @click="clearFeedbackScreenshot">
-                <svg viewBox="0 0 24 24" class="h-4 w-4" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M18 6 6 18M6 6l12 12" /></svg>
-              </button>
-            </div>
-            <button type="button" class="tf-primary h-16 w-full text-lg" @click="sendFeedbackToTeam">
-              <svg viewBox="0 0 24 24" class="h-6 w-6" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M22 2 11 13M22 2l-7 20-4-9-9-4 20-7Z" /></svg>
-              Send to team
-            </button>
+        <section v-else-if="activePage === 'help'" class="tf-help-page space-y-5">
+          <header class="tf-help-hero relative overflow-hidden rounded-[22px] px-5 py-10 text-center sm:py-12">
+            <div class="relative z-10"><span class="mx-auto grid h-12 w-12 place-items-center rounded-[15px] bg-white text-task-blue shadow-card"><svg viewBox="0 0 24 24" class="h-6 w-6" fill="none" stroke="currentColor" stroke-width="1.9"><circle cx="12" cy="12" r="9"/><path d="M9.8 9a2.3 2.3 0 1 1 3.7 1.8c-1 .7-1.5 1.1-1.5 2.2M12 17h.01"/></svg></span><h1 class="mt-4 text-3xl font-extrabold tracking-tight text-task-ink">Help & Support</h1><p class="mt-2 text-sm text-task-muted">Find answers, explore resources or connect with our support team.</p><div class="mx-auto mt-6 flex max-w-xl flex-col gap-2 sm:flex-row"><label class="relative flex-1"><svg viewBox="0 0 24 24" class="absolute left-4 top-1/2 h-4 w-4 -translate-y-1/2 text-task-muted" fill="none" stroke="currentColor" stroke-width="1.8"><path :d="iconPath('search')"/></svg><input v-model="helpSearchInput" class="tf-input h-12 w-full rounded-[15px] bg-white pl-11" placeholder="Ask a question..." /></label><button type="button" class="tf-primary h-12 rounded-[15px] px-7" @click="openFaq = filteredFaqs[0]?.index ?? null"><svg viewBox="0 0 24 24" class="h-4 w-4" fill="none" stroke="currentColor" stroke-width="1.8"><path :d="iconPath('search')"/></svg>Search</button></div></div>
+          </header>
+
+          <div class="grid gap-4 lg:grid-cols-3">
+            <article class="tf-help-contact is-blue"><span class="tf-help-contact-icon"><svg viewBox="0 0 24 24" class="h-6 w-6" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M3 5h18v14H3V5Zm1 1 8 7 8-7"/></svg></span><h2>Email Support</h2><p>hello.confidency@gmail.com<br>Response within 24 hours</p><a class="tf-help-contact-action" href="mailto:hello.confidency@gmail.com">Get Support</a></article>
+            <article class="tf-help-contact is-violet"><span class="tf-help-contact-icon"><svg viewBox="0 0 24 24" class="h-6 w-6" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M21 12a8 8 0 0 1-8 8H6l-4 2 1.3-4A8 8 0 1 1 21 12Z"/><path d="M8 12h.01M12 12h.01M16 12h.01"/></svg></span><h2>Live Chat</h2><p>Chat with our support team<br>Available Mon–Fri, 9AM–6PM</p><button type="button" class="tf-help-contact-action" @click="supportWidgetOpen = true">Get Support</button></article>
+            <article class="tf-help-contact is-green"><span class="tf-help-contact-icon"><svg viewBox="0 0 24 24" class="h-6 w-6" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M5 3h4l2 5-2.5 1.5a15 15 0 0 0 6 6L16 13l5 2v4a2 2 0 0 1-2 2C10.2 21 3 13.8 3 5a2 2 0 0 1 2-2Z"/></svg></span><h2>Phone Support</h2><p>+998 91 638 31 91<br>Available Mon–Fri, 9AM–6PM</p><a class="tf-help-contact-action" href="tel:+998916383191">Get Support</a></article>
+          </div>
+
+          <div>
+            <section class="tf-panel p-4 sm:p-5"><div class="mb-4 flex items-center gap-3"><span class="grid h-9 w-9 place-items-center rounded-full bg-task-blueSoft text-task-blue">?</span><h2 class="text-lg font-extrabold">Frequently Asked Questions</h2></div><div class="space-y-2"><article v-for="faq in filteredFaqs" :key="faq.question" class="overflow-hidden rounded-[13px] border border-task-line"><button type="button" class="flex w-full items-center justify-between gap-4 px-4 py-4 text-left text-sm font-bold transition hover:bg-task-blueSoft/50" @click="openFaq = openFaq === faq.index ? null : faq.index"><span>{{ faq.question }}</span><svg viewBox="0 0 20 20" :class="['h-4 w-4 shrink-0 text-task-muted transition', openFaq === faq.index ? 'rotate-180' : '']" fill="none" stroke="currentColor" stroke-width="2"><path d="m5 7.5 5 5 5-5"/></svg></button><p v-if="openFaq === faq.index" class="border-t border-task-line px-4 py-4 text-sm leading-6 text-task-muted">{{ faq.answer }}</p></article><p v-if="!filteredFaqs.length" class="py-10 text-center text-sm text-task-muted">No matching questions found.</p></div></section>
           </div>
         </section>
       </div>
@@ -5075,9 +5180,9 @@ const iconPath = (name: string) => {
             <label class="block text-sm font-semibold">Report Name<input v-model="form.title" class="tf-input mt-2 h-12 w-full" placeholder="Team Performance Report" /></label>
             <label class="mt-4 block text-sm font-semibold">Report Type<div class="tf-dropdown mt-2"><button type="button" class="tf-dropdown-button h-12" @click="openDropdown = openDropdown === 'reportType' ? null : 'reportType'"><span>{{ reportType }}</span><svg viewBox="0 0 20 20" class="h-4 w-4" fill="none" stroke="currentColor" stroke-width="2"><path d="m5 7.5 5 5 5-5" /></svg></button><div v-if="openDropdown === 'reportType'" class="tf-dropdown-menu"><button v-for="option in reportTypeOptions" :key="option" type="button" class="tf-dropdown-option" @click="reportType = option; openDropdown = null">{{ option }}</button></div></div></label>
             <div class="mt-4 grid gap-4 md:grid-cols-2">
-              <label class="text-sm font-semibold">Start Date<input v-model="form.startDate" class="tf-input mt-2 h-12 w-full" placeholder="DD.MM.YYYY" inputmode="numeric" maxlength="10" @input="handleDateInput($event, 'startDate')" /></label>
-              <label class="text-sm font-semibold">End Date<input v-model="form.dueDate" class="tf-input mt-2 h-12 w-full" placeholder="DD.MM.YYYY" inputmode="numeric" maxlength="10" @input="handleDateInput($event, 'dueDate')" /></label>
-              <label class="text-sm font-semibold">Priority<div class="tf-dropdown mt-2"><button type="button" class="tf-dropdown-button h-12" @click="openDropdown = openDropdown === 'reportPriority' ? null : 'reportPriority'"><span>{{ dropdownValues.priority }}</span><svg viewBox="0 0 20 20" class="h-4 w-4" fill="none" stroke="currentColor" stroke-width="2"><path d="m5 7.5 5 5 5-5" /></svg></button><div v-if="openDropdown === 'reportPriority'" class="tf-dropdown-menu"><button v-for="option in dropdownOptions.priority" :key="option" type="button" class="tf-dropdown-option" @click="setDropdownValue('priority', option)">{{ option }}</button></div></div></label>
+              <label class="text-sm font-semibold">Start Date<div class="tf-date-picker relative mt-2"><input v-model="form.startDate" class="tf-input h-12 w-full pr-12" placeholder="DD.MM.YYYY" inputmode="numeric" maxlength="10" @input="handleDateInput($event, 'startDate')" @focus="openDatePicker('startDate')" /><button type="button" class="absolute right-3 top-1/2 -translate-y-1/2 text-task-muted transition hover:text-task-blue" aria-label="Open start date calendar" @click="openDatePicker('startDate')"><svg viewBox="0 0 24 24" class="h-5 w-5" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M8 2v4M16 2v4M3 10h18M5 5h14a2 2 0 0 1 2 2v12a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V7a2 2 0 0 1 2-2Z" /></svg></button><div v-if="openProjectDatePicker === 'startDate'" class="tf-date-popover"><div class="mb-3 flex items-center justify-between"><b class="text-sm">{{ projectDatePickerDays.label }}</b><div class="flex gap-1"><button type="button" class="tf-icon-button h-8 w-8" @click.stop="moveDatePickerMonth(-1)">‹</button><button type="button" class="tf-icon-button h-8 w-8" @click.stop="moveDatePickerMonth(1)">›</button></div></div><div class="mb-2 grid grid-cols-7 text-center text-[10px] font-semibold text-task-muted"><span>Mo</span><span>Tu</span><span>We</span><span>Th</span><span>Fr</span><span>Sa</span><span>Su</span></div><div class="grid grid-cols-7 gap-1"><button v-for="cell in projectDatePickerDays.cells" :key="cell.key" type="button" :class="['h-8 rounded-[8px] text-sm transition', cell.day ? 'hover:bg-task-blueSoft hover:text-task-blue' : 'pointer-events-none', isTodayDatePickerCell(cell.day, cell.month, cell.year) ? 'bg-task-danger font-bold text-white' : '']" @click="selectProjectDate(cell.day, cell.month, cell.year)">{{ cell.day || '' }}</button></div></div></div></label>
+              <label class="text-sm font-semibold">End Date<div class="tf-date-picker relative mt-2"><input v-model="form.dueDate" class="tf-input h-12 w-full pr-12" placeholder="DD.MM.YYYY" inputmode="numeric" maxlength="10" @input="handleDateInput($event, 'dueDate')" @focus="openDatePicker('dueDate')" /><button type="button" class="absolute right-3 top-1/2 -translate-y-1/2 text-task-muted transition hover:text-task-blue" aria-label="Open end date calendar" @click="openDatePicker('dueDate')"><svg viewBox="0 0 24 24" class="h-5 w-5" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M8 2v4M16 2v4M3 10h18M5 5h14a2 2 0 0 1 2 2v12a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V7a2 2 0 0 1 2-2Z" /></svg></button><div v-if="openProjectDatePicker === 'dueDate'" class="tf-date-popover right-0 left-auto"><div class="mb-3 flex items-center justify-between"><b class="text-sm">{{ projectDatePickerDays.label }}</b><div class="flex gap-1"><button type="button" class="tf-icon-button h-8 w-8" @click.stop="moveDatePickerMonth(-1)">‹</button><button type="button" class="tf-icon-button h-8 w-8" @click.stop="moveDatePickerMonth(1)">›</button></div></div><div class="mb-2 grid grid-cols-7 text-center text-[10px] font-semibold text-task-muted"><span>Mo</span><span>Tu</span><span>We</span><span>Th</span><span>Fr</span><span>Sa</span><span>Su</span></div><div class="grid grid-cols-7 gap-1"><button v-for="cell in projectDatePickerDays.cells" :key="cell.key" type="button" :class="['h-8 rounded-[8px] text-sm transition', cell.day ? 'hover:bg-task-blueSoft hover:text-task-blue' : 'pointer-events-none', isTodayDatePickerCell(cell.day, cell.month, cell.year) ? 'bg-task-danger font-bold text-white' : '']" @click="selectProjectDate(cell.day, cell.month, cell.year)">{{ cell.day || '' }}</button></div></div></div></label>
+              <label class="text-sm font-semibold">Priority<div class="tf-dropdown mt-2"><button type="button" class="tf-dropdown-button h-12" @click="openDropdown = openDropdown === 'reportPriority' ? null : 'reportPriority'"><span>{{ reportPriority }}</span><svg viewBox="0 0 20 20" class="h-4 w-4" fill="none" stroke="currentColor" stroke-width="2"><path d="m5 7.5 5 5 5-5" /></svg></button><div v-if="openDropdown === 'reportPriority'" class="tf-dropdown-menu"><button v-for="option in dropdownOptions.priority" :key="option" type="button" class="tf-dropdown-option" @click="reportPriority = option; openDropdown = null"><span>{{ option }}</span><span v-if="reportPriority === option" class="text-task-blue">✓</span></button></div></div></label>
               <label class="text-sm font-semibold">Status<div class="tf-dropdown mt-2"><button type="button" class="tf-dropdown-button h-12" @click="openDropdown = openDropdown === 'reportStatus' ? null : 'reportStatus'"><span>{{ reportStatus }}</span><svg viewBox="0 0 20 20" class="h-4 w-4" fill="none" stroke="currentColor" stroke-width="2"><path d="m5 7.5 5 5 5-5" /></svg></button><div v-if="openDropdown === 'reportStatus'" class="tf-dropdown-menu"><button v-for="option in ['All Statuses', 'Completed', 'In Progress', 'Not Started']" :key="option" type="button" class="tf-dropdown-option" @click="reportStatus = option; openDropdown = null">{{ option }}</button></div></div></label>
             </div>
           </template>

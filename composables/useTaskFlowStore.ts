@@ -1,10 +1,6 @@
-export interface TaskFlowPageItem {
-  key: string
-  label: string
-  icon: string
-  group: 'menu' | 'general'
-  badge?: number
-}
+import { taskFlowNavigation, type TaskFlowNavigationItem } from '~/constants/navigation'
+
+export type TaskFlowPageItem = TaskFlowNavigationItem
 
 export type TaskFlowTuple = Array<string | number>
 
@@ -40,15 +36,7 @@ export interface TaskFlowState {
 
 const createEmptyState = (): TaskFlowState => ({
   loaded: true,
-  pages: [
-    { key: 'dashboard', label: 'Dashboard', icon: 'grid', group: 'menu' },
-    { key: 'tasks', label: 'Tasks', icon: 'check', group: 'menu' },
-    { key: 'projects', label: 'Projects', icon: 'folder', group: 'menu' },
-    { key: 'analytics', label: 'Analytics', icon: 'chart', group: 'menu' },
-    { key: 'calendar', label: 'Calendar', icon: 'calendar', group: 'menu' },
-    { key: 'team', label: 'Team Members', icon: 'users', group: 'menu' },
-    { key: 'reports', label: 'Reports', icon: 'file', group: 'menu' }
-  ],
+  pages: taskFlowNavigation.map(item => ({ ...item })),
   stats: [],
   projectStats: [],
   analyticsStats: [],
