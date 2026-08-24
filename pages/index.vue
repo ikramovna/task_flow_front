@@ -340,7 +340,7 @@ const canAddTask = computed(() => currentUserActive.value && ['owner', 'admin', 
 const canCreateEvent = computed(() => canAddTask.value)
 const canCreateTaskInAnyDepartment = computed(() => currentUserActive.value && ['owner', 'admin', 'manager'].includes(normalizedRole.value))
 const canChooseDepartment = computed(() =>
-  ['owner', 'manager'].includes(normalizedRole.value) &&
+  ['owner', 'admin', 'manager'].includes(normalizedRole.value) &&
   (currentUserHasAllDepartmentsAccess.value || currentUserAccessibleDepartmentIds.value.length > 1 || !currentDepartmentId.value)
 )
 const canChooseTaskDepartment = computed(() => canCreateTaskInAnyDepartment.value || canChooseDepartment.value)
@@ -741,6 +741,7 @@ const eventAttendeeSearch = ref('')
 const eventAttendeeConfirmation = ref('')
 const eventAttendeeOptions = ref<Array<Array<string | number>>>([])
 const eventAttendeesLoading = ref(false)
+let eventAttendeeSearchTimer: ReturnType<typeof setTimeout> | undefined
 const eventColorById = reactive<Record<string, string>>({})
 const selectedCalendarEvent = ref<CalendarEvent | null>(null)
 const editingEventId = ref('')
@@ -2746,10 +2747,9 @@ const removeEventAttendee = (index: number) => {
 
 const availableEventAttendees = computed(() => {
   const query = eventAttendeeSearch.value.trim().toLowerCase()
-  if (!query) return []
   return eventAttendeeOptions.value.filter((member) => {
     const id = teamMemberId(member)
-    return id && !eventAttendeeIds.value.includes(id) && `${teamMemberName(member)} ${teamMemberEmail(member)}`.toLowerCase().includes(query)
+    return id && !eventAttendeeIds.value.includes(id) && (!query || `${teamMemberName(member)} ${teamMemberEmail(member)}`.toLowerCase().includes(query))
   })
 })
 
@@ -2763,14 +2763,15 @@ const loadEventAttendees = async () => {
       return
     }
 
-    const response = await taskFlowApi.listMembers({
-      department: canChooseDepartment.value ? undefined : department,
-      is_active: true,
-      page_size: 200
-    })
-    eventAttendeeOptions.value = taskFlowApi.listItems(response)
-      .map(taskFlowApi.mapMember)
-      .filter((member) => canChooseDepartment.value || String(member[11] || '') === department)
+    if (canCreateEvent.value) {
+      const response = await taskFlowApi.listMembers({ page_size: 200 })
+      eventAttendeeOptions.value = taskFlowApi.listItems(response).map(taskFlowApi.mapMember)
+    } else {
+      const response = await taskFlowApi.listMembers({ department, page_size: 200 })
+      eventAttendeeOptions.value = taskFlowApi.listItems(response)
+        .map(taskFlowApi.mapMember)
+        .filter(member => String(member[11] || '') === department)
+    }
 
     const allowedIds = new Set(eventAttendeeOptions.value.map(teamMemberId).filter(Boolean))
     for (let index = eventAttendeeIds.value.length - 1; index >= 0; index -= 1) {
@@ -2781,12 +2782,32 @@ const loadEventAttendees = async () => {
     }
   } catch (error) {
     console.error('Event attendees load failed.', error)
-    eventAttendeeOptions.value = [...departmentTeam.value]
+    eventAttendeeOptions.value = canCreateEvent.value ? [...visibleTeam.value] : [...departmentTeam.value]
     notifyError(taskFlowApiErrorMessage(error, 'Could not load users'))
   } finally {
     eventAttendeesLoading.value = false
   }
 }
+
+watch(eventAttendeeSearch, (value) => {
+  clearTimeout(eventAttendeeSearchTimer)
+  const query = value.trim()
+  if (!query || modal.value !== 'event') return
+  eventAttendeeSearchTimer = setTimeout(async () => {
+    try {
+      const response = await taskFlowApi.searchTaskAssignees(query)
+      const members = taskFlowApi.listItems(response).map(taskFlowApi.mapMember)
+      const existingById = new Map(eventAttendeeOptions.value.map(member => [teamMemberId(member), member]))
+      members.forEach((member) => {
+        const id = teamMemberId(member)
+        if (id) existingById.set(id, member)
+      })
+      eventAttendeeOptions.value = [...existingById.values()]
+    } catch (error) {
+      console.error('Event attendee search failed.', error)
+    }
+  }, 250)
+})
 
 const selectEventAttendee = (member: Array<string | number>) => {
   const id = teamMemberId(member)
@@ -3350,7 +3371,6 @@ const submitModal = async () => {
 
     const allowedAttendeeIds = new Set(
       eventAttendeeOptions.value
-        .filter((member) => canChooseDepartment.value || String(member[11] || '') === payload.department)
         .map(teamMemberId)
         .filter(Boolean)
     )
@@ -4898,14 +4918,14 @@ const iconPath = (name: string) => {
             <div class="tf-event-attendee-picker relative mt-3">
               <p class="text-sm font-semibold">Assignee</p>
               <div class="relative mt-2"><input v-model="eventAttendeeSearch" class="tf-input h-12 w-full pr-11" placeholder="Start typing a name or surname..." autocomplete="off" @focus="eventAttendeePickerOpen = true" @input="eventAttendeePickerOpen = true" /><button type="button" class="absolute right-3 top-1/2 -translate-y-1/2 text-task-muted transition hover:text-task-blue" aria-label="Show team members" @click="eventAttendeePickerOpen = !eventAttendeePickerOpen"><svg viewBox="0 0 20 20" :class="['h-4 w-4 transition-transform', eventAttendeePickerOpen ? 'rotate-180' : '']" fill="none" stroke="currentColor" stroke-width="2"><path d="m5 7.5 5 5 5-5" /></svg></button></div>
-              <div v-if="eventAttendeePickerOpen && eventAttendeeSearch.trim()" class="absolute left-0 right-0 top-[72px] z-[90] rounded-ui border border-task-line bg-white p-3 shadow-xl">
+              <div v-if="eventAttendeePickerOpen" class="absolute left-0 right-0 top-[72px] z-[90] rounded-ui border border-task-line bg-white p-3 shadow-xl">
                 <div class="max-h-52 overflow-y-auto">
                   <p v-if="eventAttendeesLoading" class="p-3 text-sm text-task-muted">Loading users...</p>
                   <button v-for="member in availableEventAttendees" :key="teamMemberId(member)" type="button" :class="['tf-dropdown-option gap-3', eventAttendeeIds.includes(teamMemberId(member)) ? 'bg-task-blueSoft' : '']" @click="selectEventAttendee(member)">
                     <span class="flex min-w-0 items-center gap-2.5"><span :class="['grid h-8 w-8 shrink-0 place-items-center rounded-full text-[10px] font-bold', eventAttendeeIds.includes(teamMemberId(member)) ? 'bg-task-blue text-white' : 'bg-task-blueSoft text-task-blue']">{{ initials(teamMemberName(member)) }}</span><span class="min-w-0 text-left"><span class="block truncate font-semibold"><template v-for="(part, partIndex) in [highlightedSearchText(teamMemberName(member), eventAttendeeSearch)]" :key="partIndex">{{ part.before }}<mark v-if="part.match" class="tf-search-highlight">{{ part.match }}</mark>{{ part.after }}</template></span><span class="block truncate text-[11px] font-normal text-task-muted"><template v-for="(part, partIndex) in [highlightedSearchText(teamMemberEmail(member), eventAttendeeSearch)]" :key="partIndex">{{ part.before }}<mark v-if="part.match" class="tf-search-highlight">{{ part.match }}</mark>{{ part.after }}</template></span></span></span>
                     <span :class="['grid h-6 w-6 shrink-0 place-items-center rounded-[7px] border text-sm font-bold', eventAttendeeIds.includes(teamMemberId(member)) ? 'border-task-blue bg-task-blue text-white' : 'border-task-line bg-white text-transparent']">✓</span>
                   </button>
-                  <p v-if="!eventAttendeesLoading && eventAttendeeSearch.trim() && !availableEventAttendees.length" class="p-3 text-sm text-task-muted">No team member found.</p>
+                  <p v-if="!eventAttendeesLoading && !availableEventAttendees.length" class="p-3 text-sm text-task-muted">No team member found.</p>
                 </div>
               </div>
               <Transition name="assignee-confirm"><div v-if="eventAttendeeConfirmation" class="mt-2 inline-flex items-center gap-2 rounded-[9px] border border-task-success/25 bg-task-successSoft px-3 py-2 text-xs font-bold text-task-success"><span class="grid h-5 w-5 place-items-center rounded-full bg-task-success text-[11px] text-white">✓</span>{{ eventAttendeeConfirmation }}</div></Transition>
