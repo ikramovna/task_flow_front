@@ -175,7 +175,7 @@ export type ApiConversation = {
   department?: string | null
   title?: string
   is_group?: boolean
-  participants?: number[]
+  participants?: Array<string | number>
   participant_details?: UserBrief[]
   last_message?: Record<string, unknown> | null
   unread_count?: number
@@ -436,7 +436,7 @@ export const taskFlowApiErrorMessage = (error: unknown, fallback: string) => {
     if (fieldError) return fieldError
   }
 
-  if (isNetworkError) return 'API bilan bog\u2018lanib bo\u2018lmadi. Internet aloqasini tekshirib, qayta urinib ko\u2018ring.'
+  if (isNetworkError) return 'Could not connect to the API. Check your internet connection and try again.'
   return typeof message === 'string' && message ? message : fallback
 }
 
@@ -880,17 +880,20 @@ export const useTaskFlowApi = () => {
       body: report
     })
 
+  const createConversation = async (payload: { department: string; title: string; is_group: boolean; participants: Array<string | number> }) =>
+    await apiFetch<ApiConversation>('/chat/conversations/', { method: 'POST', body: payload })
+
   const listConversations = async (query: { search?: string; ordering?: string; page?: number; page_size?: number } = {}) => {
     const params = new URLSearchParams()
     Object.entries(query).forEach(([key, value]) => {
       if (value !== undefined && value !== '') params.set(key, String(value))
     })
     const suffix = params.toString() ? `?${params}` : ''
-    return await apiFetch<ListResponse<ApiConversation>>(`/conversations/${suffix}`)
+    return await apiFetch<ListResponse<ApiConversation>>(`/chat/conversations/${suffix}`)
   }
 
   const listMessages = async (conversation: string, pageSize = 200) =>
-    await apiFetch<ListResponse<ApiChatMessage>>(`/messages/?conversation=${encodeURIComponent(conversation)}&ordering=created_at&page_size=${pageSize}`)
+    await apiFetch<ListResponse<ApiChatMessage>>(`/chat/messages/?conversation=${encodeURIComponent(conversation)}&ordering=created_at&page_size=${pageSize}`)
 
   const createMessage = async (payload: { conversation: string; body: string; attachment?: File | null }) => {
     if (payload.attachment) {
@@ -898,13 +901,13 @@ export const useTaskFlowApi = () => {
       form.append('conversation', payload.conversation)
       form.append('body', payload.body)
       form.append('attachment', payload.attachment)
-      return await apiFetch<ApiChatMessage>('/messages/', { method: 'POST', body: form })
+      return await apiFetch<ApiChatMessage>('/chat/messages/', { method: 'POST', body: form })
     }
-    return await apiFetch<ApiChatMessage>('/messages/', { method: 'POST', body: { conversation: payload.conversation, body: payload.body } })
+    return await apiFetch<ApiChatMessage>('/chat/messages/', { method: 'POST', body: { conversation: payload.conversation, body: payload.body } })
   }
 
   const markConversationRead = async (id: string) =>
-    await apiFetch<ApiConversation>(`/conversations/${id}/mark_read/`, { method: 'POST', body: {} })
+    await apiFetch<ApiConversation>(`/chat/conversations/${id}/mark_read/`, { method: 'POST', body: {} })
 
   const getReport = async (id: string) => await apiFetch<ApiReport>(`/reports/${id}/`)
 
@@ -1172,10 +1175,12 @@ export const useTaskFlowApi = () => {
     getEvent,
     createEvent,
     createReport,
+    createConversation,
     listConversations,
     listMessages,
     createMessage,
     markConversationRead,
+    getAccessToken: () => getStoredTokens()?.access || '',
     getReport,
     patchEvent,
     deleteEvent,

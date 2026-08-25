@@ -533,6 +533,10 @@ body {
 .tf-message-tab:hover { border-color: rgb(52 127 208 / .45); color: var(--tf-accent); }
 .tf-message-tab.is-active { border-color: rgb(52 127 208 / .28); background: var(--tf-accent-soft); color: var(--tf-accent); box-shadow: 0 8px 20px -18px rgb(37 103 173 / .7); }
 .tf-message-tab span { display: grid; min-width: 20px; height: 20px; place-items: center; border-radius: 999px; background: var(--tf-accent); padding: 0 5px; color: white; font-size: 10px; }
+.tf-message-filter { display: inline-flex; min-height: 36px; align-items: center; justify-content: center; gap: 5px; border-radius: 9px; color: var(--tf-muted); font-size: 11px; font-weight: 800; text-transform: capitalize; transition: 160ms ease; }
+.tf-message-filter:hover { color: var(--tf-accent); }
+.tf-message-filter.is-active { background: linear-gradient(135deg, #347fd0, #2567ad); color: white; box-shadow: 0 8px 18px -12px rgb(37 103 173 / .8); }
+.tf-message-filter span { display: grid; min-width: 18px; height: 18px; place-items: center; border-radius: 999px; background: white; padding: 0 4px; color: var(--tf-accent); font-size: 9px; }
 .tf-message-contact:hover, .tf-message-contact.is-active { background: var(--tf-accent-soft); }
 .tf-message-contact small { flex: none; color: var(--tf-muted); font-size: 9px; font-style: normal; }
 .tf-chat-bubble { display: inline-block; max-width: min(520px, 75vw); border-radius: 14px; padding: 10px 13px; font-size: 12px; line-height: 1.55; box-shadow: 0 8px 20px -18px rgb(15 23 42 / .4); }
