@@ -23,6 +23,8 @@ type UserBrief = {
   avatar?: string
   phone?: string
   job_title?: string
+  is_online?: boolean
+  last_seen_at?: string | null
 }
 
 type MeProfile = {
@@ -46,6 +48,7 @@ type MeProfile = {
 type ApiTask = {
   id?: string
   department?: string
+  project?: string | null
   title: string
   status?: string
   priority?: string
@@ -70,6 +73,7 @@ type ApiTask = {
 
 type TaskPayload = {
   department?: string
+  project?: string | null
   title: string
   description: string
   status: string
@@ -89,11 +93,19 @@ type ApiProject = {
   description?: string
   status?: string
   priority?: string
+  category?: string
   start_date?: string | null
+  end_date?: string | null
   progress?: number
+  total_tasks?: number
+  completed_tasks?: number
   task_count?: number
   completed_task_count?: number
   due_date?: string | null
+  manager?: string | number | null
+  manager_detail?: UserBrief | null
+  team_members?: Array<string | number>
+  team_member_details?: UserBrief[]
   members?: string[]
   member_details?: UserBrief[]
 }
@@ -104,9 +116,11 @@ type ProjectPayload = {
   description: string
   status: string
   priority: string
+  category: string
   start_date: string
-  due_date: string
-  members: Array<string | number>
+  end_date: string
+  manager: string | number | null
+  team_members: Array<string | number>
 }
 
 type ApiMember = {
@@ -448,8 +462,10 @@ const titleCase = (value?: string) =>
     .join(' ') || 'Not Started'
 
 const projectMemberIds = (project: ApiProject) => {
+  if (project.team_members?.length) return project.team_members
   if (project.members?.length) return project.members
-  return project.member_details?.map((member) => member.id).filter((id): id is string => typeof id === 'string' && Boolean(id)) || []
+  const details = project.team_member_details || project.member_details || []
+  return details.map((member) => member.id).filter((id): id is string | number => (typeof id === 'string' || typeof id === 'number') && Boolean(id))
 }
 
 const formatDate = (value?: string | null) => {
@@ -785,9 +801,9 @@ export const useTaskFlowApi = () => {
       body: project
     })
 
-  const updateProject = async (id: string, project: ProjectPayload) =>
+  const updateProject = async (id: string, project: Partial<ProjectPayload>) =>
     await apiFetch<ApiProject>(`/projects/${id}/`, {
-      method: 'PUT',
+      method: 'PATCH',
       body: project
     })
 
@@ -819,8 +835,10 @@ export const useTaskFlowApi = () => {
     return await apiFetch<PaginatedResponse<ApiTask>>(`/tasks/${suffix}`)
   }
 
-  const searchTaskAssignees = async (search: string) => {
-    const params = new URLSearchParams({ search: search.trim() })
+  const searchTaskAssignees = async (search: string, department = '') => {
+    const params = new URLSearchParams()
+    if (search.trim()) params.set('search', search.trim())
+    if (department) params.set('department', department)
     return await apiFetch<ListResponse<ApiMember>>(`/tasks/assignees/?${params}`)
   }
 
@@ -1015,7 +1033,8 @@ export const useTaskFlowApi = () => {
       task.owner_detail ||
       (typeof task.created_by === 'object' ? task.created_by : task.created_by == null ? null : { id: task.created_by })
     ),
-    task.effort_score ?? 3
+    task.effort_score ?? 3,
+    task.project || ''
   ]
 
   const mapProject = (project: ApiProject) => [
@@ -1023,14 +1042,16 @@ export const useTaskFlowApi = () => {
     titleCase(project.status),
     titleCase(project.priority),
     project.progress ?? 0,
-    `${project.completed_task_count ?? 0}/${project.task_count ?? 0} tasks completed`,
-    formatDate(project.due_date),
+    `${project.completed_tasks ?? project.completed_task_count ?? 0}/${project.total_tasks ?? project.task_count ?? 0} tasks completed`,
+    formatDate(project.end_date || project.due_date),
     project.id || '',
     '',
     project.description || '',
     project.start_date || '',
     project.department || '',
-    JSON.stringify(project.member_details || []),
+    JSON.stringify(project.team_member_details || project.member_details || []),
+    JSON.stringify(project.manager_detail || null),
+    project.category || '',
     ...projectMemberIds(project)
   ]
 
