@@ -337,14 +337,19 @@ const { state, pages, stats, projectStats, analyticsStats, monthlyProgress, task
 const normalizedRole = computed(() => currentRole.value.trim().toLowerCase())
 const canManageDepartment = computed(() => ['owner', 'admin', 'manager'].includes(normalizedRole.value))
 const canManageMembers = computed(() => currentUserActive.value && ['owner', 'admin', 'manager'].includes(normalizedRole.value))
-const canAddTask = computed(() => currentUserActive.value && ['owner', 'admin', 'manager'].includes(normalizedRole.value))
-const canCreateEvent = computed(() => canAddTask.value)
+const canAddTask = computed(() => currentUserActive.value && (
+  ['owner', 'admin', 'manager'].includes(normalizedRole.value) ||
+  (normalizedRole.value === 'member' && Boolean(currentDepartmentId.value || currentUserAccessibleDepartmentIds.value.length > 0))
+))
+const canCreateEvent = computed(() => currentUserActive.value && ['owner', 'admin', 'manager'].includes(normalizedRole.value))
 const canCreateTaskInAnyDepartment = computed(() => currentUserActive.value && ['owner', 'admin', 'manager'].includes(normalizedRole.value))
 const canChooseDepartment = computed(() =>
   ['owner', 'admin', 'manager'].includes(normalizedRole.value) &&
   (currentUserHasAllDepartmentsAccess.value || currentUserAccessibleDepartmentIds.value.length > 1 || !currentDepartmentId.value)
 )
-const canChooseTaskDepartment = computed(() => canCreateTaskInAnyDepartment.value || canChooseDepartment.value)
+const canChooseTaskDepartment = computed(() =>
+  canCreateTaskInAnyDepartment.value || currentUserAccessibleDepartmentIds.value.length > 1
+)
 const effectiveDepartmentId = computed(() => {
   if (currentDepartmentId.value) return currentDepartmentId.value
   const ownMembership = team.value.find((member) => String(member[2] || '').trim().toLowerCase() === savedProfile.email.trim().toLowerCase())
@@ -2534,7 +2539,7 @@ const openModal = (value: Exclude<ModalKey, null>) => {
     return
   }
   if (value === 'task' && !canAddTask.value) {
-    notifyError('Only active owners, admins, and managers can add tasks')
+    notifyError('An active department membership is required to add tasks')
     return
   }
   if (value === 'event' && !canCreateEvent.value) {
@@ -2573,6 +2578,7 @@ const openModal = (value: Exclude<ModalKey, null>) => {
     taskMainAssigneeId.value = ''
     taskAssigneeSearch.value = ''
     taskAssigneeOptions.value = []
+    if (canChooseTaskDepartment.value) void loadModalDepartments()
   }
   if (value === 'member') {
     editingMemberId.value = ''
@@ -2625,7 +2631,7 @@ const openModal = (value: Exclude<ModalKey, null>) => {
 
 const assignTaskTo = (member: string) => {
   actionMenu.value = null
-  if (!canAddTask.value) return notifyError('Only active owners, admins, and managers can add tasks')
+  if (!canAddTask.value) return notifyError('An active department membership is required to add tasks')
   openModal('task')
   form.assignee = member
   const memberId = projectMemberIdFromLabel(member)
@@ -2639,11 +2645,12 @@ let taskAssigneeSearchTimer: ReturnType<typeof setTimeout> | undefined
 let taskAssigneeRequestId = 0
 const loadTaskAssignees = async (search: string) => {
   const query = search.trim()
+  const department = modalDepartment.value || (!canCreateTaskInAnyDepartment.value ? effectiveDepartmentId.value : '')
   const requestId = ++taskAssigneeRequestId
   taskAssigneesLoading.value = true
   try {
-    const requests = [taskFlowApi.listMembers({ is_active: true, search: query || undefined, page_size: 200 })]
-    if (query) requests.push(taskFlowApi.searchTaskAssignees(query))
+    const requests = [taskFlowApi.listMembers({ department: department || undefined, is_active: true, search: query || undefined, page_size: 200 })]
+    if (query) requests.push(taskFlowApi.searchTaskAssignees(query, department))
     const responses = await Promise.allSettled(requests)
     if (requestId !== taskAssigneeRequestId) return
     const members = responses.flatMap(result => result.status === 'fulfilled' ? taskFlowApi.listItems(result.value) : [])
@@ -3521,12 +3528,17 @@ const submitModal = async () => {
     }
 
     if (!canAddTask.value && !editingTaskId.value) {
-      notifyError('Only active owners, admins, and managers can add tasks')
+      notifyError('An active department membership is required to add tasks')
+      return
+    }
+    const taskDepartment = modalDepartment.value || effectiveDepartmentId.value
+    if (!taskDepartment) {
+      notifyError('Select a department for this task')
       return
     }
     const status = taskStatusApiValue(taskFormStatus.value)
     const payload = {
-      department: modalDepartment.value || effectiveDepartmentId.value,
+      department: taskDepartment,
       ...(form.projectId ? { project: form.projectId } : editingTaskId.value ? {} : { project: null }),
       title,
       description: form.description.trim(),
@@ -5212,6 +5224,21 @@ const iconPath = (name: string) => {
             <label class="mb-5 mt-4 flex items-center justify-between gap-4 rounded-ui border border-task-line px-4 py-3 text-sm font-semibold"><span><span class="block">Active member</span><span class="mt-0.5 block text-xs font-normal text-task-muted">Allow this member to sign in immediately.</span></span><input v-model="memberIsActive" type="checkbox" class="h-5 w-5 accent-task-blue" /></label>
           </template>
           <template v-else-if="modal === 'task'">
+            <label v-if="canChooseTaskDepartment" class="mb-4 block text-sm font-semibold">
+              Department <span class="text-task-danger">*</span>
+              <div class="tf-dropdown mt-2">
+                <button type="button" class="tf-dropdown-button h-12" :disabled="taskModalMode === 'view'" @click="openDropdown = openDropdown === 'modalDepartment' ? null : 'modalDepartment'">
+                  <span class="truncate">{{ memberDepartmentsLoading ? 'Loading departments...' : modalDepartmentName }}</span>
+                  <svg viewBox="0 0 20 20" :class="['h-4 w-4 shrink-0 text-task-muted transition-transform', openDropdown === 'modalDepartment' ? 'rotate-180' : '']" fill="none" stroke="currentColor" stroke-width="2"><path d="m5 7.5 5 5 5-5" /></svg>
+                </button>
+                <div v-if="openDropdown === 'modalDepartment'" class="tf-dropdown-menu max-h-56 overflow-y-auto">
+                  <button v-for="department in taskDepartmentOptions" :key="department.id" type="button" class="tf-dropdown-option" @click="selectModalDepartment(department.id)">
+                    <span>{{ department.name }}</span><span v-if="modalDepartment === department.id" class="text-task-blue">✓</span>
+                  </button>
+                  <p v-if="!memberDepartmentsLoading && !taskDepartmentOptions.length" class="px-3 py-3 text-sm font-normal text-task-muted">No departments available</p>
+                </div>
+              </div>
+            </label>
             <section v-if="false" class="mb-4 overflow-hidden rounded-[16px] border border-[#C9B7FF] bg-gradient-to-br from-[#F8F5FF] via-white to-task-blueSoft/60 shadow-sm">
               <button type="button" class="flex w-full items-center gap-3 px-4 py-3.5 text-left" @click="aiTaskAssistantOpen = !aiTaskAssistantOpen">
                 <span class="grid h-10 w-10 shrink-0 place-items-center rounded-[13px] bg-gradient-to-br from-[#8B5CF6] to-task-blue text-white shadow-button"><svg viewBox="0 0 24 24" class="h-5 w-5" fill="none" stroke="currentColor" stroke-width="1.8"><path d="m12 3 1.4 4.1L17.5 8.5l-4.1 1.4L12 14l-1.4-4.1-4.1-1.4 4.1-1.4L12 3Z"/><path d="m18.5 14 .8 2.2 2.2.8-2.2.8-.8 2.2-.8-2.2-2.2-.8 2.2-.8.8-2.2Z"/></svg></span>
