@@ -528,26 +528,70 @@ body {
 .tf-dark .tf-performance-grid { color: #2b4565; }
 .tf-dark .tf-performance-tooltip { border-color: #344a65; background: rgb(12 29 50 / .96); color: #b7c6d9; }
 
-.tf-message-contact { display: flex; width: 100%; align-items: center; gap: 11px; border-radius: 12px; padding: 11px 10px; text-align: left; transition: background 160ms ease; }
+.tf-message-contact { display: flex; width: 100%; align-items: center; gap: 11px; border-radius: 12px; padding: 11px 10px; text-align: left; transition: background 160ms ease, border-color 160ms ease; }
+.tf-messages-page { position: relative; }
 .tf-message-tab { display: inline-flex; min-height: 42px; align-items: center; justify-content: center; gap: 7px; border: 1px solid var(--tf-border); border-radius: 12px; background: var(--tf-panel); padding: 0 12px; color: var(--tf-muted); font-size: 12px; font-weight: 700; transition: 160ms ease; }
 .tf-message-tab:hover { border-color: rgb(52 127 208 / .45); color: var(--tf-accent); }
 .tf-message-tab.is-active { border-color: rgb(52 127 208 / .28); background: var(--tf-accent-soft); color: var(--tf-accent); box-shadow: 0 8px 20px -18px rgb(37 103 173 / .7); }
 .tf-message-tab span { display: grid; min-width: 20px; height: 20px; place-items: center; border-radius: 999px; background: var(--tf-accent); padding: 0 5px; color: white; font-size: 10px; }
-.tf-message-filter { display: inline-flex; min-height: 36px; align-items: center; justify-content: center; gap: 5px; border-radius: 9px; color: var(--tf-muted); font-size: 11px; font-weight: 800; text-transform: capitalize; transition: 160ms ease; }
+.tf-message-filter { position: relative; display: inline-flex; min-height: 36px; align-items: center; justify-content: center; gap: 5px; border-radius: 9px; color: var(--tf-muted); font-size: 11px; font-weight: 800; text-transform: capitalize; transition: 160ms ease; }
 .tf-message-filter:hover { color: var(--tf-accent); }
 .tf-message-filter.is-active { background: linear-gradient(135deg, #347fd0, #2567ad); color: white; box-shadow: 0 8px 18px -12px rgb(37 103 173 / .8); }
-.tf-message-filter span { display: grid; min-width: 18px; height: 18px; place-items: center; border-radius: 999px; background: white; padding: 0 4px; color: var(--tf-accent); font-size: 9px; }
+.tf-message-filter span { position: absolute; right: -5px; top: -6px; display: grid; min-width: 19px; height: 19px; place-items: center; border: 2px solid var(--tf-panel); border-radius: 999px; background: #2476e8; padding: 0 4px; color: white; font-size: 9px; line-height: 1; box-shadow: 0 5px 12px -7px rgb(36 118 232 / .9); }
+.tf-new-message-button { display: grid; width: 40px; height: 40px; flex: none; place-items: center; border-radius: 10px; background: linear-gradient(135deg, #347fd0, #2567ad); color: white; box-shadow: 0 10px 20px -14px rgb(37 103 173 / .8); transition: transform 160ms ease, filter 160ms ease; }
+.tf-new-message-button svg { display: none; }
+.tf-new-message-button::before { content: ""; width: 18px; height: 18px; background: center / contain no-repeat url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='white' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M12 20h9'/%3E%3Cpath d='M16.5 3.5a2.12 2.12 0 0 1 3 3L7 19l-4 1 1-4Z'/%3E%3C/svg%3E"); }
+.tf-new-message-button[title="Back to conversations"]::before { content: "←"; width: auto; height: auto; background: none; color: white; font-size: 22px; font-weight: 500; line-height: 1; }
+.tf-new-message-button:hover { filter: brightness(1.08); transform: translateY(-1px); }
 .tf-message-contact:hover, .tf-message-contact.is-active { background: var(--tf-accent-soft); }
+.tf-message-contact.is-active { box-shadow: inset 3px 0 0 var(--tf-accent); }
 .tf-message-contact small { flex: none; color: var(--tf-muted); font-size: 9px; font-style: normal; }
-.tf-chat-bubble { display: inline-block; max-width: min(520px, 75vw); border-radius: 14px; padding: 10px 13px; font-size: 12px; line-height: 1.55; box-shadow: 0 8px 20px -18px rgb(15 23 42 / .4); }
+.tf-chat-bubble { display: inline-block; max-width: min(520px, 75vw); border-radius: 14px; padding: 11px 14px; font-size: 12px; line-height: 1.55; box-shadow: 0 10px 24px -18px rgb(15 23 42 / .45); }
 .tf-chat-bubble.is-incoming { border-bottom-left-radius: 4px; background: #e9edf3; color: #273449; }
 .tf-chat-bubble.is-outgoing { border-bottom-right-radius: 4px; background: linear-gradient(135deg, #347fd0, #2567ad); color: #fff; }
-.tf-message-composer { display: flex; min-height: 52px; align-items: center; gap: 12px; border: 1px solid var(--tf-border); border-radius: 15px; padding: 6px 7px 6px 15px; box-shadow: 0 12px 26px -22px rgb(15 23 42 / .42); }
-.tf-chat-body { background: radial-gradient(circle at 80% 15%, rgb(40 119 212 / .055), transparent 18rem); }
-.tf-dark .tf-messages-page header, .tf-dark .tf-messages-page form { background: #172033; }
+.tf-message-composer { display: flex; min-height: 58px; align-items: center; gap: 12px; border: 1px solid var(--tf-border); border-radius: 18px; padding: 7px 8px 7px 16px; box-shadow: 0 12px 26px -22px rgb(15 23 42 / .42); }
+.tf-message-composer:focus-within { border-color: #347fd0; box-shadow: 0 0 0 3px rgb(52 127 208 / .13), 0 12px 26px -22px rgb(15 23 42 / .42); }
+.tf-composer-attachment { position: relative; display: grid; width: 42px; height: 42px; flex: none; place-items: center; overflow: visible; border-radius: 11px; background: var(--tf-accent-soft); font-size: 17px; }
+.tf-composer-attachment img { width: 42px; height: 42px; border-radius: 11px; object-fit: cover; }
+.tf-composer-attachment button { position: absolute; right: -5px; top: -6px; display: grid; width: 17px; height: 17px; place-items: center; border: 2px solid white; border-radius: 999px; background: #334155; color: white; font-size: 11px; line-height: 1; }
+.tf-composer-action { display: inline-grid; width: 38px; height: 38px; flex: none; place-items: center; border-radius: 12px; color: var(--tf-muted); transition: color .18s ease, background-color .18s ease, transform .18s ease; }
+.tf-composer-action:hover { background: var(--tf-accent-soft); color: var(--tf-accent); transform: translateY(-1px); }
+.tf-composer-action:focus-visible { outline: 2px solid rgb(52 127 208 / .35); outline-offset: 2px; }
+.tf-composer-action svg { display: block; width: 20px; height: 20px; }
+.tf-emoji-action svg { width: 22px; height: 22px; }
+.tf-emoji-action[aria-expanded="true"] { background: var(--tf-accent-soft); color: var(--tf-accent); }
+.tf-message-composer > button[type="submit"] { width: 42px; min-width: 42px; height: 42px; border-radius: 999px !important; padding: 0 !important; font-size: 0 !important; }
+.tf-chat-send { display: inline-grid !important; place-items: center; }
+.tf-chat-send span { display: none; }
+.tf-chat-send svg { display: block; width: 19px; height: 19px; }
+.tf-chat-body { background-color: #f7faff; background-image: radial-gradient(circle at 80% 15%, rgb(40 119 212 / .07), transparent 18rem), linear-gradient(45deg, transparent 48%, rgb(52 127 208 / .025) 49%, rgb(52 127 208 / .025) 51%, transparent 52%); background-size: auto, 54px 54px; }
+.tf-messages-page > div > header > button { display: none; }
+.tf-messages-page > div > header > button:last-child { display: grid; }
+::highlight(chat-search) { background: #fde047; color: #172033; }
+.tf-dark .tf-messages-page { border-color: #203652; background: #091b31; box-shadow: 0 24px 70px -38px rgb(0 0 0 / .8); }
+.tf-dark .tf-messages-page > aside { border-color: #203652; background: #0c2038; }
+.tf-dark .tf-messages-page > div { background: #081b31 !important; color: #edf5ff; }
+.tf-dark .tf-messages-page > div > div:last-child { background-image: radial-gradient(circle at 50% 42%, rgb(40 119 212 / .14), transparent 18rem); }
+.tf-dark .tf-messages-page header, .tf-dark .tf-messages-page form { border-color: #203652; background: #0b1f37; }
 .tf-dark .tf-message-tab { background: #172033; }
-.tf-dark .tf-message-contact.is-active, .tf-dark .tf-message-contact:hover { background: #1b304b; }
-.tf-dark .tf-chat-bubble.is-incoming { background: #26354a; color: #e8f0fb; }
+.tf-dark .tf-emoji-picker { background: #172033; }
+.tf-dark .tf-chat-search { background: #172033; }
+.tf-dark .tf-composer-attachment button { border-color: #102641; }
+.tf-dark .tf-message-filter { color: #8ea4c0; }
+.tf-dark .tf-message-filter { min-height: 40px; border: 1px solid #203652; background: #0b1d33; }
+.tf-dark .tf-message-filter.is-active { border-color: #2476e8; color: #fff; background: linear-gradient(135deg, #2476e8, #1756c7); box-shadow: 0 10px 24px -15px rgb(36 118 232 / .9); }
+.tf-dark .tf-message-filter span { border-color: #0c2038; }
+.tf-dark .tf-new-message-button { background: linear-gradient(135deg, #2476e8, #1756c7); }
+.tf-dark .tf-messages-page aside > div:first-child { background: #0c2038; }
+.tf-dark .tf-messages-page aside .tf-input { border-color: #29415e; background: #102641; }
+.tf-dark .tf-message-contact { border-color: #1c334f !important; }
+.tf-dark .tf-message-contact.is-active, .tf-dark .tf-message-contact:hover { background: linear-gradient(90deg, #153e73, #112d50); }
+.tf-dark .tf-message-contact.is-active { box-shadow: inset 3px 0 0 #4195ff; }
+.tf-dark .tf-chat-body { background-color: #071a2f; background-image: radial-gradient(circle at 82% 14%, rgb(40 119 212 / .12), transparent 22rem), linear-gradient(45deg, transparent 48%, rgb(92 149 214 / .025) 49%, rgb(92 149 214 / .025) 51%, transparent 52%); }
+.tf-dark .tf-chat-bubble.is-incoming { background: #172c47; color: #e8f0fb; }
+.tf-dark .tf-chat-bubble.is-outgoing { background: linear-gradient(135deg, #2476e8, #1756c7); }
+.tf-dark .tf-message-composer { border-color: #29415e; background: #102641; box-shadow: 0 18px 35px -25px rgb(0 0 0 / .9); }
+.tf-dark .tf-message-composer input { color: #edf5ff; }
 @media (max-width: 1023px) { .tf-messages-page { grid-template-columns: 260px minmax(0, 1fr); } }
 @media (max-width: 700px) { .tf-messages-page { display: block; height: auto; min-height: 0; } .tf-messages-page > aside { min-height: 500px; border-right: 0; } .tf-messages-page > div { display: none; } }
 

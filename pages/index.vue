@@ -467,6 +467,7 @@ const activeMessage = ref('')
 const chatDraft = ref('')
 const conversations = ref<ApiConversation[]>([])
 const conversationMessages = ref<ApiChatMessage[]>([])
+const conversationPeerById = reactive<Record<string, ProjectCardMember>>({})
 const conversationsLoading = ref(false)
 const messagesLoading = ref(false)
 const messageSending = ref(false)
@@ -474,9 +475,26 @@ const messageFilter = ref<'all' | 'unread'>('all')
 const newConversationOpen = ref(false)
 const newConversationSearch = ref('')
 const conversationCreating = ref(false)
+const conversationDeleting = ref(false)
 const messageAttachmentInput = ref<HTMLInputElement | null>(null)
+const selectedMessageAttachment = ref<File | null>(null)
+const messageAttachmentPreview = ref('')
 const chatSocketState = ref<'offline' | 'connecting' | 'online'>('offline')
 const typingUserId = ref('')
+const emojiPickerOpen = ref(false)
+const emojiSearch = ref('')
+const chatSearchOpen = ref(false)
+const chatSearch = ref('')
+const emojiOptions = [
+  ['😀', 'grinning happy smile'], ['😂', 'laugh tears funny'], ['😊', 'smile happy blush'], ['😍', 'love heart eyes'],
+  ['🥳', 'party celebrate'], ['😎', 'cool sunglasses'], ['🤔', 'thinking'], ['😢', 'sad cry'], ['😮', 'surprised wow'],
+  ['👍', 'thumbs up yes'], ['👎', 'thumbs down no'], ['👏', 'clap applause'], ['🙏', 'thanks please'], ['💪', 'strong'],
+  ['❤️', 'heart love'], ['🔥', 'fire great'], ['🎉', 'party celebration'], ['✅', 'check done'], ['👀', 'eyes look'], ['🚀', 'rocket launch']
+]
+const filteredEmojiOptions = computed(() => {
+  const query = emojiSearch.value.trim().toLowerCase()
+  return emojiOptions.filter(option => !query || option[1].includes(query))
+})
 let chatSocket: WebSocket | null = null
 let typingStopTimer: ReturnType<typeof setTimeout> | null = null
 const toast = ref('')
@@ -974,19 +992,50 @@ const reportStats = computed(() => [
   { value: reports.value.filter((report) => String(report[4]).toLowerCase() === 'ready').length, label: 'Ready Reports', icon: 'check' },
   { value: new Set(reports.value.map((report) => String(report[1])).filter(Boolean)).size, label: 'Report Types', icon: 'analytics' }
 ])
+const conversationIdentity = (conversation: ApiConversation) => {
+  if (conversation.is_group) return `group:${conversation.id}`
+  const other = conversationDisplayUser(conversation)
+  return `direct:${String(other?.id || other?.email || conversation.title || conversation.id).trim().toLowerCase()}`
+}
+const uniqueConversations = computed(() => {
+  const seen = new Set<string>()
+  return conversations.value.filter(conversation => {
+    const identity = conversationIdentity(conversation)
+    if (seen.has(identity)) return false
+    seen.add(identity)
+    return true
+  })
+})
 const filteredMessages = computed(() => {
   const query = messageSearch.value.trim().toLowerCase()
-  return conversations.value.filter(conversation => {
+  return uniqueConversations.value.filter(conversation => {
     if (messageFilter.value === 'unread' && !Number(conversation.unread_count || 0)) return false
     return !query || `${conversation.title || ''} ${conversation.participant_details?.map(item => item.full_name || item.email).join(' ') || ''}`.toLowerCase().includes(query)
   })
 })
 const selectedConversation = computed(() => conversations.value.find(item => item.id === activeMessage.value) || null)
-const conversationDisplayUser = (conversation: ApiConversation) => conversation.participant_details?.find(item => String(item.id) !== String(currentUserId.value)) || conversation.participant_details?.[0]
+const conversationDisplayUser = (conversation: ApiConversation) => {
+  const currentId = String(currentUserId.value)
+  if (conversationPeerById[conversation.id]) return conversationPeerById[conversation.id]
+  const otherParticipant = conversation.participant_details?.find(item => String(item.id) !== currentId)
+  if (otherParticipant) return otherParticipant
+
+  const lastMessage = conversation.last_message as Record<string, any> | null | undefined
+  const lastSender = lastMessage?.sender_detail as ProjectCardMember | undefined
+  if (lastSender && String(lastSender.id) !== currentId) return lastSender
+
+  const messageSender = conversation.id === activeMessage.value
+    ? conversationMessages.value.find(message => String(message.sender) !== currentId)?.sender_detail
+    : undefined
+  if (messageSender) return messageSender
+
+  return conversation.participant_details?.[0]
+}
 const conversationTitle = (conversation: ApiConversation) => conversation.title || conversationDisplayUser(conversation)?.full_name || conversationDisplayUser(conversation)?.email || 'Conversation'
 const conversationAvatar = (conversation: ApiConversation) => absoluteMediaUrl(conversationDisplayUser(conversation)?.avatar)
 const conversationLastMessage = (conversation: ApiConversation) => String(conversation.last_message?.body || 'No messages yet')
 const messageIsMine = (message: ApiChatMessage) => String(message.sender) === String(currentUserId.value)
+const isImageAttachment = (value?: string | null) => Boolean(value && /\.(png|jpe?g|gif|webp|avif|svg)(?:\?.*)?$/i.test(value))
 const typingUserName = computed(() => {
   if (!typingUserId.value || !selectedConversation.value) return ''
   const user = selectedConversation.value.participant_details?.find(item => String(item.id) === typingUserId.value)
@@ -1853,8 +1902,54 @@ const notify = (message: string, type: 'info' | 'success' | 'error' = 'info') =>
 
 const notifyError = (message: string) => notify(message, 'error')
 
+const addEmojiToMessage = (emoji: string) => {
+  chatDraft.value += emoji
+  emojiPickerOpen.value = false
+  emojiSearch.value = ''
+}
+
+const applyChatSearchHighlights = async () => {
+  if (!import.meta.client) return
+  await nextTick()
+  const cssHighlights = (CSS as any).highlights
+  if (!cssHighlights || typeof (window as any).Highlight !== 'function') return
+  cssHighlights.delete('chat-search')
+  const query = chatSearch.value.trim().toLowerCase()
+  if (!chatSearchOpen.value || !query) return
+  const ranges: Range[] = []
+  document.querySelectorAll('.tf-chat-bubble').forEach(element => {
+    const walker = document.createTreeWalker(element, NodeFilter.SHOW_TEXT)
+    let node = walker.nextNode()
+    while (node) {
+      const text = node.textContent || ''
+      let start = text.toLowerCase().indexOf(query)
+      while (start >= 0) {
+        const range = new Range()
+        range.setStart(node, start)
+        range.setEnd(node, start + query.length)
+        ranges.push(range)
+        start = text.toLowerCase().indexOf(query, start + query.length)
+      }
+      node = walker.nextNode()
+    }
+  })
+  if (ranges.length) cssHighlights.set('chat-search', new (window as any).Highlight(...ranges))
+}
+
 const closeFloatingMenus = (event: PointerEvent) => {
   const target = event.target as HTMLElement | null
+  if (target?.closest('[aria-label="Add emoji"]')) {
+    emojiPickerOpen.value = !emojiPickerOpen.value
+    return
+  }
+  if (target?.closest('.tf-messages-page > div > header > button:last-child')) {
+    chatSearchOpen.value = !chatSearchOpen.value
+    if (!chatSearchOpen.value) chatSearch.value = ''
+    void applyChatSearchHighlights()
+    return
+  }
+  if (!target?.closest('.tf-chat-search')) chatSearchOpen.value = false
+  if (!target?.closest('.tf-emoji-picker')) emojiPickerOpen.value = false
   if (openDropdown.value === 'taskAssignee' && target && !taskAssigneePicker.value?.contains(target)) {
     openDropdown.value = null
   }
@@ -1931,6 +2026,8 @@ watch(chatDraft, (value) => {
   }
 })
 
+watch([chatSearch, chatSearchOpen, conversationMessages], applyChatSearchHighlights, { deep: true })
+
 onMounted(() => {
   // The app scrolls inside `.tf-content`; never restore document-level
   // horizontal scrolling after a production reload.
@@ -1978,6 +2075,7 @@ onMounted(() => {
 
 onBeforeUnmount(() => {
   closeChatSocket()
+  clearMessageAttachment()
   document.removeEventListener('pointerdown', closeFloatingMenus, true)
   document.removeEventListener('keydown', handleGlobalKeydown)
   window.removeEventListener('hashchange', restoreActivePage)
@@ -3537,8 +3635,14 @@ const loadConversations = async () => {
 const startDirectConversation = async (member: Array<string | number>) => {
   const memberId = teamMemberId(member)
   if (!memberId || conversationCreating.value) return
+  const memberEmail = teamMemberEmail(member).trim().toLowerCase()
+  const memberName = teamMemberName(member).trim().toLowerCase()
   const existing = conversations.value.find(conversation =>
-    !conversation.is_group && conversation.participants?.some(id => String(id) === memberId)
+    !conversation.is_group && (
+      conversation.participants?.some(id => String(id) === memberId) ||
+      conversation.participant_details?.some(user => String(user.id) === memberId || Boolean(memberEmail && user.email?.toLowerCase() === memberEmail)) ||
+      Boolean(memberName && conversation.title?.trim().toLowerCase() === memberName)
+    )
   )
   if (existing) {
     newConversationOpen.value = false
@@ -3555,7 +3659,7 @@ const startDirectConversation = async (member: Array<string | number>) => {
       department,
       title: teamMemberName(member),
       is_group: false,
-      participants: [memberId]
+      participants: [Number(memberId)]
     })
     conversations.value.unshift(created)
     newConversationOpen.value = false
@@ -3566,6 +3670,29 @@ const startDirectConversation = async (member: Array<string | number>) => {
     notifyError(taskFlowApiErrorMessage(error, 'Could not start the conversation'))
   } finally {
     conversationCreating.value = false
+  }
+}
+
+const deleteConversationItem = async (conversation: ApiConversation | null) => {
+  if (!conversation || conversationDeleting.value) return
+  if (import.meta.client && !window.confirm(`Delete the conversation with ${conversationTitle(conversation)}?`)) return
+  conversationDeleting.value = true
+  try {
+    await taskFlowApi.deleteConversation(conversation.id)
+    const deletedActiveConversation = activeMessage.value === conversation.id
+    conversations.value = conversations.value.filter(item => item.id !== conversation.id)
+    if (deletedActiveConversation) {
+      closeChatSocket()
+      activeMessage.value = ''
+      conversationMessages.value = []
+      const nextConversation = uniqueConversations.value[0]
+      if (nextConversation) await openConversation(nextConversation)
+    }
+    notify('Conversation deleted successfully', 'success')
+  } catch (error) {
+    notifyError(taskFlowApiErrorMessage(error, 'Could not delete the conversation'))
+  } finally {
+    conversationDeleting.value = false
   }
 }
 
@@ -3638,6 +3765,8 @@ const openConversation = async (conversation: ApiConversation) => {
       conversation.unread_count ? taskFlowApi.markConversationRead(conversation.id) : Promise.resolve(null)
     ])
     conversationMessages.value = taskFlowApi.listItems(response) as ApiChatMessage[]
+    const peer = conversationMessages.value.find(message => String(message.sender) !== String(currentUserId.value))?.sender_detail
+    if (peer) conversationPeerById[conversation.id] = peer
     conversation.unread_count = 0
   } catch (error) {
     notifyError(taskFlowApiErrorMessage(error, 'Could not load messages'))
@@ -3648,10 +3777,14 @@ const openConversation = async (conversation: ApiConversation) => {
 
 const sendMessage = async () => {
   const body = chatDraft.value.trim()
-  if (!body || !activeMessage.value || messageSending.value) return
+  const attachment = selectedMessageAttachment.value
+  if ((!body && !attachment) || !activeMessage.value || messageSending.value) return
   messageSending.value = true
   try {
-    if (chatSocket?.readyState === WebSocket.OPEN) {
+    if (attachment) {
+      appendChatMessage(await taskFlowApi.createMessage({ conversation: activeMessage.value, body, attachment }))
+      clearMessageAttachment()
+    } else if (chatSocket?.readyState === WebSocket.OPEN) {
       chatSocket.send(JSON.stringify({ type: 'message.send', body, client_id: crypto.randomUUID() }))
     } else {
       appendChatMessage(await taskFlowApi.createMessage({ conversation: activeMessage.value, body }))
@@ -3669,16 +3802,16 @@ const sendMessageAttachment = async (event: Event) => {
   const input = event.target as HTMLInputElement
   const file = input.files?.[0]
   input.value = ''
-  if (!file || !activeMessage.value) return
-  messageSending.value = true
-  try {
-    appendChatMessage(await taskFlowApi.createMessage({ conversation: activeMessage.value, body: chatDraft.value.trim(), attachment: file }))
-    chatDraft.value = ''
-  } catch (error) {
-    notifyError(taskFlowApiErrorMessage(error, 'The attachment could not be sent'))
-  } finally {
-    messageSending.value = false
-  }
+  if (!file) return
+  if (messageAttachmentPreview.value) URL.revokeObjectURL(messageAttachmentPreview.value)
+  selectedMessageAttachment.value = file
+  messageAttachmentPreview.value = /^image\/(png|jpe?g|gif|webp|avif)$/i.test(file.type) ? URL.createObjectURL(file) : ''
+}
+
+const clearMessageAttachment = () => {
+  if (messageAttachmentPreview.value) URL.revokeObjectURL(messageAttachmentPreview.value)
+  selectedMessageAttachment.value = null
+  messageAttachmentPreview.value = ''
 }
 
 const generateReport = (name: string) => {
@@ -4784,22 +4917,35 @@ const iconPath = (name: string) => {
           <NotificationsView @navigate="navigateFromNotification" />
         </section>
 
-        <section v-else-if="activePage === 'messages'" class="tf-messages-page tf-panel grid h-[calc(100vh-112px)] min-h-[620px] overflow-hidden p-0 lg:grid-cols-[310px_1fr]">
+        <section v-else-if="activePage === 'messages'" class="tf-messages-page tf-panel grid h-[calc(100vh-112px)] min-h-[620px] overflow-hidden p-0 lg:grid-cols-[350px_1fr]">
           <aside class="relative flex min-h-0 flex-col border-r border-task-line">
             <div class="shrink-0 p-4">
-              <div class="grid grid-cols-2 gap-1 rounded-xl bg-slate-50 p-1"><button v-for="filter in ['all', 'unread']" :key="filter" type="button" :class="['tf-message-filter', messageFilter === filter ? 'is-active' : '']" @click="messageFilter = filter as 'all' | 'unread'">{{ filter === 'all' ? 'All' : 'Unread' }}<span v-if="filter === 'unread' && conversations.some(item => item.unread_count)">{{ conversations.reduce((sum, item) => sum + Number(item.unread_count || 0), 0) }}</span></button></div>
-              <button type="button" class="tf-primary mt-3 h-10 w-full rounded-xl text-xs" @click="newConversationOpen = !newConversationOpen; messageFilter = 'all'"><span class="text-lg leading-none">+</span>{{ newConversationOpen ? 'Back to conversations' : 'New message' }}</button>
+              <div class="flex items-center gap-3"><div class="grid min-w-0 flex-1 grid-cols-2 gap-2"><button v-for="filter in ['all', 'unread']" :key="filter" type="button" :class="['tf-message-filter', messageFilter === filter ? 'is-active' : '']" @click="messageFilter = filter as 'all' | 'unread'">{{ filter === 'all' ? 'All' : 'Unread' }}<span v-if="filter === 'unread' && conversations.some(item => item.unread_count)">{{ conversations.reduce((sum, item) => sum + Number(item.unread_count || 0), 0) }}</span></button></div><button type="button" class="tf-new-message-button" :title="newConversationOpen ? 'Back to conversations' : 'New message'" :aria-label="newConversationOpen ? 'Back to conversations' : 'New message'" @click="newConversationOpen = !newConversationOpen; messageFilter = 'all'"><svg viewBox="0 0 24 24" class="h-4 w-4" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M4 20h4L19 9l-4-4L4 16v4Zm9-13 4 4M4 4h7"/></svg></button></div>
               <label v-if="!newConversationOpen" class="relative mt-3 block"><svg viewBox="0 0 24 24" class="absolute left-3.5 top-1/2 h-4 w-4 -translate-y-1/2 text-task-muted" fill="none" stroke="currentColor" stroke-width="1.8"><path :d="iconPath('search')"/></svg><input v-model="messageSearchInput" class="tf-input h-10 w-full pl-10 pr-10" placeholder="Search conversations..." /></label>
             </div>
             <div class="min-h-0 flex-1 overflow-y-auto pb-3">
               <div v-if="newConversationOpen" class="px-3 pb-3"><div class="sticky top-0 z-10 bg-white pb-3"><p class="px-1 text-xs font-extrabold uppercase tracking-[0.12em] text-task-muted">Select a team member</p><label class="relative mt-2 block"><svg viewBox="0 0 24 24" class="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-task-muted" fill="none" stroke="currentColor" stroke-width="1.8"><path :d="iconPath('search')"/></svg><input v-model="newConversationSearch" class="tf-input h-10 w-full pl-9" placeholder="Search members..."/></label></div><button v-for="member in messageMemberOptions" :key="teamMemberId(member)" type="button" class="tf-message-contact px-2 py-3" :disabled="conversationCreating" @click="startDirectConversation(member)"><span class="grid h-10 w-10 shrink-0 place-items-center overflow-hidden rounded-full bg-task-blueSoft text-xs font-bold text-task-blue"><img v-if="member[8]" :src="absoluteMediaUrl(String(member[8]))" :alt="teamMemberName(member)" class="h-full w-full object-cover"/><span v-else>{{ initials(teamMemberName(member)) }}</span></span><span class="min-w-0 flex-1"><b class="block truncate text-sm">{{ teamMemberName(member) }}</b><small class="mt-1 block truncate text-[11px]">{{ teamMemberEmail(member) }}</small></span><span class="text-task-blue">›</span></button><p v-if="!messageMemberOptions.length" class="px-4 py-10 text-center text-sm text-task-muted">No team members found.</p></div>
               <div v-else-if="conversationsLoading" class="grid h-40 place-items-center"><span class="tf-search-loader"/></div>
-              <template v-else><button v-for="conversation in filteredMessages" :key="conversation.id" :class="['tf-message-contact rounded-none border-t border-task-line px-4 py-4', activeMessage === conversation.id ? 'is-active' : '']" @click="openConversation(conversation)"><span class="relative grid h-11 w-11 shrink-0 place-items-center overflow-hidden rounded-full bg-task-blueSoft text-xs font-bold text-task-blue"><img v-if="conversationAvatar(conversation)" :src="conversationAvatar(conversation)" :alt="conversationTitle(conversation)" class="h-full w-full object-cover"/><span v-else>{{ initials(conversationTitle(conversation)) }}</span><i class="absolute bottom-0 right-0 h-2.5 w-2.5 rounded-full border-2 border-white bg-task-success"/></span><span class="min-w-0 flex-1"><span class="flex items-center justify-between gap-2"><b class="truncate text-sm">{{ conversationTitle(conversation) }}</b><small>{{ conversation.updated_at ? new Date(conversation.updated_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : '' }}</small></span><span class="mt-1 block truncate text-[11px] text-task-muted">{{ conversationLastMessage(conversation) }}</span></span><i v-if="conversation.unread_count" class="grid h-5 min-w-5 place-items-center rounded-full bg-task-blue px-1 text-[10px] font-bold text-white">{{ conversation.unread_count }}</i></button><p v-if="!filteredMessages.length" class="py-10 text-center text-sm text-task-muted">No conversations found.</p></template>
+              <template v-else>
+                <div v-for="conversation in filteredMessages" :key="conversation.id" :class="['tf-message-contact group rounded-none border-t border-task-line px-4 py-4', activeMessage === conversation.id ? 'is-active' : '']" role="button" tabindex="0" @click="openConversation(conversation)" @keydown.enter="openConversation(conversation)">
+                  <span class="relative grid h-11 w-11 shrink-0 place-items-center overflow-hidden rounded-full bg-task-blueSoft text-xs font-bold text-task-blue"><img v-if="conversationAvatar(conversation)" :src="conversationAvatar(conversation)" :alt="conversationTitle(conversation)" class="h-full w-full object-cover"/><span v-else>{{ initials(conversationTitle(conversation)) }}</span><i class="absolute bottom-0 right-0 h-2.5 w-2.5 rounded-full border-2 border-white bg-task-success"/></span>
+                  <span class="min-w-0 flex-1"><span class="flex items-center justify-between gap-2"><b class="truncate text-sm">{{ conversationTitle(conversation) }}</b><small>{{ conversation.updated_at ? new Date(conversation.updated_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : '' }}</small></span><span class="mt-1 block truncate text-[11px] text-task-muted">{{ conversationLastMessage(conversation) }}</span></span>
+                  <i v-if="conversation.unread_count" class="grid h-5 min-w-5 place-items-center rounded-full bg-task-blue px-1 text-[10px] font-bold text-white">{{ conversation.unread_count }}</i>
+                  <button type="button" class="grid h-8 w-8 shrink-0 place-items-center rounded-lg text-task-muted opacity-0 transition hover:bg-task-dangerSoft hover:text-task-danger group-hover:opacity-100 focus:opacity-100" title="Delete conversation" aria-label="Delete conversation" :disabled="conversationDeleting" @click.stop="deleteConversationItem(conversation)"><svg viewBox="0 0 24 24" class="h-4 w-4" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M4 7h16M9 7V4h6v3m-9 0 1 13h10l1-13M10 11v5m4-5v5"/></svg></button>
+                </div>
+                <p v-if="!filteredMessages.length" class="py-10 text-center text-sm text-task-muted">No conversations found.</p>
+              </template>
             </div>
           </aside>
           <div class="flex min-h-0 min-w-0 flex-col bg-slate-50/40">
-            <template v-if="selectedConversation"><header class="flex h-[72px] shrink-0 items-center gap-3 border-b border-task-line bg-white px-5"><span class="grid h-11 w-11 place-items-center overflow-hidden rounded-full bg-task-blueSoft text-xs font-bold text-task-blue"><img v-if="conversationAvatar(selectedConversation)" :src="conversationAvatar(selectedConversation)" :alt="conversationTitle(selectedConversation)" class="h-full w-full object-cover"/><span v-else>{{ initials(conversationTitle(selectedConversation)) }}</span></span><div class="min-w-0 flex-1"><h2 class="truncate text-base font-extrabold">{{ conversationTitle(selectedConversation) }}</h2><p :class="['mt-0.5 flex items-center gap-1.5 text-[11px]', chatSocketState === 'online' ? 'text-task-success' : 'text-task-muted']"><i :class="['h-1.5 w-1.5 rounded-full', chatSocketState === 'online' ? 'bg-task-success' : 'bg-slate-400']"/>{{ typingUserName ? `${typingUserName} is typing...` : chatSocketState === 'online' ? 'Live' : chatSocketState === 'connecting' ? 'Connecting...' : 'Offline mode' }}</p></div><button type="button" class="tf-icon-button rounded-full"><svg viewBox="0 0 24 24" class="h-4 w-4" fill="none" stroke="currentColor"><path :d="iconPath('phone')"/></svg></button><button type="button" class="tf-icon-button rounded-full"><svg viewBox="0 0 24 24" class="h-4 w-4" fill="none" stroke="currentColor"><path :d="iconPath('dots')"/></svg></button></header><div class="tf-chat-body min-h-0 flex-1 space-y-5 overflow-y-auto p-5 sm:p-7"><div v-if="messagesLoading" class="grid h-full place-items-center"><span class="tf-search-loader"/></div><template v-else><div v-for="message in conversationMessages" :key="message.id" :class="['flex items-end gap-2', messageIsMine(message) ? 'justify-end' : '']"><span v-if="!messageIsMine(message)" class="grid h-8 w-8 shrink-0 place-items-center overflow-hidden rounded-full bg-task-blueSoft text-[9px] font-bold text-task-blue"><img v-if="absoluteMediaUrl(message.sender_detail?.avatar)" :src="absoluteMediaUrl(message.sender_detail?.avatar)" :alt="message.sender_detail?.full_name || 'Sender'" class="h-full w-full object-cover"/><span v-else>{{ initials(message.sender_detail?.full_name || 'U') }}</span></span><div :class="messageIsMine(message) ? 'text-right' : ''"><p class="mb-1 text-[10px] text-task-muted">{{ messageIsMine(message) ? 'You' : message.sender_detail?.full_name || 'Member' }} · {{ message.created_at ? new Date(message.created_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : '' }}</p><p :class="['tf-chat-bubble', messageIsMine(message) ? 'is-outgoing' : 'is-incoming']">{{ message.is_deleted ? 'Message deleted' : message.body }}</p><a v-if="message.attachment" :href="absoluteMediaUrl(message.attachment)" target="_blank" class="mt-1 block text-[10px] font-bold text-task-blue">Open attachment</a></div></div><p v-if="!conversationMessages.length" class="py-16 text-center text-sm text-task-muted">No messages yet. Start the conversation.</p></template></div><form class="shrink-0 border-t border-task-line bg-white p-4" @submit.prevent="sendMessage"><div class="tf-message-composer"><input ref="messageAttachmentInput" type="file" class="hidden" @change="sendMessageAttachment"/><button type="button" class="text-lg text-task-muted hover:text-task-blue" aria-label="Attach a file" :disabled="messageSending" @click="chooseMessageAttachment">⌕</button><input v-model="chatDraft" class="min-w-0 flex-1 bg-transparent text-sm outline-none" placeholder="Type a message..."/><button type="button" class="text-task-muted hover:text-task-blue" aria-label="Add emoji">☺</button><button type="submit" class="tf-primary h-9 rounded-[10px] px-4 text-xs" :disabled="messageSending || !chatDraft.trim()">{{ messageSending ? 'Sending...' : 'Send' }} <span>↗</span></button></div></form></template>
+            <template v-if="selectedConversation"><header class="flex h-[72px] shrink-0 items-center gap-3 border-b border-task-line bg-white px-5"><span class="grid h-11 w-11 place-items-center overflow-hidden rounded-full bg-task-blueSoft text-xs font-bold text-task-blue"><img v-if="conversationAvatar(selectedConversation)" :src="conversationAvatar(selectedConversation)" :alt="conversationTitle(selectedConversation)" class="h-full w-full object-cover"/><span v-else>{{ initials(conversationTitle(selectedConversation)) }}</span></span><div class="min-w-0 flex-1"><h2 class="truncate text-base font-extrabold">{{ conversationTitle(selectedConversation) }}</h2><p :class="['mt-0.5 flex items-center gap-1.5 text-[11px]', chatSocketState === 'online' ? 'text-task-success' : 'text-task-muted']"><i :class="['h-1.5 w-1.5 rounded-full', chatSocketState === 'online' ? 'bg-task-success' : 'bg-slate-400']"/>{{ typingUserName ? `${typingUserName} is typing...` : chatSocketState === 'online' ? 'Live' : chatSocketState === 'connecting' ? 'Connecting...' : 'Offline mode' }}</p></div><button type="button" class="tf-icon-button rounded-full"><svg viewBox="0 0 24 24" class="h-4 w-4" fill="none" stroke="currentColor"><path :d="iconPath('phone')"/></svg></button><button type="button" class="tf-icon-button rounded-full"><svg viewBox="0 0 24 24" class="h-4 w-4" fill="none" stroke="currentColor"><path :d="iconPath('dots')"/></svg></button></header><div class="tf-chat-body min-h-0 flex-1 space-y-5 overflow-y-auto p-5 sm:p-7"><div v-if="messagesLoading" class="grid h-full place-items-center"><span class="tf-search-loader"/></div><template v-else><div v-for="message in conversationMessages" :key="message.id" :class="['flex items-end gap-2', messageIsMine(message) ? 'justify-end' : '']"><span v-if="!messageIsMine(message)" class="grid h-8 w-8 shrink-0 place-items-center overflow-hidden rounded-full bg-task-blueSoft text-[9px] font-bold text-task-blue"><img v-if="absoluteMediaUrl(message.sender_detail?.avatar)" :src="absoluteMediaUrl(message.sender_detail?.avatar)" :alt="message.sender_detail?.full_name || 'Sender'" class="h-full w-full object-cover"/><span v-else>{{ initials(message.sender_detail?.full_name || 'U') }}</span></span><div :class="messageIsMine(message) ? 'text-right' : ''"><p class="mb-1 text-[10px] text-task-muted">{{ messageIsMine(message) ? 'You' : message.sender_detail?.full_name || 'Member' }} · {{ message.created_at ? new Date(message.created_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : '' }}</p><p :class="['tf-chat-bubble', messageIsMine(message) ? 'is-outgoing' : 'is-incoming']">{{ message.is_deleted ? 'Message deleted' : message.body }}</p><a v-if="message.attachment" :href="absoluteMediaUrl(message.attachment)" target="_blank" class="mt-2 block"><img v-if="isImageAttachment(message.attachment)" :src="absoluteMediaUrl(message.attachment)" alt="Message attachment" class="max-h-64 max-w-[320px] rounded-xl object-cover shadow-md"/><span v-else class="text-[10px] font-bold text-task-blue">Open attachment</span></a></div></div><p v-if="!conversationMessages.length" class="py-16 text-center text-sm text-task-muted">No messages yet. Start the conversation.</p></template></div><form class="shrink-0 border-t border-task-line bg-white p-4" @submit.prevent="sendMessage"><div class="tf-message-composer"><div v-if="selectedMessageAttachment" class="tf-composer-attachment"><img v-if="messageAttachmentPreview" :src="messageAttachmentPreview" alt="Attachment preview"/><span v-else>📄</span><button type="button" :title="selectedMessageAttachment.name" @click="clearMessageAttachment">×</button></div><input ref="messageAttachmentInput" type="file" class="hidden" @change="sendMessageAttachment"/><button type="button" class="tf-composer-action" aria-label="Attach a file" title="Attach a file" :disabled="messageSending" @click="chooseMessageAttachment"><svg viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><path d="m21.44 11.05-9.19 9.19a6 6 0 0 1-8.49-8.49l9.19-9.19a4 4 0 0 1 5.66 5.66l-9.2 9.19a2 2 0 0 1-2.83-2.83l8.49-8.48"/></svg></button><input v-model="chatDraft" class="min-w-0 flex-1 bg-transparent text-sm outline-none" placeholder="Type a message..."/><button type="button" class="tf-composer-action tf-emoji-action" aria-label="Add emoji" title="Add emoji" :aria-expanded="emojiPickerOpen"><svg viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"/><path d="M8.5 14.5s1.25 1.75 3.5 1.75 3.5-1.75 3.5-1.75"/><path d="M9 9.25h.01M15 9.25h.01"/></svg></button><button type="submit" class="tf-primary tf-chat-send h-9 rounded-[10px] px-4 text-xs" :disabled="messageSending || (!chatDraft.trim() && !selectedMessageAttachment)"><span>{{ messageSending ? 'Sending...' : 'Send' }}</span><svg v-if="!messageSending" viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m22 2-7 20-4-9-9-4Z"/><path d="M22 2 11 13"/></svg></button></div></form></template>
             <div v-else class="grid h-full place-items-center p-8 text-center"><div><span class="mx-auto grid h-16 w-16 place-items-center rounded-[20px] bg-task-blueSoft text-task-blue"><svg viewBox="0 0 24 24" class="h-7 w-7" fill="none" stroke="currentColor" stroke-width="1.7"><path :d="iconPath('message')"/></svg></span><h2 class="mt-4 text-lg font-extrabold text-task-ink">Select a conversation</h2><p class="mt-2 text-sm text-task-muted">Choose a team member to view the conversation.</p></div></div>
+          </div>
+          <div v-if="chatSearchOpen" class="tf-chat-search absolute right-4 top-[76px] z-[91] w-72 rounded-xl border border-task-line bg-white p-2 shadow-xl"><label class="relative block"><svg viewBox="0 0 24 24" class="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-task-muted" fill="none" stroke="currentColor" stroke-width="1.8"><path :d="iconPath('search')"/></svg><input v-model="chatSearch" class="tf-input h-10 w-full pl-9 pr-9 text-sm" placeholder="Search in conversation..." autofocus/><button v-if="chatSearch" type="button" class="absolute right-3 top-1/2 -translate-y-1/2 text-task-muted" aria-label="Clear chat search" @click="chatSearch = ''">×</button></label></div>
+          <div v-if="emojiPickerOpen" class="tf-emoji-picker absolute bottom-20 right-4 z-[90] w-64 rounded-2xl border border-task-line bg-white p-3 shadow-2xl">
+            <label class="relative block"><svg viewBox="0 0 24 24" class="absolute left-3 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-task-muted" fill="none" stroke="currentColor" stroke-width="1.8"><path :d="iconPath('search')"/></svg><input v-model="emojiSearch" class="tf-input h-9 w-full pl-9 text-xs" placeholder="Search emoji..." autofocus/></label>
+            <div class="mt-2 grid max-h-44 grid-cols-5 gap-1 overflow-y-auto"><button v-for="option in filteredEmojiOptions" :key="option[0]" type="button" class="grid h-9 w-9 place-items-center rounded-lg text-lg transition hover:bg-task-blueSoft" :title="option[1]" @click="addEmojiToMessage(option[0])">{{ option[0] }}</button></div>
+            <p v-if="!filteredEmojiOptions.length" class="py-5 text-center text-xs text-task-muted">No emoji found</p>
           </div>
         </section>
 

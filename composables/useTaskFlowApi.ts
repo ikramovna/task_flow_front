@@ -880,7 +880,7 @@ export const useTaskFlowApi = () => {
       body: report
     })
 
-  const createConversation = async (payload: { department: string; title: string; is_group: boolean; participants: Array<string | number> }) =>
+  const createConversation = async (payload: { department: string; title: string; is_group: boolean; participants: number[] }) =>
     await apiFetch<ApiConversation>('/chat/conversations/', { method: 'POST', body: payload })
 
   const listConversations = async (query: { search?: string; ordering?: string; page?: number; page_size?: number } = {}) => {
@@ -908,6 +908,9 @@ export const useTaskFlowApi = () => {
 
   const markConversationRead = async (id: string) =>
     await apiFetch<ApiConversation>(`/chat/conversations/${id}/mark_read/`, { method: 'POST', body: {} })
+
+  const deleteConversation = async (id: string) =>
+    await apiFetch(`/chat/conversations/${id}/`, { method: 'DELETE' })
 
   const getReport = async (id: string) => await apiFetch<ApiReport>(`/reports/${id}/`)
 
@@ -1180,6 +1183,7 @@ export const useTaskFlowApi = () => {
     listMessages,
     createMessage,
     markConversationRead,
+    deleteConversation,
     getAccessToken: () => getStoredTokens()?.access || '',
     getReport,
     patchEvent,
