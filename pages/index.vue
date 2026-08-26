@@ -1045,7 +1045,11 @@ const conversationDisplayUser = (conversation: ApiConversation) => {
 
   return conversation.participant_details?.[0]
 }
-const conversationTitle = (conversation: ApiConversation) => conversation.title || conversationDisplayUser(conversation)?.full_name || conversationDisplayUser(conversation)?.email || 'Conversation'
+const conversationTitle = (conversation: ApiConversation) => {
+  if (conversation.is_group) return conversation.title || 'Group conversation'
+  const peer = conversationDisplayUser(conversation)
+  return peer?.full_name || peer?.email || conversation.title || 'Conversation'
+}
 const conversationAvatar = (conversation: ApiConversation) => absoluteMediaUrl(conversationDisplayUser(conversation)?.avatar)
 const conversationLastMessage = (conversation: ApiConversation) => String(conversation.last_message?.body || 'No messages yet')
 const conversationPresence = (conversation: ApiConversation | null) => {
