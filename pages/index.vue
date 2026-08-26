@@ -2111,8 +2111,8 @@ onMounted(() => {
   }
   syncRootThemeClass()
   restoreActivePage()
-  void loadConversations(false)
-  conversationRefreshTimer = setInterval(() => { void loadConversations(false) }, 15_000)
+  void loadConversations(false, true)
+  conversationRefreshTimer = setInterval(() => { void loadConversations(false, true) }, 15_000)
   void loadArchivedTaskCount()
   const linkedTaskId = String(route.query.task || '')
   if (linkedTaskId) {
@@ -3724,14 +3724,14 @@ const submitModal = async () => {
   modal.value = null
 }
 
-const loadConversations = async (openFirst = true) => {
+const loadConversations = async (openFirst = true, silent = false) => {
   conversationsLoading.value = true
   try {
     const response = await taskFlowApi.listConversations({ ordering: '-updated_at', page_size: 100 })
     conversations.value = taskFlowApi.listItems(response) as ApiConversation[]
     if (openFirst && !activeMessage.value && conversations.value.length) await openConversation(conversations.value[0])
   } catch (error) {
-    notifyError(taskFlowApiErrorMessage(error, 'Could not load conversations'))
+    if (!silent) notifyError(taskFlowApiErrorMessage(error, 'Could not load conversations'))
   } finally {
     conversationsLoading.value = false
   }
