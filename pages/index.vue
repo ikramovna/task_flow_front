@@ -505,6 +505,7 @@ const filteredEmojiOptions = computed(() => {
 })
 let chatSocket: WebSocket | null = null
 let typingStopTimer: ReturnType<typeof setTimeout> | null = null
+let conversationRefreshTimer: ReturnType<typeof setInterval> | null = null
 const toast = ref('')
 const toastType = ref<'info' | 'success' | 'error'>('info')
 const actionMenu = ref<string | null>(null)
@@ -1014,6 +1015,10 @@ const uniqueConversations = computed(() => {
     return true
   })
 })
+const unreadMessageCount = computed(() => uniqueConversations.value.reduce(
+  (total, conversation) => total + Math.max(0, Number(conversation.unread_count || 0)),
+  0
+))
 const filteredMessages = computed(() => {
   const query = messageSearch.value.trim().toLowerCase()
   return uniqueConversations.value.filter(conversation => {
@@ -2106,6 +2111,8 @@ onMounted(() => {
   }
   syncRootThemeClass()
   restoreActivePage()
+  void loadConversations(false)
+  conversationRefreshTimer = setInterval(() => { void loadConversations(false) }, 15_000)
   void loadArchivedTaskCount()
   const linkedTaskId = String(route.query.task || '')
   if (linkedTaskId) {
@@ -2133,6 +2140,8 @@ onBeforeUnmount(() => {
   themeMediaQuery = null
   if (dashboardClockTimer) clearInterval(dashboardClockTimer)
   dashboardClockTimer = null
+  if (conversationRefreshTimer) clearInterval(conversationRefreshTimer)
+  conversationRefreshTimer = null
 })
 
 const toggleTheme = () => {
@@ -3715,12 +3724,12 @@ const submitModal = async () => {
   modal.value = null
 }
 
-const loadConversations = async () => {
+const loadConversations = async (openFirst = true) => {
   conversationsLoading.value = true
   try {
     const response = await taskFlowApi.listConversations({ ordering: '-updated_at', page_size: 100 })
     conversations.value = taskFlowApi.listItems(response) as ApiConversation[]
-    if (!activeMessage.value && conversations.value.length) await openConversation(conversations.value[0])
+    if (openFirst && !activeMessage.value && conversations.value.length) await openConversation(conversations.value[0])
   } catch (error) {
     notifyError(taskFlowApiErrorMessage(error, 'Could not load conversations'))
   } finally {
@@ -4399,7 +4408,8 @@ const iconPath = (name: string) => {
                 <span class="grid h-7 w-7 shrink-0 place-items-center"><svg viewBox="0 0 24 24" class="h-[19px] w-[19px]" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path :d="iconPath(item.icon)" /></svg></span>
                 <span v-if="!sidebarCollapsed" class="min-w-0 flex-1 truncate">{{ item.label }}</span>
                 <span v-if="isComingSoonPage(item.key) && !sidebarCollapsed" class="rounded-full bg-slate-100 px-2 py-1 text-[9px] font-bold uppercase tracking-wide text-slate-400">Soon</span>
-                <span v-if="item.badge && !sidebarCollapsed" class="grid h-5 min-w-5 place-items-center rounded-full bg-task-danger px-1 text-[10px] font-bold text-white">{{ item.badge }}</span>
+                <span v-if="item.key === 'messages' && unreadMessageCount" :class="['grid min-w-5 place-items-center rounded-full bg-task-danger px-1 font-bold leading-none text-white shadow-sm', sidebarCollapsed ? 'absolute right-0.5 top-0.5 h-[18px] text-[9px]' : 'h-5 text-[10px]']">{{ unreadMessageCount > 99 ? '99+' : unreadMessageCount }}</span>
+                <span v-else-if="item.badge && !sidebarCollapsed" class="grid h-5 min-w-5 place-items-center rounded-full bg-task-danger px-1 text-[10px] font-bold text-white">{{ item.badge }}</span>
               </button>
             </div>
           </section>
