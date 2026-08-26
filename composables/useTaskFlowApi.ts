@@ -686,7 +686,8 @@ export const useTaskFlowApi = () => {
 
   const updateMe = async (
     profile: Required<Pick<MeProfile, 'first_name' | 'last_name' | 'phone' | 'job_title'>>,
-    avatarFile?: File | null
+    avatarFile?: File | null,
+    removeAvatar = false
   ) => {
     const form = new FormData()
 
@@ -695,9 +696,10 @@ export const useTaskFlowApi = () => {
     form.append('phone', profile.phone)
     form.append('job_title', profile.job_title)
     if (avatarFile) form.append('avatar', avatarFile)
+    else if (removeAvatar) form.append('avatar', '')
 
     const updated = await apiFetch<MeProfile>('/me/', {
-      method: 'PUT',
+      method: 'PATCH',
       body: form
     })
     meCache.value = updated

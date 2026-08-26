@@ -407,6 +407,7 @@ const feedbackSending = ref(false)
 const profileAvatarInput = ref<HTMLInputElement | null>(null)
 const profileAvatarPreview = ref('')
 const profileAvatarFile = ref<File | null>(null)
+const profileAvatarRemoveRequested = ref(false)
 const supportWidgetOpen = ref(false)
 const supportWidgetRoot = ref<HTMLElement | null>(null)
 const supportWidgetPosition = ref<{ x: number; y: number } | null>(null)
@@ -4001,7 +4002,28 @@ const chooseProfileAvatar = () => {
   profileAvatarInput.value?.click()
 }
 
-const handleProfileAvatar = (event: Event) => {
+const prepareProfileAvatar = async (file: File) => {
+  const maxUploadBytes = 900 * 1024
+  if (file.size <= maxUploadBytes) return file
+
+  const bitmap = await createImageBitmap(file)
+  const maxSide = 720
+  const scale = Math.min(1, maxSide / Math.max(bitmap.width, bitmap.height))
+  const canvas = document.createElement('canvas')
+  canvas.width = Math.max(1, Math.round(bitmap.width * scale))
+  canvas.height = Math.max(1, Math.round(bitmap.height * scale))
+  const context = canvas.getContext('2d')
+  if (!context) throw new Error('Image processing is not supported in this browser')
+  context.drawImage(bitmap, 0, 0, canvas.width, canvas.height)
+  bitmap.close()
+
+  const blob = await new Promise<Blob | null>(resolve => canvas.toBlob(resolve, 'image/jpeg', 0.82))
+  if (!blob || blob.size > maxUploadBytes) throw new Error('The image is still too large after compression')
+  const baseName = file.name.replace(/\.[^.]+$/, '') || 'avatar'
+  return new File([blob], `${baseName}.jpg`, { type: 'image/jpeg', lastModified: Date.now() })
+}
+
+const handleProfileAvatar = async (event: Event) => {
   const input = event.target as HTMLInputElement
   const file = input.files?.[0]
   if (!file) return
@@ -4011,16 +4033,29 @@ const handleProfileAvatar = (event: Event) => {
     notifyError('Please upload an image')
     return
   }
+  if (file.size > 10 * 1024 * 1024) {
+    input.value = ''
+    notifyError('Profile image must be smaller than 10 MB.')
+    return
+  }
 
-  if (profileAvatarPreview.value && profileAvatarPreview.value.startsWith('blob:')) URL.revokeObjectURL(profileAvatarPreview.value)
-  profileAvatarFile.value = file
-  profileAvatarPreview.value = URL.createObjectURL(file)
-  profileForm.avatar = file.name
+  try {
+    const preparedFile = await prepareProfileAvatar(file)
+    if (profileAvatarPreview.value && profileAvatarPreview.value.startsWith('blob:')) URL.revokeObjectURL(profileAvatarPreview.value)
+    profileAvatarFile.value = preparedFile
+    profileAvatarRemoveRequested.value = false
+    profileAvatarPreview.value = URL.createObjectURL(preparedFile)
+    profileForm.avatar = preparedFile.name
+  } catch {
+    input.value = ''
+    notifyError('This image could not be prepared. Please choose a JPG, PNG, or WebP image smaller than 10 MB.')
+  }
 }
 
 const removeProfileAvatar = () => {
   profileForm.avatar = ''
   profileAvatarFile.value = null
+  profileAvatarRemoveRequested.value = Boolean(savedProfile.avatar)
   if (profileAvatarPreview.value && profileAvatarPreview.value.startsWith('blob:')) URL.revokeObjectURL(profileAvatarPreview.value)
   profileAvatarPreview.value = ''
   if (profileAvatarInput.value) profileAvatarInput.value.value = ''
@@ -4181,9 +4216,10 @@ const saveSettings = async (section: string) => {
         last_name: profileForm.lastName.trim(),
         phone: profileForm.phone.trim(),
         job_title: profileForm.role.trim()
-      }, profileAvatarFile.value)
+      }, profileAvatarFile.value, profileAvatarRemoveRequested.value)
       applyProfileData(profile)
       profileAvatarFile.value = null
+      profileAvatarRemoveRequested.value = false
       notify('Profile updated')
     } catch (error) {
       console.error('Profile update failed.', error)
@@ -4246,6 +4282,7 @@ const resetProfile = () => {
   profileForm.lastName = savedProfile.lastName
   profileForm.avatar = savedProfile.avatar
   profileAvatarFile.value = null
+  profileAvatarRemoveRequested.value = false
   if (profileAvatarPreview.value && profileAvatarPreview.value.startsWith('blob:')) URL.revokeObjectURL(profileAvatarPreview.value)
   profileAvatarPreview.value = savedProfile.avatar
   profileForm.email = savedProfile.email
