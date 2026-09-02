@@ -175,13 +175,20 @@ type ApiReport = {
   created_at?: string
   status?: string
   generated_by_detail?: UserBrief
+  file?: string
+  result?: string
 }
 
 type ReportPayload = {
   department: string
   name: string
   report_type: string
-  parameters: string
+  parameters: {
+    start_date: string
+    end_date: string
+    priority?: string | null
+    status?: string | null
+  }
 }
 
 export type ApiConversation = {
@@ -206,6 +213,8 @@ export type ApiChatMessage = {
   attachment?: string | null
   edited_at?: string | null
   is_deleted?: boolean
+  is_read?: boolean
+  read_at?: string | null
   created_at?: string
 }
 
@@ -900,6 +909,25 @@ export const useTaskFlowApi = () => {
       body: report
     })
 
+  const getReportsSummary = async () => await apiFetch<Record<string, unknown>>('/reports/summary/')
+
+  const listReportTemplates = async () => await apiFetch<ListResponse<Record<string, unknown>>>('/reports/templates/')
+
+  const listReports = async (query: Record<string, string | number | undefined> = {}) => {
+    const params = new URLSearchParams()
+    Object.entries(query).forEach(([key, value]) => {
+      if (value !== undefined && value !== '') params.set(key, String(value))
+    })
+    const suffix = params.toString() ? `?${params}` : ''
+    return await apiFetch<PaginatedResponse<ApiReport>>(`/reports/${suffix}`)
+  }
+
+  const previewReport = async (id: string) =>
+    await apiFetch<Blob>(`/reports/${id}/preview/`, { responseType: 'blob' })
+
+  const downloadReportFile = async (id: string) =>
+    await apiFetch<Blob>(`/reports/${id}/download/`, { responseType: 'blob' })
+
   const createConversation = async (payload: { department: string; title: string; is_group: boolean; participants: number[] }) =>
     await apiFetch<ApiConversation>('/chat/conversations/', { method: 'POST', body: payload })
 
@@ -1201,6 +1229,11 @@ export const useTaskFlowApi = () => {
     getEvent,
     createEvent,
     createReport,
+    getReportsSummary,
+    listReportTemplates,
+    listReports,
+    previewReport,
+    downloadReportFile,
     createConversation,
     listConversations,
     listMessages,

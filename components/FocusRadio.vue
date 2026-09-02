@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import ModalCloseButton from '~/components/ui/ModalCloseButton.vue'
 const props = withDefaults(defineProps<{ dark?: boolean; muslimaMusic?: boolean }>(), { dark: false, muslimaMusic: false })
 
 const defaultStations = [
@@ -238,7 +239,7 @@ const toggleMute = () => {
     <Teleport to="body">
     <Transition name="radio-popover">
       <section v-if="isOpen" ref="panel" :class="['focus-radio__panel', props.dark ? 'is-dark-mode' : '']" :style="panelStyle" aria-label="Focus Radio player">
-        <header><div><h2>Focus Radio</h2><p>Music for your work session</p></div><button type="button" aria-label="Close Focus Radio" @click="closePanel">×</button></header>
+        <header><div><h2>Focus Radio</h2><p>Music for your work session</p></div><ModalCloseButton size="sm" label="Close Focus Radio" @click="closePanel" /></header>
 
         <div class="focus-radio__stations">
           <button v-for="(station, index) in stations" :key="station.name" type="button" :class="['focus-radio__station', selectedIndex === index ? 'is-active' : '']" @click="selectStation(index)">
