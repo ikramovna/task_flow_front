@@ -1268,16 +1268,6 @@ body {
 .tf-report-modal-body { overscroll-behavior: contain; padding-bottom: 16px !important; }
 .tf-report-modal-footer { position: static; flex: none; background: inherit; }
 
-/* The report date fields sit close to the modal footer. Opening their calendar
-   downward makes the scroll container clip the last weeks. Keep the picker
-   inside the visible modal area and align the end-date picker to the right. */
-.tf-report-modal .tf-date-popover {
-  top: auto;
-  bottom: calc(100% + 10px);
-  max-height: min(344px, calc(100vh - 180px));
-  overflow-y: auto;
-}
-
 @media (max-width: 767px) {
   .tf-app-title h1 { font-size: 17px !important; }
   .tf-sidebar .tf-nav-item { font-size: 14px !important; }
