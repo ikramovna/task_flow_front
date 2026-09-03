@@ -1,5 +1,7 @@
 export type MessageFilter = 'all' | 'unread' | 'groups'
-export type ContactInfoSection = 'overview' | 'files' | 'links'
+export type ContactInfoSection = 'overview' | 'media' | 'files' | 'links'
+
+const mutedConversationsStorageKey = 'taskflow:muted-conversations'
 
 export const useMessagesStore = () => {
   const searchInput = useState('messages:search-input', () => '')
@@ -16,6 +18,31 @@ export const useMessagesStore = () => {
   const contactInfoOpen = useState('messages:contact-open', () => true)
   const contactInfoSection = useState<ContactInfoSection>('messages:contact-section', () => 'overview')
   const mutedConversations = useState<Record<string, boolean>>('messages:muted-conversations', () => ({}))
+  const mutedConversationsHydrated = useState('messages:muted-conversations-hydrated', () => false)
+
+  if (import.meta.client) {
+    onMounted(() => {
+      if (mutedConversationsHydrated.value) return
+      try {
+        const stored = JSON.parse(localStorage.getItem(mutedConversationsStorageKey) || '{}')
+        if (stored && typeof stored === 'object' && !Array.isArray(stored)) {
+          mutedConversations.value = Object.fromEntries(
+            Object.entries(stored).filter((entry): entry is [string, boolean] => typeof entry[1] === 'boolean')
+          )
+        }
+      } catch {
+        localStorage.removeItem(mutedConversationsStorageKey)
+      } finally {
+        mutedConversationsHydrated.value = true
+      }
+    })
+
+    watch(mutedConversations, (value) => {
+      if (!mutedConversationsHydrated.value) return
+      localStorage.setItem(mutedConversationsStorageKey, JSON.stringify(value))
+    }, { deep: true })
+  }
+
   const isConversationMuted = (conversationId?: string | number | null) => Boolean(conversationId && mutedConversations.value[String(conversationId)])
   const setConversationMuted = (conversationId: string | number, muted: boolean) => {
     mutedConversations.value = { ...mutedConversations.value, [String(conversationId)]: muted }

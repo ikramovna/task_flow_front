@@ -183,12 +183,7 @@ type ReportPayload = {
   department: string
   name: string
   report_type: string
-  parameters: {
-    start_date: string
-    end_date: string
-    priority?: string | null
-    status?: string | null
-  }
+  parameters: string
 }
 
 export type ApiConversation = {
@@ -972,10 +967,8 @@ export const useTaskFlowApi = () => {
       apiFetch<PaginatedResponse<ApiTask>>('/tasks/?page_size=100'),
       listMembers({ page_size: 200 }),
       apiFetch<PaginatedResponse<ApiEvent>>('/events/?page_size=100'),
-      // These sections are currently marked "Coming soon" in the UI. Avoid
-      // downloading their full datasets during every application refresh.
-      Promise.resolve({} as ApiAnalytics),
-      Promise.resolve({ count: 0, results: [] } as PaginatedResponse<ApiProject>),
+      getAnalytics(),
+      listProjects({ page_size: 200 }),
       Promise.resolve({ count: 0, results: [] } as PaginatedResponse<ApiReport>)
     ])
     const [dashboard, profile] = await Promise.all([getDashboard(), getMe()])

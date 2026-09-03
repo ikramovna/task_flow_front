@@ -59,14 +59,14 @@ export const useNotifications = () => {
     }
   }
 
-  const markAllRead = async () => {
+  const markAllRead = async (options: { reload?: boolean } = {}) => {
     const snapshot = state.value.notifications.map(item => ({ ...item }))
     const previousCount = state.value.unreadCount
     state.value.notifications = state.value.notifications.map(item => ({ ...item, is_read: true, read_at: item.read_at || new Date().toISOString() }))
     state.value.unreadCount = 0
     try {
       const result = await api.markAllNotificationsRead()
-      await load({ pageSize: Math.max(10, state.value.notifications.length) })
+      if (options.reload !== false) await load({ pageSize: Math.max(10, state.value.notifications.length) })
       return result
     } catch (error) {
       state.value.notifications = snapshot

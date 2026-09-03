@@ -4,6 +4,8 @@ import type { AnalyticsCard, AnalyticsSummary, ApiChatMessage, ApiConversation }
 import GreetingCard from '~/components/GreetingCard.vue'
 import HelpPage from '~/components/pages/HelpPage.vue'
 import ReportsPage from '~/components/pages/ReportsPage.vue'
+import AppDatePicker from '~/components/ui/AppDatePicker.vue'
+import AppConfirmModal from '~/components/ui/AppConfirmModal.vue'
 import AppLoadingOverlay from '~/components/ui/AppLoadingOverlay.vue'
 import AppPagination from '~/components/ui/AppPagination.vue'
 import AppSearchInput from '~/components/ui/AppSearchInput.vue'
@@ -54,6 +56,20 @@ const finishTikoPageLoading = async (sequence: number, startedAt: number) => {
 const sidebarNavigationKey = ref(0)
 const settingsTab = ref<'profile' | 'security'>('profile')
 const modal = ref<ModalKey>(null)
+type ConfirmationOptions = { title: string; message: string; confirmLabel?: string; cancelLabel?: string }
+const confirmation = ref<ConfirmationOptions | null>(null)
+let confirmationResolver: ((confirmed: boolean) => void) | null = null
+const requestConfirmation = (options: ConfirmationOptions) => new Promise<boolean>((resolve) => {
+  confirmationResolver?.(false)
+  confirmation.value = options
+  confirmationResolver = resolve
+})
+const settleConfirmation = (confirmed: boolean) => {
+  const resolve = confirmationResolver
+  confirmationResolver = null
+  confirmation.value = null
+  resolve?.(confirmed)
+}
 const openDropdown = ref<string | null>(null)
 const dropdownValues = reactive<Record<string, string>>({
   priority: 'All Priorities',
@@ -214,6 +230,10 @@ const analyticsSortMark = (column: AnalyticsSortColumn) => {
   if (analyticsTableOrdering.value.replace(/^-/, '') !== column) return '↕'
   return analyticsTableOrdering.value.startsWith('-') ? '↓' : '↑'
 }
+const resetAnalyticsTableSort = () => {
+  analyticsTableOrdering.value = '-performance'
+  analyticsPage.value = 1
+}
 const analyticsPage = ref(1)
 const analyticsPageSize = ref(8)
 let analyticsRequestSequence = 0
@@ -293,7 +313,6 @@ const loadFilteredAnalytics = async () => {
     analyticsStaffTotalPages.value = Math.max(1, Number(staffPerformance.total_pages ?? Math.ceil(analyticsStaffTotal.value / analyticsPageSize.value)))
     state.value.analyticsStats = (summary?.cards || []).map((card) => [String(card.value), card.label, card.unit])
     state.value.monthlyProgress = taskFlowApi.mapAnalyticsMonthlyProgress(analytics)
-    state.value.tasksByCategory = taskFlowApi.mapAnalyticsTasksByCategory(analytics)
   } catch (error) {
     if (sequence === analyticsRequestSequence) analyticsFilterError.value = taskFlowApiErrorMessage(error, 'Analytics data could not be loaded')
   } finally {
@@ -340,8 +359,11 @@ void taskFlowStore.loadBackendData().finally(async () => {
   await finishTikoPageLoading(initialLoadingSequence, initialLoadingStartedAt)
 })
 
-const { state, pages, stats, projectStats, analyticsStats, monthlyProgress, tasksByCategory, tasks, projects, team, workload, reports, events, messages, heatmap, currentUserId, currentDepartmentId, currentRole, currentUserActive, currentUserHasAllDepartmentsAccess, currentUserAccessibleDepartmentIds, apiError, dashboardTodayEvents, dashboardUpcomingEvents, dashboardDeadlines, dashboardDepartments, dashboardRecentTasks, dashboardGeneratedAt } = taskFlowStore
+const { state, pages, stats, projectStats, analyticsStats, monthlyProgress, tasks, projects, team, workload, reports, events, messages, currentUserId, currentDepartmentId, currentRole, currentUserActive, currentUserHasAllDepartmentsAccess, currentUserAccessibleDepartmentIds, apiError, dashboardTodayEvents, dashboardUpcomingEvents, dashboardDeadlines, dashboardDepartments, dashboardRecentTasks, dashboardGeneratedAt } = taskFlowStore
 const normalizedRole = computed(() => currentRole.value.trim().toLowerCase())
+const accountRoleLabel = computed(() => currentRole.value
+  ? currentRole.value.trim().split(/[\s_-]+/).map(word => word.charAt(0).toUpperCase() + word.slice(1).toLowerCase()).join(' ')
+  : 'Team Member')
 const canManageDepartment = computed(() => ['owner', 'admin', 'manager'].includes(normalizedRole.value))
 const canManageMembers = computed(() => currentUserActive.value && ['owner', 'admin', 'manager'].includes(normalizedRole.value))
 const canAddTask = computed(() => currentUserActive.value && (
@@ -487,8 +509,12 @@ const selectedMessageAttachment = ref<File | null>(null)
 const messageAttachmentPreview = ref('')
 const chatSocketState = ref<'offline' | 'connecting' | 'online'>('offline')
 const typingUserId = ref('')
-const contactFiles = computed(() => conversationMessages.value.filter(message => Boolean(message.attachment)))
-const contactLinks = computed(() => conversationMessages.value.flatMap(message => String(message.body || '').match(/https?:\/\/[^\s]+/g) || []))
+const contactAttachments = computed(() => conversationMessages.value.filter(message => Boolean(message.attachment)))
+const contactMedia = computed(() => contactAttachments.value.filter(message => isImageAttachment(message.attachment)))
+const contactFiles = computed(() => contactAttachments.value.filter(message => !isImageAttachment(message.attachment)))
+const contactLinks = computed(() => Array.from(new Set(
+  conversationMessages.value.flatMap(message => String(message.body || '').match(/https?:\/\/[^\s]+/g) || [])
+)))
 const emojiOptions = [
   ['😀', 'grinning happy smile'], ['😂', 'laugh tears funny'], ['😊', 'smile happy blush'], ['😍', 'love heart eyes'],
   ['🥳', 'party celebrate'], ['😎', 'cool sunglasses'], ['🤔', 'thinking'], ['😢', 'sad cry'], ['😮', 'surprised wow'],
@@ -544,7 +570,6 @@ const currentYear = today.getFullYear()
 const currentDay = today.getDate()
 const calendarMonthIndex = ref(currentMonthIndex)
 const selectedCalendarDay = ref<number | null>(null)
-const supportRequests = ref<string[]>([])
 const searchLoading = reactive<Record<string, boolean>>({
   task: false,
   project: false,
@@ -570,7 +595,7 @@ const savedProfile = reactive({
   avatar: '',
   email: '',
   phone: '',
-  role: ''
+  jobTitle: ''
 })
 const profileForm = reactive({
   firstName: '',
@@ -578,7 +603,7 @@ const profileForm = reactive({
   avatar: '',
   email: '',
   phone: '',
-  role: ''
+  jobTitle: ''
 })
 const passwordForm = reactive({
   current: '',
@@ -799,6 +824,7 @@ const eventColorById = reactive<Record<string, string>>({})
 const selectedCalendarEvent = ref<CalendarEvent | null>(null)
 const editingEventId = ref('')
 const eventDeleting = ref(false)
+const modalBusy = computed(() => taskSaving.value || memberDeleting.value || eventDeleting.value)
 const openProjectDatePicker = ref<'startDate' | 'dueDate' | 'analyticsStart' | 'analyticsEnd' | null>(null)
 const datePickerView = reactive({
   year: currentYear,
@@ -1196,53 +1222,6 @@ watch([reportSearch, reportStatusFilter, reportTypeFilter, reportDateFilter, rep
 watch(reportPage, () => {
   if (activePage.value === 'reports') void loadReportsPage()
 })
-const taskStatusCounts = computed(() => {
-  const total = tasks.value.length
-  const countByStatus = (status: string) => tasks.value.filter((task) => String(task[3]).toLowerCase() === status).length
-  const percent = (count: number) => total ? `${Math.round((count / total) * 100)}%` : '0%'
-  const inProgress = countByStatus('in progress')
-  const completed = countByStatus('completed')
-  const overdue = tasks.value.filter((task) => String(task[3]).toLowerCase() === 'overdue').length
-
-  return [
-    ['In Progress', percent(inProgress), 'bg-task-blue', 'bg-task-blueSoft'],
-    ['Completed', percent(completed), 'bg-task-success', 'bg-task-successSoft'],
-    ['Overdue', percent(overdue), 'bg-task-warning', 'bg-task-warningSoft']
-  ]
-})
-const priorityCounts = computed(() => {
-  const high = tasks.value.filter((task) => String(task[2]).toLowerCase() === 'high').length
-  const medium = tasks.value.filter((task) => String(task[2]).toLowerCase() === 'medium').length
-  const low = tasks.value.filter((task) => String(task[2]).toLowerCase() === 'low').length
-  const total = high + medium + low
-  const highEnd = total ? (high / total) * 100 : 0
-  const mediumEnd = total ? highEnd + (medium / total) * 100 : 0
-
-  return { high, medium, low, total, highEnd, mediumEnd }
-})
-const priorityChartStyle = computed(() => {
-  if (!priorityCounts.value.total) return { background: '#EEF3F8' }
-  return {
-    background: `conic-gradient(#2567AD 0 ${priorityCounts.value.highEnd}%, #8DB1D7 ${priorityCounts.value.highEnd}% ${priorityCounts.value.mediumEnd}%, #DCE8F4 ${priorityCounts.value.mediumEnd}% 100%)`
-  }
-})
-const activePrioritySegment = ref<string | null>(null)
-const priorityCircleLength = 439.82
-const prioritySegments = computed(() => {
-  const total = priorityCounts.value.total
-  let offset = 0
-  return [
-    { key: 'high', label: 'High', count: priorityCounts.value.high, color: '#2567AD' },
-    { key: 'medium', label: 'Medium', count: priorityCounts.value.medium, color: '#4B96C1' },
-    { key: 'low', label: 'Low', count: priorityCounts.value.low, color: '#DCE8F4' }
-  ].map((segment) => {
-    const percent = total ? (segment.count / total) * 100 : 0
-    const result = { ...segment, percent, offset }
-    offset += percent
-    return result
-  })
-})
-const activePriorityData = computed(() => prioritySegments.value.find((segment) => segment.key === activePrioritySegment.value) ?? null)
 const teamStats = computed(() => {
   const overdueTasks = memberSummary.value?.overdue_tasks ?? tasks.value.filter(isTaskOverdue).length
   if (memberSummary.value) {
@@ -1265,22 +1244,10 @@ const teamStats = computed(() => {
     [String(overdueTasks), 'Overdue Tasks', 'bg-task-dangerSoft']
   ]
 })
-const quickInsights = computed(() => {
-  if (!tasks.value.length && !projects.value.length && !team.value.length) return []
-
-  return [
-    `Completed tasks: ${tasks.value.filter((task) => String(task[3]).toLowerCase() === 'completed').length}`,
-    `Overdue tasks: ${tasks.value.filter((task) => String(task[3]).toLowerCase() === 'overdue').length}`,
-    `Active projects: ${projects.value.length}`,
-    `Team members: ${team.value.length}`
-  ]
-})
 const sidebarGroups = computed(() => taskFlowSidebarGroups.map(group => ({
   label: group.label,
   items: pages.value.filter(page => (group.keys as readonly string[]).includes(page.key))
 })).filter(group => group.items.length))
-const comingSoonPages = new Set<PageKey>()
-const isComingSoonPage = (key: PageKey) => comingSoonPages.has(key)
 const profileName = computed(() => `${savedProfile.firstName} ${savedProfile.lastName}`.trim())
 const isMuslimaRadioUser = computed(() => profileName.value.trim().replace(/\s+/g, ' ').toLocaleLowerCase() === 'muslima zokirjonova')
 const profileInitials = computed(() => profileName.value ? initials(profileName.value) : '')
@@ -1324,7 +1291,7 @@ const dashboardDepartmentGradient = computed(() => {
   })
   return segments.length ? `conic-gradient(${segments.join(', ')})` : 'conic-gradient(#E2E8F0 0 100%)'
 })
-const hasSavedProfileInfo = computed(() => Boolean(profileName.value || savedProfile.role || savedProfile.email))
+const hasSavedProfileInfo = computed(() => Boolean(profileName.value || savedProfile.jobTitle || savedProfile.email))
 const profileFormInitials = computed(() => {
   const name = `${profileForm.firstName} ${profileForm.lastName}`.trim()
   return name ? initials(name) : ''
@@ -1336,8 +1303,6 @@ const accountJoinedDate = computed(() => {
   const date = new Date(rawDate)
   return Number.isNaN(date.getTime()) ? rawDate : formatProjectDateInput(date)
 })
-const accountLastLogin = `${String(today.getDate()).padStart(2, '0')}.${String(today.getMonth() + 1).padStart(2, '0')}.${today.getFullYear()}`
-const accountLastLoginTime = new Intl.DateTimeFormat('en-US', { hour: 'numeric', minute: '2-digit' }).format(today)
 const isDarkTheme = computed(() => dropdownValues.theme === 'Dark' || (dropdownValues.theme === 'System' && systemPrefersDark.value))
 const syncRootThemeClass = () => {
   if (!import.meta.client) return
@@ -1546,16 +1511,6 @@ const highlightedEfficiency = computed(() => {
 })
 const efficiencyBarHeight = (value: number) => `${(Math.min(Math.max(value, 0), chartMaxValue) / chartMaxValue) * chartInnerHeight}px`
 const chartColumnsStyle = (length: number) => ({ gridTemplateColumns: `repeat(${Math.max(length, 1)}, minmax(0, 1fr))` })
-const categoryTrendData = computed(() => {
-  const maxValue = Math.max(...tasksByCategory.value.map((item) => Number(item[1] || 0)), 100)
-
-  return tasksByCategory.value.map((item) => ({
-    name: String(item[0] || 'Uncategorized'),
-    value: Math.round((Number(item[1] || 0) / maxValue) * 100),
-    from: 'analytics endpoint',
-    growth: `${Number(item[2] || item[1] || 0)} tasks`
-  }))
-})
 const analyticsFilteredMembers = computed(() => [...analyticsStaffRows.value].sort((a, b) => {
   const descending = analyticsTableOrdering.value.startsWith('-')
   const key = analyticsTableOrdering.value.replace(/^-/, '')
@@ -1619,15 +1574,6 @@ const analyticsDepartmentPerformanceMax = computed(() => {
   return Math.max(10, Math.ceil(highestTaskTotal / 10) * 10)
 })
 const analyticsDepartmentStackTotal = (item: AnalyticsDepartmentPerformanceChartItem) => item.completed + item.inProgress + item.overdue
-const productivityTrendData = computed(() =>
-  heatmap.value.map((value, index) => ({
-    day: ['Sat', 'Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri'][index % 7],
-    value: Math.round((Number(value || 0) / 5) * 100),
-    from: 'backend activity',
-    growth: `${value} activity`
-  }))
-)
-
 const eventsForDay = (day: number) => currentMonthEvents.value.filter((event) => event.day === day)
 
 const eventFullDate = (event: CalendarEvent) => `${String(event.day).padStart(2, '0')}.${String(event.month + 1).padStart(2, '0')}.${event.year}`
@@ -1857,9 +1803,14 @@ const unarchiveTask = async (task: Array<string | number>) => {
 
 const archiveOpenedTask = async () => {
   const task = state.value.tasks.find((item) => String(item[6] || '') === editingTaskId.value)
-  if (!task) return
-  await archiveTask(task)
-  modal.value = null
+  if (!task || taskSaving.value) return
+  taskSaving.value = true
+  try {
+    await archiveTask(task)
+    modal.value = null
+  } finally {
+    taskSaving.value = false
+  }
 }
 
 const dashboardStatus = (value: unknown) => {
@@ -1868,11 +1819,6 @@ const dashboardStatus = (value: unknown) => {
 }
 
 const setPage = (key: PageKey) => {
-  if (isComingSoonPage(key)) {
-    notify('Coming soon')
-    mobileSidebarOpen.value = false
-    return
-  }
   const enteringTasks = key === 'tasks' && activePage.value !== 'tasks'
   if (enteringTasks) {
     taskBoardSection.value = 'board'
@@ -1897,6 +1843,7 @@ const setPage = (key: PageKey) => {
   }
   if (key === 'settings' && settingsTab.value === 'profile') settingsTab.value = 'profile'
   if (key === 'tasks') void loadTaskScope(taskScope.value)
+  if (key === 'projects') void refreshProjectsFromBackend()
   if (key === 'team') void loadMembersFromBackend()
   if (key === 'analytics') void loadFilteredAnalytics()
   if (key === 'reports') void loadReportsWorkspace()
@@ -1918,7 +1865,7 @@ const restoreActivePage = () => {
   const hashPage = window.location.hash.replace(/^#/, '').split('?')[0]
   const storedPage = localStorage.getItem(pageStorageKey) || ''
   const restoredPage = (validPageKeys.includes(hashPage as PageKey) ? hashPage : storedPage) as PageKey
-  if (validPageKeys.includes(restoredPage) && !isComingSoonPage(restoredPage)) setPage(restoredPage)
+  if (validPageKeys.includes(restoredPage)) setPage(restoredPage)
 }
 
 const showAttentionTasks = (filter: 'overdue' | 'today' | 'on_hold' | 'unassigned' = 'overdue') => {
@@ -1957,7 +1904,7 @@ const applyProfileData = (profile: { first_name?: string; last_name?: string; av
   savedProfile.avatar = profile.avatar || ''
   savedProfile.email = profile.email ?? ''
   savedProfile.phone = profile.phone ?? ''
-  savedProfile.role = profile.job_title ?? ''
+  savedProfile.jobTitle = profile.job_title ?? ''
   resetProfile()
   profileAvatarPreview.value = savedProfile.avatar
 }
@@ -2012,6 +1959,16 @@ const addEmojiToMessage = (emoji: string) => {
   emojiSearch.value = ''
 }
 
+const toggleChatSearch = async (forceOpen?: boolean) => {
+  chatSearchOpen.value = forceOpen ?? !chatSearchOpen.value
+  if (!chatSearchOpen.value) {
+    chatSearch.value = ''
+    return
+  }
+  await nextTick()
+  document.querySelector<HTMLInputElement>('.tf-chat-search input')?.focus()
+}
+
 const applyChatSearchHighlights = async () => {
   if (!import.meta.client) return
   await nextTick()
@@ -2051,9 +2008,7 @@ const closeFloatingMenus = (event: PointerEvent) => {
     return
   }
   if (target?.closest('.tf-chat-search-button')) {
-    chatSearchOpen.value = !chatSearchOpen.value
-    if (!chatSearchOpen.value) chatSearch.value = ''
-    void applyChatSearchHighlights()
+    void toggleChatSearch()
     return
   }
   if (!target?.closest('.tf-chat-search')) chatSearchOpen.value = false
@@ -2093,10 +2048,11 @@ const handleGlobalKeydown = (event: KeyboardEvent) => {
   eventAttendeePickerOpen.value = false
   mobileSidebarOpen.value = false
   supportWidgetOpen.value = false
-  modal.value = null
+  if (!modalBusy.value) modal.value = null
 }
 
 const closeModalFromBackdrop = () => {
+  if (modalBusy.value) return
   if (import.meta.client) {
     const activeElement = document.activeElement
     const hasInputSelection = activeElement instanceof HTMLInputElement || activeElement instanceof HTMLTextAreaElement
@@ -2359,7 +2315,15 @@ const projectDatePickerDays = computed(() => {
   }
 })
 
-const openDatePicker = (field: 'startDate' | 'dueDate' | 'analyticsStart' | 'analyticsEnd') => {
+const revealOpenDatePicker = async () => {
+  await nextTick()
+  await new Promise<void>((resolve) => requestAnimationFrame(() => resolve()))
+  const openPopover = Array.from(document.querySelectorAll<HTMLElement>('.tf-date-popover'))
+    .find((popover) => popover.getClientRects().length > 0)
+  openPopover?.scrollIntoView({ behavior: 'smooth', block: 'nearest', inline: 'nearest' })
+}
+
+const openDatePicker = async (field: 'startDate' | 'dueDate' | 'analyticsStart' | 'analyticsEnd') => {
   openProjectDatePicker.value = openProjectDatePicker.value === field ? null : field
   if (!openProjectDatePicker.value) return
 
@@ -2373,6 +2337,7 @@ const openDatePicker = (field: 'startDate' | 'dueDate' | 'analyticsStart' | 'ana
   const safeDate = Number.isNaN(baseDate.getTime()) ? new Date() : baseDate
   datePickerView.year = safeDate.getFullYear()
   datePickerView.month = safeDate.getMonth()
+  await revealOpenDatePicker()
 }
 
 const moveDatePickerMonth = (direction: number) => {
@@ -2830,7 +2795,7 @@ const generateSmartTaskDraft = () => {
   const prompt = aiTaskPrompt.value.trim()
   aiTaskError.value = ''
   if (prompt.length < 5) {
-    aiTaskError.value = 'Task haqida kamida bir necha so‘z yozing yoki gapiring.'
+    aiTaskError.value = 'Write or say a few words about the task.'
     return
   }
 
@@ -2881,20 +2846,13 @@ const generateSmartTaskDraft = () => {
     : /\b(development|frontend|backend|api|code|dastur)\b/.test(normalized) ? 'Development'
       : /\b(test|qa|tekshir)\b/.test(normalized) ? 'QA'
         : /\b(marketing|reklama|content|kontent)\b/.test(normalized) ? 'Marketing' : ''
-  const isEnglishPrompt = /\b(please|create|assign|complete|design|develop|fix|by|priority)\b/.test(normalized) && !/\b(uchun|kerak|ber|yarat|tayyorla|gacha)\b/.test(normalized)
-  const acceptanceCriteria = isEnglishPrompt
-    ? category === 'Design'
-      ? ['Final design is ready for review.', 'Source file and responsive states are included.']
-      : category === 'Development'
-        ? ['Implementation is ready for code review.', 'The change is tested without known regressions.']
+  const acceptanceCriteria = category === 'Design'
+    ? ['Final design is ready for review.', 'Source file and responsive states are included.']
+    : category === 'Development'
+      ? ['Implementation is ready for code review.', 'The change is tested without known regressions.']
+      : category === 'QA'
+        ? ['Test results and identified issues are documented.', 'All requirements pass final verification.']
         : ['Requested outcome is ready for review.', 'Requirements are verified and task status is updated.']
-    : category === 'Design'
-      ? ['Yakuniy dizayn review uchun tayyor bo‘ladi.', 'Source fayl va responsive holatlar birga topshiriladi.']
-      : category === 'Development'
-        ? ['Kod review uchun tayyor holatda topshiriladi.', 'O‘zgarish test qilinib, regressiya yo‘qligi tekshiriladi.']
-        : category === 'QA'
-          ? ['Test natijalari va topilgan muammolar yozib boriladi.', 'Talablar bajarilgani yakuniy tekshiruvdan o‘tkaziladi.']
-          : ['Natija review uchun tayyor holatda topshiriladi.', 'Talablar bajarilgani tekshiriladi va task statusi yangilanadi.']
   aiTaskDraft.value = {
     title,
     description: `${prompt}\n\nAcceptance criteria:\n${acceptanceCriteria.map((item) => `• ${item}`).join('\n')}`,
@@ -2936,7 +2894,7 @@ const toggleSmartTaskVoice = () => {
   }
   const SpeechRecognition = (window as any).SpeechRecognition || (window as any).webkitSpeechRecognition
   if (!SpeechRecognition) {
-    aiTaskError.value = 'Bu brauzer voice input’ni qo‘llamaydi. Matn yozib foydalanishingiz mumkin.'
+    aiTaskError.value = 'This browser does not support voice input. You can type your request instead.'
     return
   }
   aiTaskError.value = ''
@@ -2951,7 +2909,7 @@ const toggleSmartTaskVoice = () => {
       .join(' ')
       .trim()
   }
-  aiSpeechRecognition.onerror = () => { aiTaskError.value = 'Ovoz aniqlanmadi. Qayta urinib ko‘ring.' }
+  aiSpeechRecognition.onerror = () => { aiTaskError.value = 'Voice could not be recognized. Please try again.' }
   aiSpeechRecognition.onend = () => { aiTaskListening.value = false }
   aiSpeechRecognition.start()
 }
@@ -3300,6 +3258,11 @@ const returnToAnalyticsUserTasks = () => {
 
 const handleModalCloseCapture = (event: MouseEvent) => {
   const closeButton = (event.target as HTMLElement | null)?.closest('button[aria-label="Close modal"]')
+  if (closeButton && modalBusy.value) {
+    event.preventDefault()
+    event.stopImmediatePropagation()
+    return
+  }
   if (!closeButton || modal.value !== 'task' || !taskModalReturnToAnalytics.value) return
   event.preventDefault()
   event.stopImmediatePropagation()
@@ -3317,7 +3280,7 @@ const deleteTask = async (task: Array<string | number>) => {
     notifyError('You can delete only tasks you created')
     return false
   }
-  if (import.meta.client && !window.confirm(`“${String(task[0])}” taskini o‘chirmoqchimisiz?`)) return
+  if (!await requestConfirmation({ title: 'Delete task?', message: `Are you sure you want to delete “${String(task[0])}”?`, confirmLabel: 'Delete Task' })) return false
   try {
     await taskFlowApi.deleteTask(id)
     state.value.tasks = state.value.tasks.filter((item) => String(item[6] || '') !== id)
@@ -3330,10 +3293,15 @@ const deleteTask = async (task: Array<string | number>) => {
 }
 
 const deleteOpenedTask = async () => {
-  if (!openedTask.value) return
+  if (!openedTask.value || taskSaving.value) return
   const id = String(openedTask.value[6] || '')
-  await deleteTask(openedTask.value)
-  if (id && !state.value.tasks.some((task) => String(task[6] || '') === id)) modal.value = null
+  taskSaving.value = true
+  try {
+    await deleteTask(openedTask.value)
+    if (id && !state.value.tasks.some((task) => String(task[6] || '') === id)) modal.value = null
+  } finally {
+    taskSaving.value = false
+  }
 }
 
 const duplicateTask = async (task: Array<string | number>) => {
@@ -3411,6 +3379,10 @@ const deleteProject = async (project: Array<string | number>) => {
 
 const updateMemberStatus = async (member: Array<string | number>, isActive: boolean) => {
   actionMenu.value = null
+  if (!canManageDepartment.value) {
+    notifyError('You do not have permission to update members')
+    return false
+  }
   const id = membershipIdOf(member)
 
   if (!id) {
@@ -3472,6 +3444,10 @@ const editSelectedMember = () => {
 
 const requestMemberRemoval = (member: Array<string | number>) => {
   actionMenu.value = null
+  if (!canManageDepartment.value) {
+    notifyError('You do not have permission to remove members')
+    return
+  }
   selectedTeamMember.value = member
   modal.value = 'member-remove'
 }
@@ -3525,6 +3501,7 @@ const confirmMemberRemoval = async () => {
 }
 
 const submitModal = async () => {
+  if (taskSaving.value) return
   const title = form.title.trim()
 
   if (modal.value === 'member') {
@@ -3556,6 +3533,7 @@ const submitModal = async () => {
       return
     }
 
+    taskSaving.value = true
     try {
       const memberPayload = {
         first_name: memberFirstName.value.trim(),
@@ -3578,6 +3556,8 @@ const submitModal = async () => {
       console.error('Member save failed.', error)
       notifyError(taskFlowApiErrorMessage(error, 'Member save failed'))
       return
+    } finally {
+      taskSaving.value = false
     }
   }
 
@@ -3653,6 +3633,7 @@ const submitModal = async () => {
       return
     }
 
+    taskSaving.value = true
     try {
       if (editingProjectId.value) {
         const updated = await taskFlowApi.updateProject(editingProjectId.value, {
@@ -3670,6 +3651,8 @@ const submitModal = async () => {
       console.error('Project save failed.', error)
       notifyError(taskFlowApiErrorMessage(error, 'Project save failed'))
       return
+    } finally {
+      taskSaving.value = false
     }
   }
 
@@ -3692,17 +3675,18 @@ const submitModal = async () => {
       notifyError('Your account must be assigned to a department before generating reports')
       return
     }
+    taskSaving.value = true
     try {
       const created = await taskFlowApi.createReport({
         department: effectiveDepartmentId.value,
         name: title,
         report_type: reportTypeApiValues[reportType.value] || 'weekly_progress',
-        parameters: {
+        parameters: JSON.stringify({
           start_date: reportStartDate,
           end_date: reportEndDate,
           priority: reportPriority.value === 'All Priorities' ? null : projectEnum(reportPriority.value),
           status: reportStatus.value === 'All Statuses' ? null : projectEnum(reportStatus.value)
-        }
+        })
       })
       state.value.reports.unshift(taskFlowApi.mapReport(created))
       await loadReportsWorkspace()
@@ -3711,6 +3695,8 @@ const submitModal = async () => {
       console.error('Report create failed.', error)
       notifyError(taskFlowApiErrorMessage(error, 'Report create failed'))
       return
+    } finally {
+      taskSaving.value = false
     }
   }
 
@@ -3750,6 +3736,7 @@ const submitModal = async () => {
       return
     }
 
+    taskSaving.value = true
     try {
       const saved = editingEventId.value
         ? await taskFlowApi.patchEvent(editingEventId.value, payload)
@@ -3773,6 +3760,8 @@ const submitModal = async () => {
       console.error('Event save failed.', error)
       notifyError(taskFlowApiErrorMessage(error, 'Event save failed'))
       return
+    } finally {
+      taskSaving.value = false
     }
   }
 
@@ -3840,7 +3829,7 @@ const startDirectConversation = async (member: Array<string | number>) => {
 
 const deleteConversationItem = async (conversation: ApiConversation | null) => {
   if (!conversation || conversationDeleting.value) return
-  if (import.meta.client && !window.confirm(`Delete the conversation with ${conversationTitle(conversation)}?`)) return
+  if (!await requestConfirmation({ title: 'Delete conversation?', message: `Delete the conversation with ${conversationTitle(conversation)}?`, confirmLabel: 'Delete Conversation' })) return
   conversationDeleting.value = true
   try {
     await taskFlowApi.deleteConversation(conversation.id)
@@ -4153,32 +4142,29 @@ const togglePasswordVisibility = (field: 'current' | 'next' | 'confirm') => {
 }
 
 
-const reportDownloadUrl = (file: string) => {
-  if (/^https?:\/\//i.test(file)) return file
-  const apiBase = String(runtimeConfig.public.apiBase || '')
-  if (!apiBase) return file
-  try {
-    return new URL(file, `${new URL(apiBase).origin}/`).toString()
-  } catch {
-    return file
-  }
-}
-
 const previewReport = async (report: Array<string | number>) => {
+  if (String(report[4] || '').toLowerCase() !== 'ready') return notifyError('Report is still processing')
   const reportId = String(report[5] || '')
   if (!reportId) return notifyError('Report ID is missing')
+  const previewWindow = window.open('about:blank', '_blank')
+  if (!previewWindow) return notifyError('Allow popups to preview this report')
+  previewWindow.opener = null
+  previewWindow.document.title = 'Loading report...'
+  previewWindow.document.body.textContent = 'Loading report preview...'
   try {
     const blob = await taskFlowApi.previewReport(reportId)
     const url = URL.createObjectURL(blob)
-    window.open(url, '_blank', 'noopener,noreferrer')
+    previewWindow.location.replace(url)
     window.setTimeout(() => URL.revokeObjectURL(url), 60_000)
   } catch (error) {
+    previewWindow.close()
     console.error('Report preview failed.', error)
     notifyError(taskFlowApiErrorMessage(error, 'Report preview failed'))
   }
 }
 
 const downloadReport = async (report: Array<string | number>) => {
+  if (String(report[4] || '').toLowerCase() !== 'ready') return notifyError('Report is still processing')
   const reportId = String(report[5] || '')
   if (!reportId) return notifyError('Report ID is missing')
   try {
@@ -4195,11 +4181,6 @@ const downloadReport = async (report: Array<string | number>) => {
     console.error('Report download failed.', error)
     notifyError(taskFlowApiErrorMessage(error, 'Report download failed'))
   }
-}
-
-const createSupportRequest = (card: string) => {
-  supportRequests.value.unshift(card)
-  notify(`${card} request created`)
 }
 
 const clearFeedbackScreenshot = () => {
@@ -4281,7 +4262,7 @@ const saveSettings = async (section: string) => {
         first_name: profileForm.firstName.trim(),
         last_name: profileForm.lastName.trim(),
         phone: profileForm.phone.trim(),
-        job_title: profileForm.role.trim()
+        job_title: profileForm.jobTitle.trim()
       }, profileAvatarFile.value, profileAvatarRemoveRequested.value)
       applyProfileData(profile)
       profileAvatarFile.value = null
@@ -4353,7 +4334,7 @@ const resetProfile = () => {
   profileAvatarPreview.value = savedProfile.avatar
   profileForm.email = savedProfile.email
   profileForm.phone = savedProfile.phone
-  profileForm.role = savedProfile.role
+  profileForm.jobTitle = savedProfile.jobTitle
 }
 
 const resetPassword = () => {
@@ -4507,10 +4488,9 @@ const iconPath = (name: string) => {
           <section v-for="(group, groupIndex) in sidebarGroups" :key="group.label" :class="['tf-sidebar-group shrink-0', groupIndex ? 'mt-3 border-t border-task-line pt-3' : '']">
             <p v-if="!sidebarCollapsed" class="tf-sidebar-group-label">{{ group.label }}</p>
             <div class="mt-2 space-y-1.5">
-              <button v-for="item in group.items" :key="item.key" type="button" :disabled="isComingSoonPage(item.key)" :aria-current="activePage === item.key ? 'page' : undefined" :class="['tf-nav-item relative flex h-11 w-full items-center rounded-[12px] text-left text-sm transition', sidebarCollapsed ? 'justify-center px-2' : 'gap-3 px-3', isComingSoonPage(item.key) ? 'cursor-not-allowed text-slate-400' : activePage === item.key ? 'is-active font-semibold text-task-blue' : 'text-task-muted']" :title="isComingSoonPage(item.key) ? `${item.label} — Coming soon` : sidebarCollapsed ? item.label : undefined" @click="navigateSidebar($event, item.key)">
+              <button v-for="item in group.items" :key="item.key" type="button" :aria-current="activePage === item.key ? 'page' : undefined" :class="['tf-nav-item relative flex h-11 w-full items-center rounded-[12px] text-left text-sm transition', sidebarCollapsed ? 'justify-center px-2' : 'gap-3 px-3', activePage === item.key ? 'is-active font-semibold text-task-blue' : 'text-task-muted']" :title="sidebarCollapsed ? item.label : undefined" @click="navigateSidebar($event, item.key)">
                 <span class="grid h-7 w-7 shrink-0 place-items-center"><svg viewBox="0 0 24 24" class="h-[19px] w-[19px]" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path :d="iconPath(item.icon)" /></svg></span>
                 <span v-if="!sidebarCollapsed" class="min-w-0 flex-1 truncate">{{ item.label }}</span>
-                <span v-if="isComingSoonPage(item.key) && !sidebarCollapsed" class="rounded-full bg-slate-100 px-2 py-1 text-[9px] font-bold uppercase tracking-wide text-slate-400">Soon</span>
                 <span v-if="item.key === 'messages' && unreadMessageCount" :class="['grid min-w-5 place-items-center rounded-full bg-task-danger px-1 font-bold leading-none text-white shadow-sm', sidebarCollapsed ? 'absolute right-0.5 top-0.5 h-[18px] text-[9px]' : 'h-5 text-[10px]']">{{ unreadMessageCount > 99 ? '99+' : unreadMessageCount }}</span>
                 <span v-else-if="item.badge && !sidebarCollapsed" class="grid h-5 min-w-5 place-items-center rounded-full bg-task-danger px-1 text-[10px] font-bold text-white">{{ item.badge }}</span>
               </button>
@@ -4630,87 +4610,6 @@ const iconPath = (name: string) => {
           <p v-if="dashboardGeneratedAt" class="text-right text-[11px] text-task-muted">Last updated {{ dashboardDateTime(dashboardGeneratedAt) }} at {{ dashboardDateTime(dashboardGeneratedAt, 'time') }}</p>
         </section>
 
-        <section v-if="false" class="space-y-4">
-          <div class="grid gap-4 xl:h-[429px] xl:grid-cols-[minmax(0,1fr)_399px] xl:items-stretch">
-          <div class="grid gap-4 xl:grid-rows-[180px_233px]">
-            <div class="tf-panel grid min-h-[132px] gap-3 p-4 sm:min-h-[180px] sm:grid-cols-4 sm:gap-4 sm:p-5 xl:h-full xl:min-h-0">
-              <div v-for="(item, index) in stats" :key="String(item[1])" :class="['group relative flex h-[118px] min-w-0 flex-col justify-between overflow-hidden rounded-[18px] border bg-gradient-to-br p-4 sm:h-[138px]', dashboardStatStyles[index]?.card]">
-                <div :class="['grid h-10 w-10 place-items-center rounded-full bg-white/85 shadow-[0_4px_14px_-8px_rgba(15,23,42,.35)] ring-1', dashboardStatStyles[index]?.icon]"><svg viewBox="0 0 24 24" class="h-[18px] w-[18px]" fill="none" stroke="currentColor" stroke-width="1.8"><path :d="index === 0 ? iconPath('folder') : index === 1 ? 'M4 13h4l2-7 4 13 2-6h4' : index === 2 ? 'M12 2c1 5 5 6 8 7-2 7-7 11-8 13-1-2-6-6-8-13 3-1 7-2 8-7Zm0 7v6m-3-3h6' : 'M12 8v5m0 4h.01M5 20h14L12 3 5 20Z'" /></svg></div>
-                <div><div class="text-2xl font-bold leading-none sm:text-[28px]">{{ item[0] }} <span v-if="item[3]" class="text-sm">{{ item[3] }}</span></div><p class="mt-1.5 text-xs font-medium text-task-muted">{{ item[1] }}</p></div>
-                <svg viewBox="0 0 90 35" class="absolute bottom-2.5 right-2.5 h-9 w-[86px] opacity-75 transition group-hover:scale-105" fill="none" :class="dashboardStatStyles[index]?.line"><path d="M3 30 22 17l18 4 18-7 14-11 15 4" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" /><circle cx="87" cy="7" r="2.5" fill="currentColor" /></svg>
-              </div>
-            </div>
-
-            <div class="tf-panel min-h-[190px] p-4 sm:min-h-[233px] sm:p-6 xl:h-full xl:min-h-0">
-              <div class="mb-4 flex items-start justify-between sm:mb-6">
-                <div><h2 class="text-[20px] font-medium leading-[120%]">Task Status Distribution</h2></div>
-              </div>
-              <div class="grid gap-0 divide-y divide-task-line md:grid-cols-3 md:divide-x md:divide-y-0">
-                <div v-for="(item, index) in taskStatusCounts" :key="item[0]" class="px-1 py-4 first:pt-0 md:px-6 md:py-0 md:first:pl-0 md:last:pr-0">
-                  <div class="flex items-center gap-3"><span :class="['grid h-8 w-8 place-items-center rounded-full text-white shadow-sm', item[2]]"><svg viewBox="0 0 24 24" class="h-4 w-4" fill="none" stroke="currentColor" stroke-width="2"><path :d="index === 0 ? 'M8 7h8M8 12h5M5 3h14v18H5V3Z' : index === 1 ? 'm6 12 4 4 8-9' : 'M12 7v5m0 4h.01M5 20h14L12 3 5 20Z'" /></svg></span><div><p class="text-sm font-semibold text-task-muted">{{ item[0] }}</p><p class="mt-0.5 text-xl font-bold">{{ item[1] }}</p></div></div>
-                  <div :class="['mt-4 h-2 overflow-hidden rounded-full', item[3]]"><div :class="['h-full rounded-full', item[2]]" :style="{ width: item[1] }" /></div>
-                </div>
-              </div>
-            </div>
-
-
-          </div>
-
-          <aside class="space-y-4 xl:h-full">
-            <div class="tf-panel flex min-h-[429px] w-full flex-col p-5 xl:h-full xl:min-h-0">
-              <div class="mb-4 flex items-start justify-between"><div><h2 class="text-lg font-bold">Task Priority</h2><p class="mt-1 text-sm text-task-muted">Distribution by priority level</p></div><div class="relative"><button type="button" class="tf-icon-button h-10 w-10 rounded-full" @click="toggleActionMenu('priority-actions')"><svg viewBox="0 0 24 24" class="h-4 w-4" fill="none" stroke="currentColor" stroke-width="2"><path :d="iconPath('dots')" /></svg></button><div v-if="actionMenu === 'priority-actions'" class="tf-action-menu min-w-44 text-base"><button type="button" class="tf-action-item" @click="setPage('analytics'); actionMenu = null">View Details</button><button type="button" class="tf-action-item" @click="actionMenu = null">Change Date Range</button><button type="button" class="tf-action-item" @click="actionMenu = null">Refresh</button></div></div></div>
-              <div class="relative mx-auto my-3 h-[190px] w-[190px]" @mouseleave="activePrioritySegment = null">
-                <svg viewBox="0 0 190 190" class="h-full w-full -rotate-90 overflow-visible" role="img" aria-label="Task priority distribution chart">
-                  <circle cx="95" cy="95" r="70" fill="none" stroke="#EEF3F8" stroke-width="26" />
-                  <circle v-for="segment in prioritySegments" :key="segment.key" cx="95" cy="95" r="70" fill="none" :stroke="segment.color" :stroke-width="activePrioritySegment === segment.key ? 31 : 26" stroke-linecap="butt" :stroke-dasharray="`${(segment.percent / 100) * priorityCircleLength} ${priorityCircleLength}`" :stroke-dashoffset="`${-(segment.offset / 100) * priorityCircleLength}`" class="cursor-pointer transition-all duration-200" tabindex="0" :aria-label="`${segment.label}: ${segment.count} tasks, ${Math.round(segment.percent)} percent`" @mouseenter="activePrioritySegment = segment.key" @focus="activePrioritySegment = segment.key" @blur="activePrioritySegment = null"><title>{{ segment.label }}: {{ segment.count }} tasks ({{ Math.round(segment.percent) }}%)</title></circle>
-                </svg>
-                <div v-if="activePriorityData" class="pointer-events-none absolute left-1/2 top-1/2 min-w-24 -translate-x-1/2 -translate-y-1/2 rounded-[12px] border border-task-line bg-white px-3 py-2 text-center shadow-lg"><p class="text-xs font-bold text-task-ink">{{ activePriorityData.label }}</p><p class="mt-0.5 text-[11px] text-task-muted">{{ activePriorityData.count }} · {{ Math.round(activePriorityData.percent) }}%</p></div>
-              </div>
-              <div class="mt-auto grid grid-cols-2 gap-x-4 gap-y-3 text-xs font-medium text-task-muted"><span><b class="mr-2 inline-block h-2.5 w-2.5 rounded-full bg-task-blue" />High: <span class="font-bold text-task-ink">{{ priorityCounts.high }}</span></span><span><b class="mr-2 inline-block h-2.5 w-2.5 rounded-full bg-[#4B96C1]" />Medium: <span class="font-bold text-task-ink">{{ priorityCounts.medium }}</span></span><span><b class="mr-2 inline-block h-2.5 w-2.5 rounded-full bg-[#DCE8F4]" />Low: <span class="font-bold text-task-ink">{{ priorityCounts.low }}</span></span></div>
-            </div>
-          </aside>
-          </div>
-
-          <div class="grid items-stretch gap-4 lg:grid-cols-[0.9fr_1.1fr]">
-              <div class="tf-panel flex min-h-[260px] flex-col p-5">
-                <div class="mb-4 flex items-start justify-between">
-                  <div><h2 class="text-[20px] font-medium leading-[120%]">Team Activity</h2><p class="text-[16px] font-normal leading-[120%] text-task-muted">Understand your team productivity and workload.</p></div>
-                  <div class="relative">
-                    <button type="button" class="tf-icon-button" @click="toggleActionMenu('dashboard-activity')"><svg viewBox="0 0 24 24" class="h-4 w-4" fill="none" stroke="currentColor" stroke-width="2"><path :d="iconPath('dots')" /></svg></button>
-                    <div v-if="actionMenu === 'dashboard-activity'" class="tf-action-menu">
-                      <button type="button" class="tf-action-item" @click="setPage('team'); actionMenu = null">View team</button>
-                      <button type="button" class="tf-action-item" @click="actionMenu = null">Refresh</button>
-                    </div>
-                  </div>
-                </div>
-                <div class="mb-4 flex items-end gap-3"><span class="text-3xl font-bold">{{ stats[1]?.[0] || '0%' }}</span><span class="mb-1 text-xs text-task-muted">from backend</span></div>
-                <div class="grid grid-cols-[40px_1fr] gap-2">
-                  <div class="grid h-[156px] grid-rows-4 text-xs text-task-muted"><span>10.00</span><span>09.30</span><span>09.00</span><span>08.00</span></div>
-                  <div>
-                    <div v-if="heatmap.length" class="grid grid-cols-[repeat(7,49.57px)] gap-x-2.5 gap-y-4">
-                      <div v-for="(cell, index) in heatmap" :key="index" :class="['h-[46px] w-[49.57px] rounded-[8px]', cell === 0 ? 'bg-slate-100' : cell < 3 ? 'bg-[#CFE0F2]' : cell < 5 ? 'bg-[#7EA7D3]' : 'bg-task-blue']" />
-                    </div>
-                    <p v-else class="py-12 text-center text-sm text-task-muted">No activity data.</p>
-                    <div v-if="heatmap.length" class="mt-3 grid grid-cols-[repeat(7,49.57px)] gap-x-2.5 text-center text-xs text-task-muted"><span>Sat</span><span>Sun</span><span>Mon</span><span>Tue</span><span>Wed</span><span>Thu</span><span>Fri</span></div>
-                  </div>
-                </div>
-              </div>
-
-              <div class="tf-panel flex min-h-[260px] flex-col overflow-hidden p-5">
-                <div class="mb-4 flex items-center justify-between"><h2 class="text-[20px] font-medium leading-[120%]">Team Workload</h2><button type="button" class="text-xs font-bold text-task-blue" @click="setPage('team')">See All</button></div>
-                <table class="w-full flex-1 text-left text-sm">
-                  <thead class="rounded-ui bg-slate-100 text-xs text-task-muted"><tr><th class="p-3">Name</th><th class="p-3">Active work</th><th class="p-3">Overdue</th><th class="p-3">Status</th><th class="p-3 text-right">Action</th></tr></thead>
-                  <tbody class="divide-y divide-task-line">
-                    <tr v-for="member in workload" :key="member[0]">
-                      <td class="py-3"><div class="flex items-center gap-3"><div class="grid h-9 w-9 place-items-center rounded-full bg-gradient-to-br from-slate-200 to-slate-400 text-xs font-bold text-white">{{ initials(String(member[0])) }}</div><div><p class="font-semibold">{{ member[0] }}</p><p class="text-xs text-task-muted">{{ member[1] }}</p></div></div></td>
-                      <td>{{ member[2] }}</td><td>{{ member[3] }}</td><td><span :class="['tf-pill', badgeClass(String(member[4]))]">{{ member[4] }}</span></td><td class="relative text-right"><div class="relative inline-flex"><button type="button" class="tf-icon-button" @click="toggleActionMenu(`workload-${member[0]}`)"><svg viewBox="0 0 24 24" class="h-4 w-4" fill="none" stroke="currentColor" stroke-width="2"><path :d="iconPath('dots')" /></svg></button><div v-if="actionMenu === `workload-${member[0]}`" class="tf-action-menu"><button type="button" class="tf-action-item" @click="setPage('team'); actionMenu = null">View profile</button><button type="button" class="tf-action-item" @click="notify('Messages section is disabled for now'); actionMenu = null">Message</button></div></div></td>
-                    </tr>
-                  </tbody>
-                </table>
-                <p v-if="!workload.length" class="py-10 text-center text-sm text-task-muted">No workload data.</p>
-              </div>
-            </div>
-        </section>
 
         <section v-else-if="activePage === 'tasks'" class="space-y-4">
           <div class="grid gap-3 sm:grid-cols-2 xl:grid-cols-7">
@@ -4914,7 +4813,6 @@ const iconPath = (name: string) => {
             <section class="tf-panel tf-performance-trend-card p-5">
               <header class="flex items-start justify-between gap-4">
                 <div><h2 class="text-base font-extrabold text-task-ink">Performance Trend</h2><p class="mt-1 text-xs text-task-muted">Assigned and completed tasks over time</p></div>
-                <button type="button" class="tf-icon-button h-8 w-8 rounded-full" aria-label="Performance trend options"><svg viewBox="0 0 24 24" class="h-4 w-4" fill="none" stroke="currentColor"><path :d="iconPath('dots')"/></svg></button>
               </header>
               <div class="relative mt-4 h-[270px] overflow-hidden" @mouseleave="hoveredEfficiencyMonth = null">
                 <div class="absolute inset-y-3 left-0 flex flex-col justify-between pb-7 text-[10px] text-task-muted"><span v-for="tick in performanceTrendTicks" :key="tick">{{ tick }}</span></div>
@@ -4960,10 +4858,11 @@ const iconPath = (name: string) => {
                 <h2 class="flex items-center gap-2 text-lg font-bold text-task-ink">Staff Performance <span class="h-1 w-1 rounded-full bg-task-blue"/><span class="text-sm font-semibold text-task-muted">{{ analyticsStaffTotal }}</span></h2>
                 <div class="flex flex-col gap-2 sm:flex-row sm:flex-wrap sm:items-center xl:justify-end">
                   <AppSearchInput v-model="analyticsStaffSearchInput" class="w-full sm:w-60" placeholder="Search staff..." aria-label="Clear analytics staff search" :loading="analyticsStaffSearchPending || analyticsLoading" />
+                  <button v-if="analyticsTableOrdering !== '-performance'" type="button" class="tf-analytics-sort-reset" @click="resetAnalyticsTableSort"><svg viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M20 6v5h-5"/><path d="M19 11a7.5 7.5 0 1 0 .15 4.5"/></svg>Reset sort</button>
                 </div>
               </div>
               <div v-if="analyticsStaffSearchPending || analyticsLoading" class="tf-search-overlay"><span class="tf-search-loader"/> Searching staff...</div>
-              <div class="tf-analytics-staff-table-wrap relative overflow-x-auto"><p v-if="!analyticsWorkloadRows.length && !analyticsLoading && !analyticsStaffSearchPending" class="absolute inset-0 z-10 grid place-items-center text-sm text-task-muted">No staff found.</p><table class="w-full min-w-[1200px] table-fixed text-left text-sm"><thead class="border-y border-task-line bg-slate-50/80 text-[11px] uppercase tracking-wide text-task-muted"><tr><th class="w-[285px] p-3 font-semibold"><button type="button" :class="['inline-flex items-center gap-1.5 transition hover:text-task-blue', analyticsTableOrdering.replace(/^-/, '') === 'name' ? 'text-task-blue' : '']" @click="toggleAnalyticsSort('name')">Staff <span>{{ analyticsSortMark('name') }}</span></button></th><th class="w-[170px] p-3 font-semibold"><button type="button" :class="['inline-flex items-center gap-1.5 transition hover:text-task-blue', analyticsTableOrdering.replace(/^-/, '') === 'department' ? 'text-task-blue' : '']" @click="toggleAnalyticsSort('department')">Department <span>{{ analyticsSortMark('department') }}</span></button></th><th class="w-[82px] p-3 font-semibold"><button type="button" :class="['inline-flex items-center gap-1.5 transition hover:text-task-blue', analyticsTableOrdering.replace(/^-/, '') === 'assigned' ? 'text-task-blue' : '']" @click="toggleAnalyticsSort('assigned')">Assigned <span>{{ analyticsSortMark('assigned') }}</span></button></th><th class="w-[88px] p-3 font-semibold"><button type="button" :class="['inline-flex items-center gap-1.5 transition hover:text-task-blue', analyticsTableOrdering.replace(/^-/, '') === 'completed' ? 'text-task-blue' : '']" @click="toggleAnalyticsSort('completed')">Completed <span>{{ analyticsSortMark('completed') }}</span></button></th><th class="w-[90px] p-3 font-semibold"><button type="button" :class="['inline-flex items-center gap-1.5 transition hover:text-task-blue', analyticsTableOrdering.replace(/^-/, '') === 'in_progress' ? 'text-task-blue' : '']" @click="toggleAnalyticsSort('in_progress')">In Progress <span>{{ analyticsSortMark('in_progress') }}</span></button></th><th class="w-[78px] p-3 font-semibold"><button type="button" :class="['inline-flex items-center gap-1.5 transition hover:text-task-blue', analyticsTableOrdering.replace(/^-/, '') === 'on_hold' ? 'text-task-blue' : '']" @click="toggleAnalyticsSort('on_hold')">On Hold <span>{{ analyticsSortMark('on_hold') }}</span></button></th><th class="w-[76px] p-3 font-semibold"><button type="button" :class="['inline-flex items-center gap-1.5 transition hover:text-task-blue', analyticsTableOrdering.replace(/^-/, '') === 'overdue' ? 'text-task-blue' : '']" @click="toggleAnalyticsSort('overdue')">Overdue <span>{{ analyticsSortMark('overdue') }}</span></button></th><th class="w-[72px] p-3 font-semibold"><button type="button" :class="['inline-flex items-center gap-1.5 transition hover:text-task-blue', analyticsTableOrdering.replace(/^-/, '') === 'on_time' ? 'text-task-blue' : '']" @click="toggleAnalyticsSort('on_time')">On-time <span>{{ analyticsSortMark('on_time') }}</span></button></th><th class="w-[82px] p-3 font-semibold"><button type="button" :class="['inline-flex items-center gap-1.5 transition hover:text-task-blue', analyticsTableOrdering.replace(/^-/, '') === 'avg_time' ? 'text-task-blue' : '']" @click="toggleAnalyticsSort('avg_time')">Avg. Time <span>{{ analyticsSortMark('avg_time') }}</span></button></th><th class="w-[205px] p-3 font-semibold"><button type="button" :class="['inline-flex items-center gap-1.5 transition hover:text-task-blue', analyticsTableOrdering.replace(/^-/, '') === 'performance' ? 'text-task-blue' : '']" @click="toggleAnalyticsSort('performance')">Performance <span>{{ analyticsSortMark('performance') }}</span></button></th><th class="w-[58px] p-3 text-right font-semibold">Actions</th></tr></thead><tbody class="divide-y divide-task-line"><tr v-for="(row, index) in analyticsWorkloadRows" :key="row.name" class="transition hover:bg-task-blueSoft/40"><td class="max-w-[285px] p-3"><div class="flex min-w-0 items-center gap-3"><span :class="['relative grid h-10 w-10 shrink-0 place-items-center overflow-hidden rounded-full text-xs font-bold', index % 4 === 0 ? 'bg-task-blueSoft text-task-blue' : index % 4 === 1 ? 'bg-[#F0E9FF] text-[#8057D5]' : index % 4 === 2 ? 'bg-task-warningSoft text-task-warning' : 'bg-task-successSoft text-task-success']"><span>{{ initials(row.name) }}</span><img v-if="row.avatar" :src="row.avatar" :alt="row.name + ' avatar'" class="absolute inset-0 h-full w-full object-cover" @error="($event.currentTarget as HTMLImageElement).remove()" /></span><div class="min-w-0 flex-1"><p class="truncate font-bold text-task-ink"><template v-for="(part, partIndex) in [highlightedSearchText(row.name, analyticsStaffSearch || analyticsGlobalSearch)]" :key="partIndex">{{ part.before }}<mark v-if="part.match" class="tf-search-highlight">{{ part.match }}</mark>{{ part.after }}</template></p><p class="tf-staff-role-clamp text-xs text-task-muted" :title="row.role"><template v-for="(part, partIndex) in [highlightedSearchText(row.role, analyticsStaffSearch || analyticsGlobalSearch)]" :key="partIndex">{{ part.before }}<mark v-if="part.match" class="tf-search-highlight">{{ part.match }}</mark>{{ part.after }}</template></p></div></div></td><td class="p-3"><span class="inline-flex min-h-7 w-max max-w-full items-center whitespace-normal break-words rounded-[12px] bg-task-blueSoft px-2.5 py-1 text-left text-xs font-semibold leading-4 text-task-blue" :title="row.department"><template v-for="(part, partIndex) in [highlightedSearchText(row.department, analyticsStaffSearch || analyticsGlobalSearch)]" :key="partIndex">{{ part.before }}<mark v-if="part.match" class="tf-search-highlight">{{ part.match }}</mark>{{ part.after }}</template></span></td><td class="p-3">{{ row.assigned }}</td><td class="p-3 text-task-success">{{ row.completed }}</td><td class="p-3 text-task-blue">{{ row.active }}</td><td class="p-3 font-semibold text-task-warning">{{ row.onHold }}</td><td :class="['p-3', row.overdue ? 'font-bold text-task-danger' : 'text-task-success']">{{ row.overdue }}</td><td class="p-3 font-semibold">{{ row.onTime }}%</td><td class="p-3 text-task-muted">{{ row.avgCompletionDays }} days</td><td class="p-3"><div class="min-w-[150px]"><div class="flex items-center justify-between gap-3"><b class="text-xs text-task-ink">{{ row.performanceScore == null ? '—' : `${row.performanceScore}%` }}</b><span :class="['tf-performance-badge', analyticsPerformanceLevelClass(analyticsRowPerformanceLevel(row))]">{{ analyticsPerformanceLevelLabel(analyticsRowPerformanceLevel(row)) }}</span></div><div class="mt-1.5 h-1.5 w-full overflow-hidden rounded-full bg-slate-200"><div :class="['h-full rounded-full', analyticsPerformanceBarClass(analyticsRowPerformanceLevel(row))]" :style="{ width: `${row.performanceScore ?? 0}%` }"/></div></div></td><td class="p-3 text-right"><button type="button" class="tf-icon-button rounded-full"><svg viewBox="0 0 24 24" class="h-4 w-4" fill="none" stroke="currentColor"><path :d="iconPath('dots')"/></svg></button></td></tr></tbody></table></div>
+              <div class="tf-analytics-staff-table-wrap relative overflow-x-auto"><p v-if="!analyticsWorkloadRows.length && !analyticsLoading && !analyticsStaffSearchPending" class="absolute inset-0 z-10 grid place-items-center text-sm text-task-muted">No staff found.</p><table class="w-full min-w-[1200px] table-fixed text-left text-sm"><thead class="border-y border-task-line bg-slate-50/80 text-[11px] uppercase tracking-wide text-task-muted"><tr><th class="w-[285px] p-3 font-semibold"><button type="button" :class="['inline-flex items-center gap-1.5 transition hover:text-task-blue', analyticsTableOrdering.replace(/^-/, '') === 'name' ? 'text-task-blue' : '']" @click="toggleAnalyticsSort('name')">Staff <span>{{ analyticsSortMark('name') }}</span></button></th><th class="w-[170px] p-3 font-semibold"><button type="button" :class="['inline-flex items-center gap-1.5 transition hover:text-task-blue', analyticsTableOrdering.replace(/^-/, '') === 'department' ? 'text-task-blue' : '']" @click="toggleAnalyticsSort('department')">Department <span>{{ analyticsSortMark('department') }}</span></button></th><th class="w-[82px] p-3 font-semibold"><button type="button" :class="['inline-flex items-center gap-1.5 transition hover:text-task-blue', analyticsTableOrdering.replace(/^-/, '') === 'assigned' ? 'text-task-blue' : '']" @click="toggleAnalyticsSort('assigned')">Assigned <span>{{ analyticsSortMark('assigned') }}</span></button></th><th class="w-[88px] p-3 font-semibold"><button type="button" :class="['inline-flex items-center gap-1.5 transition hover:text-task-blue', analyticsTableOrdering.replace(/^-/, '') === 'completed' ? 'text-task-blue' : '']" @click="toggleAnalyticsSort('completed')">Completed <span>{{ analyticsSortMark('completed') }}</span></button></th><th class="w-[90px] p-3 font-semibold"><button type="button" :class="['inline-flex items-center gap-1.5 transition hover:text-task-blue', analyticsTableOrdering.replace(/^-/, '') === 'in_progress' ? 'text-task-blue' : '']" @click="toggleAnalyticsSort('in_progress')">In Progress <span>{{ analyticsSortMark('in_progress') }}</span></button></th><th class="w-[78px] p-3 font-semibold"><button type="button" :class="['inline-flex items-center gap-1.5 transition hover:text-task-blue', analyticsTableOrdering.replace(/^-/, '') === 'on_hold' ? 'text-task-blue' : '']" @click="toggleAnalyticsSort('on_hold')">On Hold <span>{{ analyticsSortMark('on_hold') }}</span></button></th><th class="w-[76px] p-3 font-semibold"><button type="button" :class="['inline-flex items-center gap-1.5 transition hover:text-task-blue', analyticsTableOrdering.replace(/^-/, '') === 'overdue' ? 'text-task-blue' : '']" @click="toggleAnalyticsSort('overdue')">Overdue <span>{{ analyticsSortMark('overdue') }}</span></button></th><th class="w-[72px] p-3 font-semibold"><button type="button" :class="['inline-flex items-center gap-1.5 transition hover:text-task-blue', analyticsTableOrdering.replace(/^-/, '') === 'on_time' ? 'text-task-blue' : '']" @click="toggleAnalyticsSort('on_time')">On-time <span>{{ analyticsSortMark('on_time') }}</span></button></th><th class="w-[82px] p-3 font-semibold"><button type="button" :class="['inline-flex items-center gap-1.5 transition hover:text-task-blue', analyticsTableOrdering.replace(/^-/, '') === 'avg_time' ? 'text-task-blue' : '']" @click="toggleAnalyticsSort('avg_time')">Avg. Time <span>{{ analyticsSortMark('avg_time') }}</span></button></th><th class="w-[205px] p-3 font-semibold"><button type="button" :class="['inline-flex items-center gap-1.5 transition hover:text-task-blue', analyticsTableOrdering.replace(/^-/, '') === 'performance' ? 'text-task-blue' : '']" @click="toggleAnalyticsSort('performance')">Performance <span>{{ analyticsSortMark('performance') }}</span></button></th></tr></thead><tbody class="divide-y divide-task-line"><tr v-for="(row, index) in analyticsWorkloadRows" :key="row.name" class="transition hover:bg-task-blueSoft/40"><td class="max-w-[285px] p-3"><div class="flex min-w-0 items-center gap-3"><span :class="['relative grid h-10 w-10 shrink-0 place-items-center overflow-hidden rounded-full text-xs font-bold', index % 4 === 0 ? 'bg-task-blueSoft text-task-blue' : index % 4 === 1 ? 'bg-[#F0E9FF] text-[#8057D5]' : index % 4 === 2 ? 'bg-task-warningSoft text-task-warning' : 'bg-task-successSoft text-task-success']"><span>{{ initials(row.name) }}</span><img v-if="row.avatar" :src="row.avatar" :alt="row.name + ' avatar'" class="absolute inset-0 h-full w-full object-cover" @error="($event.currentTarget as HTMLImageElement).remove()" /></span><div class="min-w-0 flex-1"><p class="truncate font-bold text-task-ink"><template v-for="(part, partIndex) in [highlightedSearchText(row.name, analyticsStaffSearch || analyticsGlobalSearch)]" :key="partIndex">{{ part.before }}<mark v-if="part.match" class="tf-search-highlight">{{ part.match }}</mark>{{ part.after }}</template></p><p class="tf-staff-role-clamp text-xs text-task-muted" :title="row.role"><template v-for="(part, partIndex) in [highlightedSearchText(row.role, analyticsStaffSearch || analyticsGlobalSearch)]" :key="partIndex">{{ part.before }}<mark v-if="part.match" class="tf-search-highlight">{{ part.match }}</mark>{{ part.after }}</template></p></div></div></td><td class="p-3"><span class="inline-flex min-h-7 w-max max-w-full items-center whitespace-normal break-words rounded-[12px] bg-task-blueSoft px-2.5 py-1 text-left text-xs font-semibold leading-4 text-task-blue" :title="row.department"><template v-for="(part, partIndex) in [highlightedSearchText(row.department, analyticsStaffSearch || analyticsGlobalSearch)]" :key="partIndex">{{ part.before }}<mark v-if="part.match" class="tf-search-highlight">{{ part.match }}</mark>{{ part.after }}</template></span></td><td class="p-3">{{ row.assigned }}</td><td class="p-3 text-task-success">{{ row.completed }}</td><td class="p-3 text-task-blue">{{ row.active }}</td><td class="p-3 font-semibold text-task-warning">{{ row.onHold }}</td><td :class="['p-3', row.overdue ? 'font-bold text-task-danger' : 'text-task-success']">{{ row.overdue }}</td><td class="p-3 font-semibold">{{ row.onTime }}%</td><td class="p-3 text-task-muted">{{ row.avgCompletionDays }} days</td><td class="p-3"><div class="min-w-[150px]"><div class="flex items-center justify-between gap-3"><b class="text-xs text-task-ink">{{ row.performanceScore == null ? '—' : `${row.performanceScore}%` }}</b><span :class="['tf-performance-badge', analyticsPerformanceLevelClass(analyticsRowPerformanceLevel(row))]">{{ analyticsPerformanceLevelLabel(analyticsRowPerformanceLevel(row)) }}</span></div><div class="mt-1.5 h-1.5 w-full overflow-hidden rounded-full bg-slate-200"><div :class="['h-full rounded-full', analyticsPerformanceBarClass(analyticsRowPerformanceLevel(row))]" :style="{ width: `${row.performanceScore ?? 0}%` }"/></div></div></td></tr></tbody></table></div>
               <div :class="['tf-analytics-pagination', !analyticsStaffTotal ? 'invisible' : '']"><span>Showing {{ (analyticsPage - 1) * analyticsPageSize + 1 }} to {{ Math.min(analyticsPage * analyticsPageSize, analyticsStaffTotal) }} of {{ analyticsStaffTotal }} staff members</span><div class="tf-analytics-pagination-controls"><div class="flex gap-2"><button type="button" class="tf-icon-button" :disabled="analyticsPage <= 1" @click="analyticsPage--">‹</button><button v-for="page in analyticsPageCount" :key="page" type="button" :class="[analyticsPage === page ? 'tf-primary' : 'tf-icon-button', 'h-9 w-9 p-0']" @click="analyticsPage = page">{{ page }}</button><button type="button" class="tf-icon-button" :disabled="analyticsPage >= analyticsPageCount" @click="analyticsPage++">›</button></div><div class="tf-dropdown tf-page-size-dropdown"><button type="button" class="tf-page-size-control" aria-label="Rows per page" @click="openDropdown = openDropdown === 'analyticsPageSize' ? null : 'analyticsPageSize'"><span>{{ analyticsPageSize }} per page</span><svg viewBox="0 0 20 20" :class="['h-4 w-4 transition-transform', openDropdown === 'analyticsPageSize' ? 'rotate-180' : '']" fill="none" stroke="currentColor" stroke-width="2"><path d="m5 7.5 5 5 5-5" /></svg></button><div v-if="openDropdown === 'analyticsPageSize'" class="tf-dropdown-menu bottom-[calc(100%+7px)] top-auto min-w-full"><button v-for="size in [8, 16, 24]" :key="size" type="button" class="tf-dropdown-option" @click="analyticsPageSize = size; analyticsPage = 1; openDropdown = null"><span>{{ size }} per page</span><span v-if="analyticsPageSize === size">✓</span></button></div></div></div></div>
             </section>
             <section class="tf-panel min-w-0 p-5">
@@ -4972,45 +4871,6 @@ const iconPath = (name: string) => {
             </section>
           </div>
 
-          <div v-if="false" :class="['grid gap-4', productivityTrendData.length ? 'lg:grid-cols-3' : 'lg:grid-cols-2']">
-            <div class="tf-panel p-5">
-              <div class="flex items-center justify-between"><h2 class="text-lg font-bold">Tasks by Category</h2><span class="grid h-9 w-9 place-items-center rounded-full bg-task-blueSoft text-task-blue"><svg viewBox="0 0 24 24" class="h-4 w-4" fill="none" stroke="currentColor" stroke-width="1.8"><path :d="iconPath('chart')" /></svg></span></div>
-              <div class="mt-6 flex flex-col items-center gap-5 sm:flex-row lg:flex-col xl:flex-row"><div class="relative h-36 w-36 shrink-0 rounded-full bg-[conic-gradient(#2567AD_0_72%,#C9DAF7_72%_100%)]"><div class="absolute inset-7 grid place-items-center rounded-full bg-white text-center"><div><b class="block text-2xl">{{ tasks.length }}</b><span class="text-xs text-task-muted">Total</span></div></div></div><div class="w-full min-w-0 space-y-3"><div v-for="cat in categoryTrendData.slice(0, 4)" :key="cat.name" class="group relative"><div class="flex items-center justify-between gap-3 text-xs"><span class="flex min-w-0 items-center gap-2 text-task-muted"><i class="h-2 w-2 shrink-0 rounded-full bg-task-blue" /><span class="truncate">{{ cat.name }}</span></span><b>{{ cat.growth }}</b></div><div class="mt-1.5 h-1.5 overflow-hidden rounded-full bg-slate-100"><div class="h-full rounded-full bg-task-blue" :style="{ width: `${cat.value}%` }" /></div><span class="tf-chart-tooltip"><b>{{ cat.name }}</b><span>{{ cat.growth }}</span></span></div><p v-if="!categoryTrendData.length" class="text-sm text-task-muted">No category data.</p></div></div>
-            </div>
-
-            <div class="tf-panel p-5">
-              <h2 class="text-lg font-bold">Quick Insights</h2>
-              <div class="mt-4 divide-y divide-task-line">
-                <div v-for="insight in quickInsights" :key="insight" class="flex gap-3 py-3">
-                  <span class="grid h-9 w-9 place-items-center rounded-full bg-task-blueSoft text-task-blue">
-                    <svg viewBox="0 0 24 24" class="h-4 w-4" fill="none" stroke="currentColor" stroke-width="1.8"><path :d="iconPath('chart')" /></svg>
-                  </span>
-                  <div>
-                    <p class="font-semibold">{{ insight }}</p>
-                    <p class="text-xs text-task-muted">Calculated from backend data.</p>
-                  </div>
-                </div>
-                <p v-if="!quickInsights.length" class="py-10 text-center text-sm text-task-muted">No insight data.</p>
-              </div>
-            </div>
-
-            <div v-if="productivityTrendData.length" class="tf-panel p-5">
-              <h2 class="text-lg font-bold">Productivity Trends</h2>
-              <div class="relative mx-auto my-6 h-44 w-44 rounded-full bg-[conic-gradient(#2567AD_0_32%,#8DB1D7_32%_55%,#BBD6F0_55%_72%,#DCE8F4_72%_100%)]">
-                <div class="absolute inset-10 rounded-full bg-white" />
-              </div>
-              <div class="grid grid-cols-3 gap-2 text-xs text-task-muted">
-                <span v-for="item in productivityTrendData" :key="item.day" class="group relative cursor-default rounded-ui px-1 py-1 hover:bg-task-blueSoft">
-                  {{ item.day }}: {{ item.value }}%
-                  <span class="tf-chart-tooltip">
-                    <b>{{ item.day }}</b>
-                    <span>Productivity: {{ item.value }}%</span>
-                    <span>{{ item.growth }} from {{ item.from }}</span>
-                  </span>
-                </span>
-              </div>
-            </div>
-          </div>
           </div>
 
           <aside class="tf-analytics-overdue tf-panel overflow-hidden p-0 xl:sticky xl:top-4">
@@ -5095,7 +4955,7 @@ const iconPath = (name: string) => {
             </div>
           </div>
 
-          <div class="tf-panel relative p-5">
+          <div class="tf-panel tf-team-panel relative p-5">
             <div class="mb-4 flex flex-col gap-3 xl:flex-row xl:items-center xl:justify-between">
               <div>
                 <h2 class="flex items-center gap-2 text-lg font-bold text-task-ink">Staff Members <span class="h-1 w-1 rounded-full bg-task-blue" /><span class="text-sm font-semibold text-task-muted">{{ filteredTeam.length }}</span></h2>
@@ -5115,7 +4975,7 @@ const iconPath = (name: string) => {
               </div>
             </div>
             <AppLoadingOverlay v-if="searchLoading.team" label="Searching staff..." />
-            <div class="overflow-x-auto"><table class="w-full min-w-[940px] text-left text-sm"><thead class="border-y border-task-line bg-slate-50/80 text-[11px] uppercase tracking-wide text-task-muted"><tr><th class="p-3 font-semibold"><button type="button" :class="['inline-flex items-center gap-1.5 transition hover:text-task-blue', teamSort.startsWith('name_') ? 'text-task-blue' : '']" @click="toggleTeamSort('name')">Staff <span>{{ teamSort.startsWith('name_') ? (teamSort.endsWith('_asc') ? '↑' : '↓') : '↕' }}</span></button></th><th class="p-3 font-semibold"><button type="button" :class="['inline-flex items-center gap-1.5 transition hover:text-task-blue', teamSort.startsWith('department_') ? 'text-task-blue' : '']" @click="toggleTeamSort('department')">Department <span>{{ teamSort.startsWith('department_') ? (teamSort.endsWith('_asc') ? '↑' : '↓') : '↕' }}</span></button></th><th class="p-3 font-semibold"><button type="button" :class="['inline-flex items-center gap-1.5 transition hover:text-task-blue', teamSort.startsWith('role_') ? 'text-task-blue' : '']" @click="toggleTeamSort('role')">Position <span>{{ teamSort.startsWith('role_') ? (teamSort.endsWith('_asc') ? '↑' : '↓') : '↕' }}</span></button></th><th class="p-3 font-semibold">Contact</th><th class="p-3 font-semibold"><button type="button" :class="['inline-flex items-center gap-1.5 transition hover:text-task-blue', teamSort.startsWith('efficiency_') ? 'text-task-blue' : '']" @click="toggleTeamSort('efficiency')">Efficiency <span>{{ teamSort.startsWith('efficiency_') ? (teamSort.endsWith('_asc') ? '↑' : '↓') : '↕' }}</span></button></th><th class="p-3 font-semibold">Tasks</th><th class="p-3 text-right font-semibold">Actions</th></tr></thead><tbody class="divide-y divide-task-line"><tr v-for="(member, index) in paginatedTeam" :key="String(member[9] || member[7] || member[0])" class="transition hover:bg-task-blueSoft/40"><td class="p-3"><div class="flex items-center gap-3"><span :class="['grid h-10 w-10 shrink-0 place-items-center overflow-hidden rounded-full text-xs font-bold', index % 4 === 0 ? 'bg-task-blueSoft text-task-blue' : index % 4 === 1 ? 'bg-[#F0E9FF] text-[#8057D5]' : index % 4 === 2 ? 'bg-task-warningSoft text-task-warning' : 'bg-task-successSoft text-task-success']"><img v-if="member[8]" :src="String(member[8])" :alt="String(member[0])" class="h-full w-full object-cover" /><span v-else>{{ initials(String(member[0])) }}</span></span><div class="min-w-0"><p class="truncate font-bold text-task-ink">{{ member[0] }}</p><p class="truncate text-xs text-task-muted">{{ member[2] }}</p></div></div></td><td class="p-3"><span class="inline-flex rounded-full bg-task-blueSoft px-2.5 py-1 text-xs font-semibold text-task-blue">{{ memberDepartmentNameOf(member) }}</span></td><td class="max-w-[190px] p-3 text-task-muted">{{ member[1] }}</td><td class="p-3 text-task-muted">{{ member[3] || '—' }}</td><td class="p-3"><div class="min-w-[110px]"><b class="text-xs text-task-ink">{{ member[4] }}%</b><div class="mt-1.5 h-1.5 w-24 overflow-hidden rounded-full bg-slate-200"><div class="h-full rounded-full bg-task-blue" :style="{ width: `${member[4]}%` }" /></div></div></td><td class="p-3"><b class="text-task-ink">{{ Number(member[5] || 0) + Number(member[6] || 0) }} total</b><p class="mt-1 text-[11px] text-task-muted"><span class="text-task-success">{{ member[5] }} ✓</span> · <span class="text-task-blue">{{ member[6] }} active</span></p></td><td class="relative p-3 text-right"><div class="relative inline-flex"><button type="button" class="tf-icon-button rounded-full" @click="toggleActionMenu(`team-${member[9] || member[7] || member[0]}`)"><svg viewBox="0 0 24 24" class="h-4 w-4" fill="none" stroke="currentColor"><path :d="iconPath('dots')" /></svg></button><div v-if="actionMenu === `team-${member[9] || member[7] || member[0]}`" class="tf-action-menu"><button type="button" class="tf-action-item" @click="viewMemberProfile(member)">View profile</button><button type="button" class="tf-action-item" @click="updateMemberStatus(member, String(member[12]) === 'Inactive')">{{ String(member[12]) === 'Inactive' ? 'Activate' : 'Deactivate' }}</button><button type="button" class="tf-action-item tf-action-danger" @click="requestMemberRemoval(member)">Remove member</button></div></div></td></tr></tbody></table></div>
+            <div class="overflow-x-auto"><table class="w-full min-w-[940px] text-left text-sm"><thead class="border-y border-task-line bg-slate-50/80 text-[11px] uppercase tracking-wide text-task-muted"><tr><th class="p-3 font-semibold"><button type="button" :class="['inline-flex items-center gap-1.5 transition hover:text-task-blue', teamSort.startsWith('name_') ? 'text-task-blue' : '']" @click="toggleTeamSort('name')">Staff <span>{{ teamSort.startsWith('name_') ? (teamSort.endsWith('_asc') ? '↑' : '↓') : '↕' }}</span></button></th><th class="p-3 font-semibold"><button type="button" :class="['inline-flex items-center gap-1.5 transition hover:text-task-blue', teamSort.startsWith('department_') ? 'text-task-blue' : '']" @click="toggleTeamSort('department')">Department <span>{{ teamSort.startsWith('department_') ? (teamSort.endsWith('_asc') ? '↑' : '↓') : '↕' }}</span></button></th><th class="p-3 font-semibold"><button type="button" :class="['inline-flex items-center gap-1.5 transition hover:text-task-blue', teamSort.startsWith('role_') ? 'text-task-blue' : '']" @click="toggleTeamSort('role')">Position <span>{{ teamSort.startsWith('role_') ? (teamSort.endsWith('_asc') ? '↑' : '↓') : '↕' }}</span></button></th><th class="p-3 font-semibold">Contact</th><th class="p-3 font-semibold"><button type="button" :class="['inline-flex items-center gap-1.5 transition hover:text-task-blue', teamSort.startsWith('efficiency_') ? 'text-task-blue' : '']" @click="toggleTeamSort('efficiency')">Efficiency <span>{{ teamSort.startsWith('efficiency_') ? (teamSort.endsWith('_asc') ? '↑' : '↓') : '↕' }}</span></button></th><th class="p-3 font-semibold">Tasks</th><th class="p-3 text-right font-semibold">Actions</th></tr></thead><tbody class="divide-y divide-task-line"><tr v-for="(member, index) in paginatedTeam" :key="String(member[9] || member[7] || member[0])" class="transition hover:bg-task-blueSoft/40"><td class="p-3"><div class="flex items-center gap-3"><span :class="['grid h-10 w-10 shrink-0 place-items-center overflow-hidden rounded-full text-xs font-bold', index % 4 === 0 ? 'bg-task-blueSoft text-task-blue' : index % 4 === 1 ? 'bg-[#F0E9FF] text-[#8057D5]' : index % 4 === 2 ? 'bg-task-warningSoft text-task-warning' : 'bg-task-successSoft text-task-success']"><img v-if="member[8]" :src="String(member[8])" :alt="String(member[0])" class="h-full w-full object-cover" /><span v-else>{{ initials(String(member[0])) }}</span></span><div class="min-w-0"><p class="truncate font-bold text-task-ink">{{ member[0] }}</p><p class="truncate text-xs text-task-muted">{{ member[2] }}</p></div></div></td><td class="p-3"><span class="inline-flex rounded-full bg-task-blueSoft px-2.5 py-1 text-xs font-semibold text-task-blue">{{ memberDepartmentNameOf(member) }}</span></td><td class="max-w-[190px] p-3 text-task-muted">{{ member[1] }}</td><td class="p-3 text-task-muted">{{ member[3] || '—' }}</td><td class="p-3"><div class="min-w-[110px]"><b class="text-xs text-task-ink">{{ member[4] }}%</b><div class="mt-1.5 h-1.5 w-24 overflow-hidden rounded-full bg-slate-200"><div class="h-full rounded-full bg-task-blue" :style="{ width: `${member[4]}%` }" /></div></div></td><td class="p-3"><b class="text-task-ink">{{ Number(member[5] || 0) + Number(member[6] || 0) }} total</b><p class="mt-1 text-[11px] text-task-muted"><span class="text-task-success">{{ member[5] }} ✓</span> · <span class="text-task-blue">{{ member[6] }} active</span></p></td><td class="relative p-3 text-right"><div class="relative inline-flex"><button type="button" class="tf-icon-button rounded-full" @click="toggleActionMenu(`team-${member[9] || member[7] || member[0]}`)"><svg viewBox="0 0 24 24" class="h-4 w-4" fill="none" stroke="currentColor"><path :d="iconPath('dots')" /></svg></button><div v-if="actionMenu === `team-${member[9] || member[7] || member[0]}`" class="tf-action-menu"><button type="button" class="tf-action-item" @click="viewMemberProfile(member)">View profile</button><button v-if="canManageDepartment" type="button" class="tf-action-item" @click="updateMemberStatus(member, String(member[12]) === 'Inactive')">{{ String(member[12]) === 'Inactive' ? 'Activate' : 'Deactivate' }}</button><button v-if="canManageDepartment" type="button" class="tf-action-item tf-action-danger" @click="requestMemberRemoval(member)">Remove member</button></div></div></td></tr></tbody></table></div>
             <p v-if="!filteredTeam.length" class="py-10 text-center text-sm text-task-muted">No staff found.</p><AppPagination v-else-if="filteredTeam.length > pageSize" class="mt-5 border-t border-task-line pt-4" :page="teamPage" :page-count="teamPageCount" :total="filteredTeam.length" :page-size="pageSize" noun="staff members" @page="page => setListPage('team', page)" />
           </div>
         </section>
@@ -5145,16 +5005,16 @@ const iconPath = (name: string) => {
             </div>
           </aside>
           <div class="flex min-h-0 min-w-0 flex-col bg-slate-50/40">
-            <template v-if="selectedConversation"><header class="tf-chat-header flex shrink-0 items-center gap-3 border-b border-task-line bg-white px-4"><button type="button" class="tf-chat-back" aria-label="Back to conversations" title="Back to conversations" @click="activeMessage = null"><svg viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="2"><path d="m15 18-6-6 6-6"/></svg></button><span class="grid h-11 w-11 place-items-center overflow-hidden rounded-full bg-task-blueSoft text-xs font-bold text-task-blue"><img v-if="conversationAvatar(selectedConversation)" :src="conversationAvatar(selectedConversation)" :alt="conversationTitle(selectedConversation)" class="h-full w-full object-cover"/><span v-else>{{ initials(conversationTitle(selectedConversation)) }}</span></span><div class="min-w-0 flex-1"><h2 class="truncate text-base font-extrabold">{{ conversationTitle(selectedConversation) }}</h2><p :class="['mt-0.5 flex items-center gap-1.5 text-[11px]', selectedConversationPresence.isOnline || typingUserName ? 'text-task-success' : 'text-task-muted']"><i :class="['h-1.5 w-1.5 rounded-full', selectedConversationPresence.isOnline ? 'bg-task-success' : 'bg-slate-400']"/>{{ selectedConversationPresenceLabel }}</p></div><button type="button" class="tf-icon-button tf-chat-search-button rounded-full" aria-label="Search in conversation" title="Search"><svg viewBox="0 0 24 24" class="h-5 w-5" fill="none" stroke="currentColor" stroke-width="1.9"><circle cx="11" cy="11" r="7"/><path d="m20 20-4-4"/></svg></button><button type="button" class="tf-icon-button tf-chat-call-button rounded-full" aria-label="Call" title="Call"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path :d="iconPath('phone')"/></svg></button><button type="button" class="tf-icon-button tf-chat-video-button rounded-full" aria-label="Video call" title="Video call"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M3 6h12v12H3V6Zm12 4 6-3v10l-6-3"/></svg></button><button type="button" class="tf-icon-button tf-chat-menu-button rounded-full" aria-label="Conversation menu" title="More"><svg viewBox="0 0 24 24" class="h-5 w-5" fill="none" stroke="currentColor" stroke-width="2.2"><path d="M5 12h.01M12 12h.01M19 12h.01"/></svg></button></header><div ref="chatBody" class="tf-chat-body min-h-0 flex-1 space-y-5 overflow-y-auto p-5 sm:p-7"><div v-if="messagesLoading" class="grid h-full place-items-center"><span class="tf-search-loader"/></div><template v-else><div v-for="message in conversationMessages" :key="message.id" :class="['flex items-end gap-2', messageIsMine(message) ? 'justify-end' : '']"><span v-if="!messageIsMine(message)" class="grid h-8 w-8 shrink-0 place-items-center overflow-hidden rounded-full bg-task-blueSoft text-[9px] font-bold text-task-blue"><img v-if="absoluteMediaUrl(message.sender_detail?.avatar)" :src="absoluteMediaUrl(message.sender_detail?.avatar)" :alt="message.sender_detail?.full_name || 'Sender'" class="h-full w-full object-cover"/><span v-else>{{ initials(message.sender_detail?.full_name || 'U') }}</span></span><div :class="['tf-message-stack', messageIsMine(message) ? 'is-mine' : '']"><p v-if="!messageIsMine(message)" class="tf-message-meta">{{ message.sender_detail?.full_name || 'Member' }}</p><p :class="['tf-chat-bubble', messageIsMine(message) ? 'is-outgoing' : 'is-incoming']"><span>{{ message.is_deleted ? 'Message deleted' : message.body }}</span><small class="tf-bubble-time">{{ message.created_at ? new Date(message.created_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : '' }}<b v-if="messageIsMine(message)" :class="['tf-read-check', { 'is-read': messageReadByPeer(message) }]" :title="messageReadByPeer(message) ? 'Read' : 'Sent'" :aria-label="messageReadByPeer(message) ? 'Read' : 'Sent'"><svg v-if="messageReadByPeer(message)" viewBox="0 0 20 12" aria-hidden="true"><path d="m1 6 3.3 3.3L12.5 1"/><path d="m6.5 6 3.3 3.3L18 1"/></svg><svg v-else viewBox="0 0 16 12" aria-hidden="true"><path d="m1 6 3.5 3.5L15 1"/></svg></b></small></p><a v-if="message.attachment" :href="absoluteMediaUrl(message.attachment)" target="_blank" class="mt-2 block"><img v-if="isImageAttachment(message.attachment)" :src="absoluteMediaUrl(message.attachment)" alt="Message attachment" class="max-h-64 max-w-[320px] rounded-xl object-cover shadow-md"/><span v-else class="text-[10px] font-bold text-task-blue">Open attachment</span></a></div></div><p v-if="!conversationMessages.length" class="py-16 text-center text-sm text-task-muted">No messages yet. Start the conversation.</p></template></div><form class="shrink-0 border-t border-task-line bg-white p-4" @submit.prevent="sendMessage"><div class="tf-message-composer"><div v-if="selectedMessageAttachment" class="tf-composer-attachment"><img v-if="messageAttachmentPreview" :src="messageAttachmentPreview" alt="Attachment preview"/><span v-else>📄</span><button type="button" :title="selectedMessageAttachment.name" @click="clearMessageAttachment">×</button></div><input ref="messageAttachmentInput" type="file" class="hidden" @change="sendMessageAttachment"/><button type="button" class="tf-composer-action" aria-label="Attach a file" title="Attach a file" :disabled="messageSending" @click="chooseMessageAttachment"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9"><path d="m21.44 11.05-9.19 9.19a6 6 0 0 1-8.49-8.49l9.19-9.19a4 4 0 0 1 5.66 5.66l-9.2 9.19a2 2 0 0 1-2.83-2.83l8.49-8.48"/></svg></button><input v-model="chatDraft" class="min-w-0 flex-1 bg-transparent text-sm outline-none" placeholder="Write a message..."/><button type="button" class="tf-composer-action tf-emoji-action" aria-label="Add emoji" title="Add emoji" :aria-expanded="emojiPickerOpen"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9"><circle cx="12" cy="12" r="9"/><path d="M8.5 14.5s1.25 1.75 3.5 1.75 3.5-1.75 3.5-1.75M9 9.25h.01M15 9.25h.01"/></svg></button><button type="submit" class="tf-primary tf-chat-send h-9 rounded-[10px] px-4 text-xs" :disabled="messageSending || (!chatDraft.trim() && !selectedMessageAttachment)"><span>{{ messageSending ? 'Sending...' : 'Send' }}</span><svg v-if="!messageSending" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="m22 2-7 20-4-9-9-4Z"/><path d="M22 2 11 13"/></svg></button></div></form></template>
+            <template v-if="selectedConversation"><header class="tf-chat-header flex shrink-0 items-center gap-3 border-b border-task-line bg-white px-4"><button type="button" class="tf-chat-back" aria-label="Back to conversations" title="Back to conversations" @click="activeMessage = null"><svg viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="2"><path d="m15 18-6-6 6-6"/></svg></button><span class="grid h-11 w-11 place-items-center overflow-hidden rounded-full bg-task-blueSoft text-xs font-bold text-task-blue"><img v-if="conversationAvatar(selectedConversation)" :src="conversationAvatar(selectedConversation)" :alt="conversationTitle(selectedConversation)" class="h-full w-full object-cover"/><span v-else>{{ initials(conversationTitle(selectedConversation)) }}</span></span><div class="min-w-0 flex-1"><h2 class="truncate text-base font-extrabold">{{ conversationTitle(selectedConversation) }}</h2><p :class="['mt-0.5 flex items-center gap-1.5 text-[11px]', selectedConversationPresence.isOnline || typingUserName ? 'text-task-success' : 'text-task-muted']"><i :class="['h-1.5 w-1.5 rounded-full', selectedConversationPresence.isOnline ? 'bg-task-success' : 'bg-slate-400']"/>{{ selectedConversationPresenceLabel }}</p></div><button type="button" class="tf-icon-button tf-chat-search-button rounded-full" aria-label="Search in conversation" title="Search"><svg viewBox="0 0 24 24" class="h-5 w-5" fill="none" stroke="currentColor" stroke-width="1.9"><circle cx="11" cy="11" r="7"/><path d="m20 20-4-4"/></svg></button><button type="button" class="tf-icon-button tf-chat-menu-button rounded-full" aria-label="Conversation menu" title="More"><svg viewBox="0 0 24 24" class="h-5 w-5" fill="none" stroke="currentColor" stroke-width="2.2"><path d="M5 12h.01M12 12h.01M19 12h.01"/></svg></button></header><div ref="chatBody" class="tf-chat-body min-h-0 flex-1 space-y-5 overflow-y-auto p-5 sm:p-7"><div v-if="messagesLoading" class="grid h-full place-items-center"><span class="tf-search-loader"/></div><template v-else><div v-for="message in conversationMessages" :key="message.id" :class="['flex items-end gap-2', messageIsMine(message) ? 'justify-end' : '']"><span v-if="!messageIsMine(message)" class="grid h-8 w-8 shrink-0 place-items-center overflow-hidden rounded-full bg-task-blueSoft text-[9px] font-bold text-task-blue"><img v-if="absoluteMediaUrl(message.sender_detail?.avatar)" :src="absoluteMediaUrl(message.sender_detail?.avatar)" :alt="message.sender_detail?.full_name || 'Sender'" class="h-full w-full object-cover"/><span v-else>{{ initials(message.sender_detail?.full_name || 'U') }}</span></span><div :class="['tf-message-stack', messageIsMine(message) ? 'is-mine' : '']"><p v-if="!messageIsMine(message)" class="tf-message-meta">{{ message.sender_detail?.full_name || 'Member' }}</p><p :class="['tf-chat-bubble', messageIsMine(message) ? 'is-outgoing' : 'is-incoming']"><span>{{ message.is_deleted ? 'Message deleted' : message.body }}</span><small class="tf-bubble-time">{{ message.created_at ? new Date(message.created_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : '' }}<b v-if="messageIsMine(message)" :class="['tf-read-check', { 'is-read': messageReadByPeer(message) }]" :title="messageReadByPeer(message) ? 'Read' : 'Sent'" :aria-label="messageReadByPeer(message) ? 'Read' : 'Sent'"><svg v-if="messageReadByPeer(message)" viewBox="0 0 20 12" aria-hidden="true"><path d="m1 6 3.3 3.3L12.5 1"/><path d="m6.5 6 3.3 3.3L18 1"/></svg><svg v-else viewBox="0 0 16 12" aria-hidden="true"><path d="m1 6 3.5 3.5L15 1"/></svg></b></small></p><a v-if="message.attachment" :href="absoluteMediaUrl(message.attachment)" target="_blank" class="mt-2 block"><img v-if="isImageAttachment(message.attachment)" :src="absoluteMediaUrl(message.attachment)" alt="Message attachment" class="max-h-64 max-w-[320px] rounded-xl object-cover shadow-md"/><span v-else class="text-[10px] font-bold text-task-blue">Open attachment</span></a></div></div><p v-if="!conversationMessages.length" class="py-16 text-center text-sm text-task-muted">No messages yet. Start the conversation.</p></template></div><form class="shrink-0 border-t border-task-line bg-white p-4" @submit.prevent="sendMessage"><div class="tf-message-composer"><div v-if="selectedMessageAttachment" class="tf-composer-attachment"><img v-if="messageAttachmentPreview" :src="messageAttachmentPreview" alt="Attachment preview"/><span v-else>📄</span><button type="button" :title="selectedMessageAttachment.name" @click="clearMessageAttachment">×</button></div><input ref="messageAttachmentInput" type="file" class="hidden" @change="sendMessageAttachment"/><button type="button" class="tf-composer-action" aria-label="Attach a file" title="Attach a file" :disabled="messageSending" @click="chooseMessageAttachment"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9"><path d="m21.44 11.05-9.19 9.19a6 6 0 0 1-8.49-8.49l9.19-9.19a4 4 0 0 1 5.66 5.66l-9.2 9.19a2 2 0 0 1-2.83-2.83l8.49-8.48"/></svg></button><input v-model="chatDraft" class="min-w-0 flex-1 bg-transparent text-sm outline-none" placeholder="Write a message..."/><button type="button" class="tf-composer-action tf-emoji-action" aria-label="Add emoji" title="Add emoji" :aria-expanded="emojiPickerOpen"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9"><circle cx="12" cy="12" r="9"/><path d="M8.5 14.5s1.25 1.75 3.5 1.75 3.5-1.75 3.5-1.75M9 9.25h.01M15 9.25h.01"/></svg></button><button type="submit" class="tf-primary tf-chat-send h-9 rounded-[10px] px-4 text-xs" :disabled="messageSending || (!chatDraft.trim() && !selectedMessageAttachment)"><span>{{ messageSending ? 'Sending...' : 'Send' }}</span><svg v-if="!messageSending" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="m22 2-7 20-4-9-9-4Z"/><path d="M22 2 11 13"/></svg></button></div></form></template>
             <div v-else class="grid h-full place-items-center p-8 text-center"><div><span class="mx-auto grid h-16 w-16 place-items-center rounded-[20px] bg-task-blueSoft text-task-blue"><svg viewBox="0 0 24 24" class="h-7 w-7" fill="none" stroke="currentColor" stroke-width="1.7"><path :d="iconPath('message')"/></svg></span><h2 class="mt-4 text-lg font-extrabold text-task-ink">Select a conversation</h2><p class="mt-2 text-sm text-task-muted">Choose a team member to view the conversation.</p></div></div>
           </div>
           <aside v-if="selectedConversation && contactInfoOpen" class="tf-contact-info">
             <header><h2>Contact Info</h2><ModalCloseButton size="sm" label="Close contact info" @click="contactInfoOpen = false" /></header>
             <div class="tf-contact-profile"><span><img v-if="conversationAvatar(selectedConversation)" :src="conversationAvatar(selectedConversation)" :alt="conversationTitle(selectedConversation)"/><i v-else>{{ initials(conversationTitle(selectedConversation)) }}</i></span><div><h3>{{ conversationTitle(selectedConversation) }}</h3><p>{{ conversationDisplayUser(selectedConversation)?.job_title || (selectedConversation.is_group ? 'Team conversation' : 'Team member') }}</p><small>{{ selectedConversationPresenceLabel }}</small></div></div>
-            <div class="tf-contact-actions"><button type="button" @click="toggleSelectedConversationMute"><span><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M18 8a6 6 0 0 0-9.7-4.7M6 8c0 7-3 7-3 9h14M10 21h4M3 3l18 18"/></svg></span>{{ selectedConversationMuted ? 'Unmute' : 'Mute' }}</button><button type="button" @click="chatSearchOpen = true"><span><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><circle cx="11" cy="11" r="7"/><path d="m20 20-4-4"/></svg></span>Search</button><button type="button" @click="contactInfoSection = 'overview'"><span><svg viewBox="0 0 24 24" fill="currentColor"><circle cx="5" cy="12" r="1.8"/><circle cx="12" cy="12" r="1.8"/><circle cx="19" cy="12" r="1.8"/></svg></span>More</button></div>
-            <div class="tf-contact-section"><h3>Shared media <span>{{ conversationMessages.filter(message => isImageAttachment(message.attachment)).length }} ›</span></h3><div class="tf-contact-media"><a v-for="message in conversationMessages.filter(item => isImageAttachment(item.attachment)).slice(0, 3)" :key="message.id" :href="absoluteMediaUrl(message.attachment)" target="_blank"><img :src="absoluteMediaUrl(message.attachment)" alt="Shared media"/></a><span v-if="!conversationMessages.some(message => isImageAttachment(message.attachment))">No shared media yet</span></div></div>
+            <div class="tf-contact-actions"><button type="button" @click="toggleSelectedConversationMute"><span><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M18 8a6 6 0 0 0-9.7-4.7M6 8c0 7-3 7-3 9h14M10 21h4M3 3l18 18"/></svg></span>{{ selectedConversationMuted ? 'Unmute' : 'Mute' }}</button><button type="button" @click="chatSearchOpen = true"><span><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><circle cx="11" cy="11" r="7"/><path d="m20 20-4-4"/></svg></span>Search</button></div>
+            <div v-if="contactInfoSection === 'overview'" class="tf-contact-section"><button type="button" class="tf-contact-section-title" @click="contactInfoSection = 'media'"><span>Shared media</span><b>{{ contactMedia.length }} ›</b></button><div class="tf-contact-media"><a v-for="message in contactMedia.slice(0, 3)" :key="message.id" :href="absoluteMediaUrl(message.attachment)" target="_blank" rel="noopener"><img :src="absoluteMediaUrl(message.attachment)" alt="Shared media"/></a><span v-if="!contactMedia.length">No shared media yet</span></div></div>
             <div class="tf-contact-links"><button type="button" @click="contactInfoSection = 'files'"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M4 3h11l5 5v13H4V3Zm11 0v6h5"/></svg>Files <b>{{ contactFiles.length }} ›</b></button><button type="button" @click="contactInfoSection = 'links'"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M10 13a5 5 0 0 0 7.1.1l2-2a5 5 0 0 0-7.1-7.1l-1.1 1.1M14 11a5 5 0 0 0-7.1-.1l-2 2A5 5 0 0 0 12 20l1.1-1.1"/></svg>Links <b>{{ contactLinks.length }} ›</b></button><button type="button" @click="toggleSelectedConversationMute"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M18 8a6 6 0 0 0-12 0c0 7-3 7-3 9h18c0-2-3-2-3-9M10 21h4"/></svg>Notifications <i :class="{ 'is-on': !selectedConversationMuted }"><span/></i></button></div>
-            <div v-if="contactInfoSection !== 'overview'" class="tf-contact-detail"><button type="button" @click="contactInfoSection = 'overview'">← Back to info</button><h3>{{ contactInfoSection === 'files' ? 'Shared files' : 'Shared links' }}</h3><template v-if="contactInfoSection === 'files'"><a v-for="message in contactFiles" :key="message.id" :href="absoluteMediaUrl(message.attachment)" target="_blank" rel="noopener"><span>📄</span>{{ String(message.attachment).split('/').pop() || 'Attachment' }}</a><p v-if="!contactFiles.length">No shared files yet.</p></template><template v-else><a v-for="link in contactLinks" :key="link" :href="link" target="_blank" rel="noopener"><span>↗</span>{{ link }}</a><p v-if="!contactLinks.length">No shared links yet.</p></template></div>
+            <div v-if="contactInfoSection !== 'overview'" class="tf-contact-detail"><button type="button" @click="contactInfoSection = 'overview'">← Back to info</button><h3>{{ contactInfoSection === 'media' ? 'Shared media' : contactInfoSection === 'files' ? 'Shared files' : 'Shared links' }}</h3><div v-if="contactInfoSection === 'media'" class="tf-contact-media-grid"><a v-for="message in contactMedia" :key="message.id" :href="absoluteMediaUrl(message.attachment)" target="_blank" rel="noopener"><img :src="absoluteMediaUrl(message.attachment)" alt="Shared media"/></a><p v-if="!contactMedia.length">No shared media yet.</p></div><template v-else-if="contactInfoSection === 'files'"><a v-for="message in contactFiles" :key="message.id" :href="absoluteMediaUrl(message.attachment)" target="_blank" rel="noopener"><span>📄</span>{{ String(message.attachment).split('/').pop() || 'Attachment' }}</a><p v-if="!contactFiles.length">No shared files yet.</p></template><template v-else><a v-for="link in contactLinks" :key="link" :href="link" target="_blank" rel="noopener"><span>↗</span>{{ link }}</a><p v-if="!contactLinks.length">No shared links yet.</p></template></div>
             <div v-if="contactInfoSection === 'overview'" class="tf-contact-about"><h3>About</h3><p>{{ selectedConversation.is_group ? 'Team collaboration and coordination.' : 'Available for team collaboration and direct messages.' }}</p><h3>Member since</h3><p>{{ selectedConversation.created_at ? new Date(selectedConversation.created_at).toLocaleDateString([], { month: 'short', day: 'numeric', year: 'numeric' }) : '—' }}</p></div>
           </aside>
           <div v-if="chatSearchOpen" class="tf-chat-search absolute right-4 top-[76px] z-[91] w-72 rounded-xl border border-task-line bg-white p-2 shadow-xl"><label class="relative block"><svg viewBox="0 0 24 24" class="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-task-muted" fill="none" stroke="currentColor" stroke-width="1.8"><path :d="iconPath('search')"/></svg><input v-model="chatSearch" class="tf-input h-10 w-full pl-9 pr-9 text-sm" placeholder="Search in conversation..." autofocus/><button v-if="chatSearch" type="button" class="absolute right-3 top-1/2 -translate-y-1/2 text-task-muted" aria-label="Clear chat search" @click="chatSearch = ''">×</button></label></div>
@@ -5176,10 +5036,10 @@ const iconPath = (name: string) => {
             <div class="tf-panel tf-profile-panel h-full p-5 sm:p-7">
               <div class="flex flex-col gap-5 sm:flex-row sm:items-center">
                 <div class="relative shrink-0"><input ref="profileAvatarInput" class="hidden" type="file" accept="image/*" @change="handleProfileAvatar" /><button type="button" class="group relative block h-28 w-28 rounded-full" aria-label="Change profile image" @click="chooseProfileAvatar"><span class="grid h-full w-full place-items-center overflow-hidden rounded-full bg-gradient-to-br from-task-blueSoft to-[#D8E7F8] text-2xl font-bold text-task-blue ring-4 ring-white shadow-lg"><img v-if="profileAvatarPreview" :src="profileAvatarPreview" alt="Profile avatar preview" class="h-full w-full object-cover transition group-hover:brightness-90" /><span v-else>{{ profileFormInitials }}</span></span><span class="absolute bottom-0 right-0 grid h-10 w-10 place-items-center rounded-full border-4 border-white bg-task-blue text-white shadow-lg"><svg viewBox="0 0 24 24" class="h-4 w-4" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 8h4l2-3h4l2 3h4v11H4V8Z" /><circle cx="12" cy="13" r="3" /></svg></span></button></div>
-                <div class="min-w-0 flex-1"><h3 class="truncate text-2xl font-bold">{{ profileName }}</h3><span class="mt-2 inline-flex rounded-full bg-task-blueSoft px-3 py-1 text-xs font-bold text-task-blue">{{ profileForm.role || 'Team Member' }}</span><div class="mt-4 space-y-2 text-sm text-task-muted"><p class="flex items-center gap-2"><svg viewBox="0 0 24 24" class="h-4 w-4" fill="none" stroke="currentColor" stroke-width="1.8"><path :d="iconPath('mail')" /></svg>{{ profileForm.email || 'No email' }}</p><p class="flex items-center gap-2"><svg viewBox="0 0 24 24" class="h-4 w-4" fill="none" stroke="currentColor" stroke-width="1.8"><path :d="iconPath('phone')" /></svg>{{ profileForm.phone || 'No phone' }}</p></div></div>
+                <div class="min-w-0 flex-1"><h3 class="truncate text-2xl font-bold">{{ profileName }}</h3><span class="mt-2 inline-flex rounded-full bg-task-blueSoft px-3 py-1 text-xs font-bold text-task-blue">{{ accountRoleLabel }}</span><div class="mt-4 space-y-2 text-sm text-task-muted"><p class="flex items-center gap-2"><svg viewBox="0 0 24 24" class="h-4 w-4" fill="none" stroke="currentColor" stroke-width="1.8"><path :d="iconPath('mail')" /></svg>{{ profileForm.email || 'No email' }}</p><p class="flex items-center gap-2"><svg viewBox="0 0 24 24" class="h-4 w-4" fill="none" stroke="currentColor" stroke-width="1.8"><path :d="iconPath('phone')" /></svg>{{ profileForm.phone || 'No phone' }}</p></div></div>
               </div>
 
-              <div class="mt-7 grid gap-4 md:grid-cols-2"><label class="text-sm font-semibold">First Name<input v-model="profileForm.firstName" class="tf-input mt-2 h-12 w-full" /></label><label class="text-sm font-semibold">Last Name<input v-model="profileForm.lastName" class="tf-input mt-2 h-12 w-full" /></label><label class="md:col-span-2 text-sm font-semibold">Email Address<input v-model="profileForm.email" class="tf-input mt-2 h-12 w-full" readonly /></label><label class="text-sm font-semibold">Phone Number<input v-model="profileForm.phone" class="tf-input mt-2 h-12 w-full" inputmode="numeric" placeholder="+998 91 638 31 91" @input="handleProfilePhoneInput" /></label><label class="text-sm font-semibold">Role<input v-model="profileForm.role" class="tf-input mt-2 h-12 w-full" /></label></div>
+              <div class="mt-7 grid gap-4 md:grid-cols-2"><label class="text-sm font-semibold">First Name<input v-model="profileForm.firstName" class="tf-input mt-2 h-12 w-full" /></label><label class="text-sm font-semibold">Last Name<input v-model="profileForm.lastName" class="tf-input mt-2 h-12 w-full" /></label><label class="md:col-span-2 text-sm font-semibold">Email Address<input v-model="profileForm.email" class="tf-input mt-2 h-12 w-full" readonly /></label><label class="text-sm font-semibold">Phone Number<input v-model="profileForm.phone" class="tf-input mt-2 h-12 w-full" inputmode="numeric" placeholder="+998 91 638 31 91" @input="handleProfilePhoneInput" /></label><label class="text-sm font-semibold">Job Title<input v-model="profileForm.jobTitle" class="tf-input mt-2 h-12 w-full" /></label></div>
               <button class="tf-primary mt-6 h-12 w-full rounded-xl text-base" @click="saveSettings('Profile')"><svg viewBox="0 0 24 24" class="h-5 w-5" fill="none" stroke="currentColor" stroke-width="2"><path d="m5 12 4 4L19 6" /></svg>Save Changes</button>
             </div>
 
@@ -5195,10 +5055,9 @@ const iconPath = (name: string) => {
 
               <div class="tf-panel tf-account-summary p-4 sm:p-5">
                 <div class="flex items-start gap-3"><span class="grid h-9 w-9 place-items-center rounded-[11px] bg-task-blueSoft text-task-blue"><svg viewBox="0 0 24 24" class="h-4 w-4" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M12 3v9l6 3M12 21a9 9 0 1 1 9-9" /></svg></span><div><h2 class="text-lg font-bold">Account Summary</h2><p class="mt-0.5 text-xs text-task-muted">Overview of your account information.</p></div></div>
-                <div class="mt-4 grid grid-cols-3 gap-3">
+                <div class="mt-4 grid grid-cols-2 gap-3">
                   <div class="flex items-center gap-2.5"><span class="grid h-10 w-10 shrink-0 place-items-center rounded-[12px] bg-task-blueSoft text-task-blue"><svg viewBox="0 0 24 24" class="h-5 w-5" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M7 3v4m10-4v4M4 9h16M5 5h14v15H5V5Z" /></svg></span><div class="min-w-0"><p class="text-[11px] font-medium text-task-muted">Joined Date</p><p class="mt-0.5 truncate text-xs font-bold text-task-ink">{{ accountJoinedDate }}</p></div></div>
-                  <div class="flex items-center gap-2.5"><span class="grid h-10 w-10 shrink-0 place-items-center rounded-[12px] bg-task-successSoft text-task-success"><svg viewBox="0 0 24 24" class="h-5 w-5" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M12 3 20 6v6c0 5-3 8-8 10-5-2-8-5-8-10V6l8-3Zm-3 9 2 2 4-4" /></svg></span><div><p class="text-[11px] font-medium text-task-muted">Account Status</p><p class="mt-0.5 text-xs font-bold text-task-ink">Active</p></div></div>
-                  <div class="flex items-center gap-2.5"><span class="grid h-10 w-10 shrink-0 place-items-center rounded-[12px] bg-task-warningSoft text-task-warning"><svg viewBox="0 0 24 24" class="h-5 w-5" fill="none" stroke="currentColor" stroke-width="1.8"><circle cx="12" cy="12" r="9" /><path d="M12 7v5l3 2" /></svg></span><div class="min-w-0"><p class="text-[11px] font-medium text-task-muted">Last Login</p><p class="mt-0.5 truncate text-xs font-bold text-task-ink">{{ accountLastLogin }}</p><p class="text-[10px] font-semibold text-task-muted">{{ accountLastLoginTime }}</p></div></div>
+                  <div class="flex items-center gap-2.5"><span :class="['grid h-10 w-10 shrink-0 place-items-center rounded-[12px]', currentUserActive ? 'bg-task-successSoft text-task-success' : 'bg-task-dangerSoft text-task-danger']"><svg viewBox="0 0 24 24" class="h-5 w-5" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M12 3 20 6v6c0 5-3 8-8 10-5-2-8-5-8-10V6l8-3Zm-3 9 2 2 4-4" /></svg></span><div><p class="text-[11px] font-medium text-task-muted">Account Status</p><p class="mt-0.5 text-xs font-bold text-task-ink">{{ currentUserActive ? 'Active' : 'Inactive' }}</p></div></div>
                 </div>
               </div>
             </div>
@@ -5209,9 +5068,11 @@ const iconPath = (name: string) => {
       </div>
     </section>
 
+    <AppConfirmModal v-if="confirmation" :title="confirmation.title" :message="confirmation.message" :confirm-label="confirmation.confirmLabel" :cancel-label="confirmation.cancelLabel" @confirm="settleConfirmation(true)" @cancel="settleConfirmation(false)" />
+
     <div v-if="modal" class="fixed inset-0 z-50 grid place-items-center bg-slate-900/45 p-3 backdrop-blur-[2px] sm:p-6" @click.self="closeModalFromBackdrop">
       <div :class="['tf-app-modal flex max-h-[calc(100vh-24px)] w-full flex-col overflow-hidden rounded-[22px] border border-white/70 bg-[#E3EAF2] shadow-[0_30px_90px_-20px_rgba(15,23,42,0.45)] sm:max-h-[calc(100vh-48px)]', modal === 'report' ? 'tf-report-modal' : '', modal === 'project' ? 'tf-project-modal max-w-[600px]' : modal === 'task' ? 'max-w-[620px]' : modal === 'member' ? 'tf-member-modal max-w-[760px]' : modal === 'member-remove' ? 'max-w-[660px]' : modal === 'event' || modal === 'event-detail' || modal === 'report' ? 'max-w-[620px]' : 'max-w-[520px]']" @click.capture="handleModalCloseCapture" @keydown="handleModalKeydown">
-        <div class="flex shrink-0 items-center justify-between px-5 py-3.5 sm:px-6 sm:py-4"><h2 class="text-[21px] font-semibold tracking-[-0.025em] sm:text-[22px]">{{ modal === 'task' ? (taskModalMode === 'view' ? 'Task Details' : taskModalMode === 'edit' ? 'Edit Task' : 'Create Task') : modal === 'project' ? 'Create New Project' : modal === 'event' ? (editingEventId ? 'Edit Event' : 'Add New Event') : modal === 'event-detail' ? 'Event Details' : modal === 'event-delete' ? 'Delete Event' : modal === 'report' ? 'Custom Report Builder' : modal === 'member' ? (editingMemberId ? 'Edit Department Member' : 'Add Department Member') : modal === 'member-profile' ? 'Staff Profile' : modal === 'member-remove' ? 'Remove Member' : modal === 'analytics-user-tasks' ? `${selectedAnalyticsStaff?.name || 'Staff'} Tasks` : modal === 'logout' ? 'Log out' : 'Filter Staff' }}</h2><ModalCloseButton label="Close modal" @click="modal === 'event-delete' ? cancelEventDelete() : modal = null" /></div>
+        <div class="flex shrink-0 items-center justify-between px-5 py-3.5 sm:px-6 sm:py-4"><h2 class="text-[21px] font-semibold tracking-[-0.025em] sm:text-[22px]">{{ modal === 'task' ? (taskModalMode === 'view' ? 'Task Details' : taskModalMode === 'edit' ? 'Edit Task' : 'Create Task') : modal === 'project' ? (editingProjectId ? 'Edit Project' : 'Create New Project') : modal === 'event' ? (editingEventId ? 'Edit Event' : 'Add New Event') : modal === 'event-detail' ? 'Event Details' : modal === 'event-delete' ? 'Delete Event' : modal === 'report' ? 'Custom Report Builder' : modal === 'member' ? (editingMemberId ? 'Edit Department Member' : 'Add Department Member') : modal === 'member-profile' ? 'Staff Profile' : modal === 'member-remove' ? 'Remove Member' : modal === 'analytics-user-tasks' ? `${selectedAnalyticsStaff?.name || 'Staff'} Tasks` : modal === 'logout' ? 'Log out' : 'Filter Staff' }}</h2><ModalCloseButton label="Close modal" :disabled="modalBusy" @click="modal === 'event-delete' ? cancelEventDelete() : modal = null" /></div>
         <div :class="['min-h-0 overflow-y-auto bg-white', modal === 'project' || modal === 'task' ? 'mx-3 mb-3 rounded-[18px] p-5' : 'mx-2 mb-2 rounded-[16px] p-4', modal === 'member' ? 'tf-member-modal-body' : '', modal === 'report' ? 'tf-report-modal-body' : '']">
           <template v-if="modal === 'logout'">
             <div class="flex gap-4 rounded-[14px] border border-task-danger/20 bg-task-dangerSoft/60 p-4">
@@ -5311,7 +5172,7 @@ const iconPath = (name: string) => {
                   <textarea v-model="aiTaskPrompt" class="tf-input h-28 w-full resize-none py-3 pl-3 pr-12 leading-5" placeholder="Masalan: Dilafruzga landing page dizaynini juma kunigacha tayyorlash taskini ber, priority high." />
                   <button type="button" :class="['absolute bottom-3 right-3 grid h-9 w-9 place-items-center rounded-[11px] transition', aiTaskListening ? 'animate-pulse bg-task-danger text-white' : 'bg-task-blueSoft text-task-blue hover:bg-task-blue hover:text-white']" :aria-label="aiTaskListening ? 'Stop listening' : 'Speak task request'" @click="toggleSmartTaskVoice"><svg viewBox="0 0 24 24" class="h-4 w-4" fill="none" stroke="currentColor" stroke-width="1.9"><rect x="9" y="3" width="6" height="12" rx="3"/><path d="M5.5 11.5a6.5 6.5 0 0 0 13 0M12 18v3m-4 0h8"/></svg></button>
                 </div>
-                <p v-if="aiTaskListening" class="mt-2 text-xs font-semibold text-task-danger">Listening… gapirishingiz mumkin.</p>
+                <p v-if="aiTaskListening" class="mt-2 text-xs font-semibold text-task-danger">Listening… you can speak now.</p>
                 <p v-if="aiTaskError" class="mt-2 text-xs font-semibold text-task-danger">{{ aiTaskError }}</p>
                 <div class="mt-3 flex items-center justify-between gap-3"><small class="text-[10px] leading-4 text-task-muted">Local smart draft · Always review before creating.</small><button type="button" class="tf-primary h-10 shrink-0 rounded-[11px] px-4 text-xs" @click="generateSmartTaskDraft"><span>✦</span> Generate draft</button></div>
                 <div v-if="aiTaskDraft" class="mt-4 rounded-[14px] border border-task-line bg-white p-3.5 shadow-sm">
@@ -5708,17 +5569,17 @@ const iconPath = (name: string) => {
             <label class="block text-sm font-semibold">Report Name<input v-model="form.title" class="tf-input mt-2 h-12 w-full" placeholder="Team Performance Report" /></label>
             <label class="mt-4 block text-sm font-semibold">Report Type<AppSelect v-model="reportType" class="mt-2" :options="reportTypeOptions" button-class="tf-dropdown-button h-12" aria-label="Select report type" /></label>
             <div class="mt-4 grid gap-4 md:grid-cols-2">
-              <label class="text-sm font-semibold">Start Date<div class="tf-date-picker relative mt-2"><input v-model="form.startDate" class="tf-input h-12 w-full pr-12" placeholder="DD.MM.YYYY" inputmode="numeric" maxlength="10" @input="handleDateInput($event, 'startDate')" @focus="openDatePicker('startDate')" /><button type="button" class="absolute right-3 top-1/2 -translate-y-1/2 text-task-muted transition hover:text-task-blue" aria-label="Open start date calendar" @click="openDatePicker('startDate')"><svg viewBox="0 0 24 24" class="h-5 w-5" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M8 2v4M16 2v4M3 10h18M5 5h14a2 2 0 0 1 2 2v12a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V7a2 2 0 0 1 2-2Z" /></svg></button><div v-if="openProjectDatePicker === 'startDate'" class="tf-date-popover"><div class="mb-3 flex items-center justify-between"><b class="text-sm">{{ projectDatePickerDays.label }}</b><div class="flex gap-1"><button type="button" class="tf-icon-button h-8 w-8" @click.stop="moveDatePickerMonth(-1)">‹</button><button type="button" class="tf-icon-button h-8 w-8" @click.stop="moveDatePickerMonth(1)">›</button></div></div><div class="mb-2 grid grid-cols-7 text-center text-[10px] font-semibold text-task-muted"><span>Mo</span><span>Tu</span><span>We</span><span>Th</span><span>Fr</span><span>Sa</span><span>Su</span></div><div class="grid grid-cols-7 gap-1"><button v-for="cell in projectDatePickerDays.cells" :key="cell.key" type="button" :class="['h-8 rounded-[8px] text-sm transition', cell.day ? 'hover:bg-task-blueSoft hover:text-task-blue' : 'pointer-events-none', isTodayDatePickerCell(cell.day, cell.month, cell.year) ? 'bg-task-danger font-bold text-white' : '']" @click="selectProjectDate(cell.day, cell.month, cell.year)">{{ cell.day || '' }}</button></div></div></div></label>
-              <label class="text-sm font-semibold">End Date<div class="tf-date-picker relative mt-2"><input v-model="form.dueDate" class="tf-input h-12 w-full pr-12" placeholder="DD.MM.YYYY" inputmode="numeric" maxlength="10" @input="handleDateInput($event, 'dueDate')" @focus="openDatePicker('dueDate')" /><button type="button" class="absolute right-3 top-1/2 -translate-y-1/2 text-task-muted transition hover:text-task-blue" aria-label="Open end date calendar" @click="openDatePicker('dueDate')"><svg viewBox="0 0 24 24" class="h-5 w-5" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M8 2v4M16 2v4M3 10h18M5 5h14a2 2 0 0 1 2 2v12a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V7a2 2 0 0 1 2-2Z" /></svg></button><div v-if="openProjectDatePicker === 'dueDate'" class="tf-date-popover right-0 left-auto"><div class="mb-3 flex items-center justify-between"><b class="text-sm">{{ projectDatePickerDays.label }}</b><div class="flex gap-1"><button type="button" class="tf-icon-button h-8 w-8" @click.stop="moveDatePickerMonth(-1)">‹</button><button type="button" class="tf-icon-button h-8 w-8" @click.stop="moveDatePickerMonth(1)">›</button></div></div><div class="mb-2 grid grid-cols-7 text-center text-[10px] font-semibold text-task-muted"><span>Mo</span><span>Tu</span><span>We</span><span>Th</span><span>Fr</span><span>Sa</span><span>Su</span></div><div class="grid grid-cols-7 gap-1"><button v-for="cell in projectDatePickerDays.cells" :key="cell.key" type="button" :class="['h-8 rounded-[8px] text-sm transition', cell.day ? 'hover:bg-task-blueSoft hover:text-task-blue' : 'pointer-events-none', isTodayDatePickerCell(cell.day, cell.month, cell.year) ? 'bg-task-danger font-bold text-white' : '']" @click="selectProjectDate(cell.day, cell.month, cell.year)">{{ cell.day || '' }}</button></div></div></div></label>
+              <AppDatePicker v-model="form.startDate" label="Start Date" />
+              <AppDatePicker v-model="form.dueDate" label="End Date" align="right" />
               <label class="text-sm font-semibold">Priority<AppSelect v-model="reportPriority" class="mt-2" :options="dropdownOptions.priority" button-class="tf-dropdown-button h-12" aria-label="Select report priority" /></label>
               <label class="text-sm font-semibold">Status<AppSelect v-model="reportStatus" class="mt-2" :options="['All Statuses', 'Completed', 'In Progress', 'Not Started']" button-class="tf-dropdown-button h-12" aria-label="Select report status" /></label>
             </div>
           </template>
           <div :class="['flex justify-end gap-2.5 bg-white', modal === 'report' ? 'tf-report-modal-footer' : 'sticky bottom-0', modal === 'project' || modal === 'task' ? '-mx-5 -mb-5 mt-5 px-5 py-3' : modal === 'report' ? '-mx-1 mt-6 border-t border-task-line px-1 pb-1 pt-4' : modal === 'logout' ? '-mx-4 px-4 pt-4' : modal === 'event-detail' || modal === 'event-delete' || modal === 'member-profile' || modal === 'member-remove' ? '-mx-4 -mb-4 mt-7 border-t border-task-line px-4 py-3' : '-mx-4 -mb-4 mt-4 border-t border-task-line px-4 py-3']">
-            <button v-if="modal === 'task' && editingTaskId && canDeleteOpenedTask" class="mr-auto h-10 rounded-full border border-task-danger bg-white px-5 text-sm font-semibold text-task-danger transition hover:bg-task-dangerSoft" @click="deleteOpenedTask">Delete Task</button>
+            <button v-if="modal === 'task' && editingTaskId && canDeleteOpenedTask" :disabled="taskSaving" class="mr-auto h-10 rounded-full border border-task-danger bg-white px-5 text-sm font-semibold text-task-danger transition hover:bg-task-dangerSoft disabled:cursor-not-allowed disabled:opacity-60" @click="deleteOpenedTask">Delete Task</button>
             <button v-if="modal === 'event-detail' && canCreateEvent" type="button" class="mr-auto h-10 rounded-full border border-task-danger bg-white px-5 text-sm font-semibold text-task-danger transition hover:bg-task-dangerSoft" @click="requestEventDelete">Delete Event</button>
-            <button v-if="modal === 'task' && editingTaskId && taskFormStatus === 'Completed' && canManageDepartment" class="mr-auto h-10 rounded-full border border-slate-300 bg-slate-50 px-5 text-sm font-semibold text-slate-600 transition hover:border-task-blue hover:bg-task-blueSoft hover:text-task-blue" @click="archiveOpenedTask">Archive</button>
-            <button class="h-10 rounded-full border border-task-line bg-white px-5 text-sm font-semibold shadow-button transition hover:border-task-blue hover:text-task-blue" @click="modal === 'event-delete' ? cancelEventDelete() : modal = null">{{ modal === 'member-profile' ? 'Close' : modal === 'event-delete' ? 'Keep Event' : 'Cancel' }}</button>
+            <button v-if="modal === 'task' && editingTaskId && taskFormStatus === 'Completed' && canManageDepartment" :disabled="taskSaving" class="mr-auto h-10 rounded-full border border-slate-300 bg-slate-50 px-5 text-sm font-semibold text-slate-600 transition hover:border-task-blue hover:bg-task-blueSoft hover:text-task-blue disabled:cursor-not-allowed disabled:opacity-60" @click="archiveOpenedTask">Archive</button>
+            <button :disabled="modalBusy" class="h-10 rounded-full border border-task-line bg-white px-5 text-sm font-semibold shadow-button transition hover:border-task-blue hover:text-task-blue disabled:cursor-not-allowed disabled:opacity-60" @click="modal === 'event-delete' ? cancelEventDelete() : modal = null">{{ modal === 'member-profile' ? 'Close' : modal === 'event-delete' ? 'Keep Event' : 'Cancel' }}</button>
             <button v-if="modal === 'member-profile' && canManageDepartment" type="button" class="inline-flex h-10 items-center gap-2 rounded-full bg-gradient-to-b from-[#72A4D7] to-[#2567AD] px-6 text-sm font-semibold text-white shadow-button transition hover:-translate-y-0.5" @click="editSelectedMember"><svg viewBox="0 0 24 24" class="h-4 w-4" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><path d="M12 20h9" /><path d="M16.5 3.5a2.1 2.1 0 0 1 3 3L8 18l-4 1 1-4Z" /></svg>Edit</button>
             <button v-if="modal === 'event-detail' && canCreateEvent" type="button" class="inline-flex h-10 items-center gap-2 rounded-full bg-gradient-to-b from-[#72A4D7] to-[#2567AD] px-6 text-sm font-semibold text-white shadow-button transition hover:-translate-y-0.5" @click="editSelectedEvent">Edit</button>
             <button v-if="modal === 'logout'" type="button" class="h-10 rounded-full bg-task-danger px-6 text-sm font-semibold text-white shadow-button transition hover:-translate-y-0.5 hover:bg-rose-700" @click="confirmLogout">Log out</button>

@@ -1,11 +1,19 @@
 export default defineNuxtRouteMiddleware((to) => {
-  // Static generation has no browser token. A server redirect here would be
-  // baked into index.html and log users out on every hard refresh.
-  if (import.meta.server) return
-
   const publicRoutes = ['/login', '/logout', '/forgot-password', '/reset-password']
   const accessToken = useCookie<string | null>('taskflow-access')
   const hasCookieToken = Boolean(accessToken.value)
+
+  // During SSR the cookie is the shared source of truth. Redirecting before
+  // rendering prevents the server from sending dashboard markup that the
+  // client immediately replaces with the login page during hydration.
+  // Prerendering has no request cookie, so it must stay route-neutral.
+  if (import.meta.server) {
+    if (import.meta.prerender) return
+    if (!hasCookieToken && !publicRoutes.includes(to.path)) return navigateTo('/login')
+    if (hasCookieToken && to.path === '/login') return navigateTo('/')
+    return
+  }
+
   let hasClientToken = false
 
   try {

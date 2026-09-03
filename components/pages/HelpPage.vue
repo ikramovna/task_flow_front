@@ -1,10 +1,16 @@
 <script setup lang="ts">
 const emit = defineEmits<{ support: [] }>()
 const faqSection = ref<HTMLElement | null>(null)
-const { topics, searchInput, search, openFaq, filteredFaqs, runSearch } = useHelpStore()
+const { topics, searchInput, search, openFaq, filteredFaqs, runSearch, runTopicSearch } = useHelpStore()
 
 const searchHelp = async (query = searchInput.value) => {
   runSearch(query)
+  await nextTick()
+  faqSection.value?.scrollIntoView({ behavior: 'smooth', block: 'start' })
+}
+
+const searchTopic = async (topic: (typeof topics)[number]) => {
+  runTopicSearch(topic)
   await nextTick()
   faqSection.value?.scrollIntoView({ behavior: 'smooth', block: 'start' })
 }
@@ -18,7 +24,7 @@ const searchHelp = async (query = searchInput.value) => {
     </section>
     <div class="tf-help-layout">
       <div class="tf-help-main-column">
-        <section class="tf-help-section"><h2>Browse help topics</h2><div class="tf-help-topic-grid"><button v-for="topic in topics" :key="topic.title" type="button" :class="['tf-help-topic', `is-${topic.tone}`]" @click="searchHelp(topic.title.split(' ')[0])"><span class="tf-help-topic-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path :d="topic.icon"/></svg></span><span class="tf-help-topic-copy"><b>{{ topic.title }}</b><small>{{ topic.description }}</small><em>{{ topic.articles }} articles <span>›</span></em></span></button></div></section>
+        <section class="tf-help-section"><h2>Browse help topics</h2><div class="tf-help-topic-grid"><button v-for="topic in topics" :key="topic.key" type="button" :class="['tf-help-topic', `is-${topic.tone}`]" @click="searchTopic(topic)"><span class="tf-help-topic-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path :d="topic.icon"/></svg></span><span class="tf-help-topic-copy"><b>{{ topic.title }}</b><small>{{ topic.description }}</small><em>{{ topic.articles }} article{{ topic.articles === 1 ? '' : 's' }} <span>›</span></em></span></button></div></section>
         <section ref="faqSection" class="tf-help-section tf-help-faq"><div class="tf-help-section-heading"><h2>Frequently asked questions</h2><button type="button" @click="searchHelp('')">View all articles</button></div><p v-if="search" class="tf-help-search-result">{{ filteredFaqs.length }} result{{ filteredFaqs.length === 1 ? '' : 's' }} for “{{ search }}”</p><div class="tf-help-faq-list"><article v-for="faq in filteredFaqs" :key="faq.question"><button type="button" @click="openFaq = openFaq === faq.index ? null : faq.index"><span>{{ faq.question }}</span><svg viewBox="0 0 20 20" :class="openFaq === faq.index ? 'rotate-180' : ''" fill="none" stroke="currentColor" stroke-width="2"><path d="m5 7.5 5 5 5-5"/></svg></button><p v-if="openFaq === faq.index">{{ faq.answer }}</p></article><p v-if="!filteredFaqs.length" class="tf-help-empty">No matching questions found. Try “task”, “report”, or “team”.</p></div></section>
       </div>
       <aside class="tf-help-support"><div class="tf-help-support-heading"><h2>Contact support</h2><p>Choose the best way to get help.</p></div>

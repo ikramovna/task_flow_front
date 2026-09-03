@@ -9,7 +9,7 @@ const end = computed(() => Math.min(props.page * props.pageSize, props.total))
 </script>
 
 <template>
-  <div class="flex flex-col items-center justify-between gap-3 text-xs text-task-muted sm:flex-row">
+  <div v-if="pageCount > 1" class="flex flex-col items-center justify-between gap-3 text-xs text-task-muted sm:flex-row">
     <span v-if="total">Showing {{ start }}–{{ end }} of {{ total }} {{ noun }}</span>
     <div class="flex items-center gap-2">
       <button type="button" class="tf-icon-button disabled:cursor-not-allowed disabled:opacity-40" :disabled="page <= 1" :aria-label="`Previous ${noun} page`" @click="go(page - 1)">‹</button>
