@@ -28,7 +28,7 @@ export const useReportsStore = () => {
   const statusFilter = useState('reports:status-filter', () => 'All statuses')
   const sort = useState<'newest' | 'oldest'>('reports:sort', () => 'newest')
   const typeFilter = useState('reports:type-filter', () => 'All types')
-  const dateFilter = useState('reports:date-filter', () => 'Last 30 days')
+  const dateFilter = useState('reports:date-filter', () => 'All time')
   const templates = useState<ReportTemplate[]>('reports:templates', () => fallbackReportTemplates.map(item => ({ ...item })))
   const summary = useState('reports:summary', () => ({ generated: 0, scheduled: 0, lastGenerated: 'No reports yet' }))
   const total = useState('reports:total', () => 0)
@@ -43,7 +43,7 @@ export const useReportsStore = () => {
     search.value = ''
     statusFilter.value = 'All statuses'
     typeFilter.value = 'All types'
-    dateFilter.value = 'Last 30 days'
+    dateFilter.value = 'All time'
     sort.value = 'newest'
     page.value = 1
   }

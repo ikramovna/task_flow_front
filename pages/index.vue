@@ -4,6 +4,7 @@ import type { AnalyticsCard, AnalyticsSummary, ApiChatMessage, ApiConversation }
 import GreetingCard from '~/components/GreetingCard.vue'
 import HelpPage from '~/components/pages/HelpPage.vue'
 import ReportsPage from '~/components/pages/ReportsPage.vue'
+import ReportPreviewModal from '~/components/reports/ReportPreviewModal.vue'
 import AppDatePicker from '~/components/ui/AppDatePicker.vue'
 import AppConfirmModal from '~/components/ui/AppConfirmModal.vue'
 import AppLoadingOverlay from '~/components/ui/AppLoadingOverlay.vue'
@@ -56,6 +57,8 @@ const finishTikoPageLoading = async (sequence: number, startedAt: number) => {
 const sidebarNavigationKey = ref(0)
 const settingsTab = ref<'profile' | 'security'>('profile')
 const modal = ref<ModalKey>(null)
+const reportPreview = ref<Record<string, any> | null>(null)
+const reportPreviewRow = ref<Array<string | number> | null>(null)
 type ConfirmationOptions = { title: string; message: string; confirmLabel?: string; cancelLabel?: string }
 const confirmation = ref<ConfirmationOptions | null>(null)
 let confirmationResolver: ((confirmed: boolean) => void) | null = null
@@ -4144,21 +4147,32 @@ const previewReport = async (report: Array<string | number>) => {
   if (String(report[4] || '').toLowerCase() !== 'ready') return notifyError('Report is still processing')
   const reportId = String(report[5] || '')
   if (!reportId) return notifyError('Report ID is missing')
-  const previewWindow = window.open('about:blank', '_blank')
-  if (!previewWindow) return notifyError('Allow popups to preview this report')
-  previewWindow.opener = null
-  previewWindow.document.title = 'Loading report...'
-  previewWindow.document.body.textContent = 'Loading report preview...'
   try {
     const blob = await taskFlowApi.previewReport(reportId)
-    const url = URL.createObjectURL(blob)
-    previewWindow.location.replace(url)
-    window.setTimeout(() => URL.revokeObjectURL(url), 60_000)
+    const contentType = String(blob.type || '').toLowerCase()
+    if (contentType.includes('pdf')) {
+      const url = URL.createObjectURL(blob)
+      window.open(url, '_blank', 'noopener,noreferrer')
+      window.setTimeout(() => URL.revokeObjectURL(url), 60_000)
+      return
+    }
+    const text = await blob.text()
+    const payload = JSON.parse(text)
+    reportPreview.value = payload && typeof payload === 'object' ? payload : { result: payload }
+    reportPreviewRow.value = report
   } catch (error) {
-    previewWindow.close()
     console.error('Report preview failed.', error)
     notifyError(taskFlowApiErrorMessage(error, 'Report preview failed'))
   }
+}
+
+const closeReportPreview = () => {
+  reportPreview.value = null
+  reportPreviewRow.value = null
+}
+
+const downloadPreviewedReport = () => {
+  if (reportPreviewRow.value) void downloadReport(reportPreviewRow.value)
 }
 
 const downloadReport = async (report: Array<string | number>) => {
@@ -5066,6 +5080,7 @@ const iconPath = (name: string) => {
       </div>
     </section>
 
+    <ReportPreviewModal v-if="reportPreview" :report="reportPreview" @close="closeReportPreview" @download="downloadPreviewedReport" />
     <AppConfirmModal v-if="confirmation" :title="confirmation.title" :message="confirmation.message" :confirm-label="confirmation.confirmLabel" :cancel-label="confirmation.cancelLabel" @confirm="settleConfirmation(true)" @cancel="settleConfirmation(false)" />
 
     <div v-if="modal" class="fixed inset-0 z-50 grid place-items-center bg-slate-900/45 p-3 backdrop-blur-[2px] sm:p-6" @click.self="closeModalFromBackdrop">

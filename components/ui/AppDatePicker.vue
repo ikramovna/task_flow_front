@@ -11,8 +11,10 @@ const props = withDefaults(defineProps<{
 
 const emit = defineEmits<{ 'update:modelValue': [value: string] }>()
 const root = ref<HTMLElement | null>(null)
+const popover = ref<HTMLElement | null>(null)
 const open = ref(false)
 const cursor = ref(new Date())
+const popoverStyle = ref<Record<string, string>>({})
 const weekdays = ['Mo', 'Tu', 'We', 'Th', 'Fr', 'Sa', 'Su']
 
 const parsedValue = computed(() => {
@@ -37,14 +39,24 @@ const calendar = computed(() => {
   }
 })
 
+const positionCalendar = () => {
+  if (!root.value) return
+  const rect = root.value.getBoundingClientRect()
+  const width = Math.min(280, window.innerWidth - 24)
+  const estimatedHeight = 314
+  const spaceBelow = window.innerHeight - rect.bottom
+  const top = spaceBelow >= estimatedHeight + 10
+    ? rect.bottom + 8
+    : Math.max(12, rect.top - estimatedHeight - 8)
+  const preferredLeft = props.align === 'right' ? rect.right - width : rect.left
+  const left = Math.max(12, Math.min(window.innerWidth - width - 12, preferredLeft))
+  popoverStyle.value = { position: 'fixed', top: `${top}px`, left: `${left}px`, width: `${width}px`, zIndex: '160' }
+}
+
 const revealCalendar = async () => {
   await nextTick()
   await new Promise<void>((resolve) => requestAnimationFrame(() => resolve()))
-  root.value?.querySelector<HTMLElement>('.tf-date-popover')?.scrollIntoView({
-    behavior: 'smooth',
-    block: 'nearest',
-    inline: 'nearest'
-  })
+  positionCalendar()
 }
 
 const openCalendar = async () => {
@@ -83,7 +95,8 @@ const isSelected = (day: number, month: number, year: number) => Boolean(
 )
 
 const closeOnOutside = (event: PointerEvent) => {
-  if (open.value && !root.value?.contains(event.target as Node)) open.value = false
+  const target = event.target as Node
+  if (open.value && !root.value?.contains(target) && !popover.value?.contains(target)) open.value = false
 }
 
 const closeOnEscape = (event: KeyboardEvent) => {
@@ -93,11 +106,15 @@ const closeOnEscape = (event: KeyboardEvent) => {
 onMounted(() => {
   document.addEventListener('pointerdown', closeOnOutside)
   document.addEventListener('keydown', closeOnEscape)
+  window.addEventListener('resize', positionCalendar)
+  window.addEventListener('scroll', positionCalendar, true)
 })
 
 onBeforeUnmount(() => {
   document.removeEventListener('pointerdown', closeOnOutside)
   document.removeEventListener('keydown', closeOnEscape)
+  window.removeEventListener('resize', positionCalendar)
+  window.removeEventListener('scroll', positionCalendar, true)
 })
 </script>
 
@@ -109,11 +126,13 @@ onBeforeUnmount(() => {
       <button type="button" class="absolute right-3 top-1/2 -translate-y-1/2 text-task-muted transition hover:text-task-blue" :aria-label="`Open ${label.toLowerCase()} calendar`" :aria-expanded="open" @click="open ? (open = false) : openCalendar()">
         <svg viewBox="0 0 24 24" class="h-5 w-5" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M8 2v4M16 2v4M3 10h18M5 5h14a2 2 0 0 1 2 2v12a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V7a2 2 0 0 1 2-2Z" /></svg>
       </button>
-      <div v-if="open" :class="['tf-date-popover', align === 'right' ? 'right-0 left-auto' : '']">
+      <Teleport to="body">
+      <div v-if="open" ref="popover" class="tf-date-popover" :style="popoverStyle">
         <div class="mb-3 flex items-center justify-between"><b class="text-sm">{{ calendar.label }}</b><div class="flex gap-1"><button type="button" class="tf-icon-button h-8 w-8" aria-label="Previous month" @click.stop="moveMonth(-1)">‹</button><button type="button" class="tf-icon-button h-8 w-8" aria-label="Next month" @click.stop="moveMonth(1)">›</button></div></div>
         <div class="mb-2 grid grid-cols-7 text-center text-[10px] font-semibold text-task-muted"><span v-for="day in weekdays" :key="day">{{ day }}</span></div>
         <div class="grid grid-cols-7 gap-1"><button v-for="cell in calendar.cells" :key="cell.key" type="button" :disabled="!cell.day" :class="['h-8 rounded-[8px] text-sm transition', cell.day ? 'hover:bg-task-blueSoft hover:text-task-blue' : 'pointer-events-none', isSelected(cell.day, cell.month, cell.year) ? 'bg-task-blue font-bold text-white' : isToday(cell.day, cell.month, cell.year) ? 'bg-task-danger font-bold text-white' : '']" @click="selectDate(cell.day, cell.month, cell.year)">{{ cell.day || '' }}</button></div>
       </div>
+      </Teleport>
     </div>
   </label>
 </template>
