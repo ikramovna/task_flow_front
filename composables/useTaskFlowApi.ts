@@ -183,7 +183,7 @@ type ReportPayload = {
   department: string
   name: string
   report_type: string
-  parameters: string
+  parameters: Record<string, string | null>
 }
 
 export type ApiConversation = {

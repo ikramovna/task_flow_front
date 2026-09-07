@@ -3681,12 +3681,10 @@ const submitModal = async () => {
         department: effectiveDepartmentId.value,
         name: title,
         report_type: reportTypeApiValues[reportType.value] || 'weekly_progress',
-        parameters: JSON.stringify({
+        parameters: {
           start_date: reportStartDate,
-          end_date: reportEndDate,
-          priority: reportPriority.value === 'All Priorities' ? null : projectEnum(reportPriority.value),
-          status: reportStatus.value === 'All Statuses' ? null : projectEnum(reportStatus.value)
-        })
+          end_date: reportEndDate
+        }
       })
       state.value.reports.unshift(taskFlowApi.mapReport(created))
       await loadReportsWorkspace()
@@ -5571,8 +5569,6 @@ const iconPath = (name: string) => {
             <div class="mt-4 grid gap-4 md:grid-cols-2">
               <AppDatePicker v-model="form.startDate" label="Start Date" />
               <AppDatePicker v-model="form.dueDate" label="End Date" align="right" />
-              <label class="text-sm font-semibold">Priority<AppSelect v-model="reportPriority" class="mt-2" :options="dropdownOptions.priority" button-class="tf-dropdown-button h-12" aria-label="Select report priority" /></label>
-              <label class="text-sm font-semibold">Status<AppSelect v-model="reportStatus" class="mt-2" :options="['All Statuses', 'Completed', 'In Progress', 'Not Started']" button-class="tf-dropdown-button h-12" aria-label="Select report status" /></label>
             </div>
           </template>
           <div :class="['flex justify-end gap-2.5 bg-white', modal === 'report' ? 'tf-report-modal-footer' : 'sticky bottom-0', modal === 'project' || modal === 'task' ? '-mx-5 -mb-5 mt-5 px-5 py-3' : modal === 'report' ? '-mx-1 mt-6 border-t border-task-line px-1 pb-1 pt-4' : modal === 'logout' ? '-mx-4 px-4 pt-4' : modal === 'event-detail' || modal === 'event-delete' || modal === 'member-profile' || modal === 'member-remove' ? '-mx-4 -mb-4 mt-7 border-t border-task-line px-4 py-3' : '-mx-4 -mb-4 mt-4 border-t border-task-line px-4 py-3']">
