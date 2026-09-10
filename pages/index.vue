@@ -3609,8 +3609,15 @@ const submitModal = async () => {
     taskSaving.value = true
     try {
       const { status: _status, progress: _progress, ...nonStatusPayload } = payload
+      const mainAssigneeStatusPayload = {
+        status,
+        progress: status === 'completed' ? 100 : Number(openedTask.value?.[5] || 0)
+      }
       const saved = editingTaskId.value
-        ? await taskFlowApi.patchTask(editingTaskId.value, openedTaskCanChangeStatus.value ? payload : nonStatusPayload)
+        ? await taskFlowApi.patchTask(
+            editingTaskId.value,
+            openedTaskCanChangeStatus.value ? mainAssigneeStatusPayload : nonStatusPayload
+          )
         : await taskFlowApi.createTask(payload)
       if (editingTaskId.value) replaceTaskRow(editingTaskId.value, taskFlowApi.mapTask(saved))
       else state.value.tasks.unshift(taskFlowApi.mapTask(saved))
