@@ -2126,7 +2126,7 @@ html:not(.tf-dark) .tf-shell:has(.tf-reports-page) .tf-report-modal-footer { bac
 
 .tf-app-modal textarea.tf-input {
   min-height: 84px;
-  height: 84px;
+  resize: vertical;
 }
 
 .tf-loading-fade-enter-active,

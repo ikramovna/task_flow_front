@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import type { Ref } from 'vue'
+import type { Directive, Ref } from 'vue'
 import type { AnalyticsCard, AnalyticsSummary, ApiChatMessage, ApiConversation } from '~/composables/useTaskFlowApi'
 import GreetingCard from '~/components/GreetingCard.vue'
 import HelpPage from '~/components/pages/HelpPage.vue'
@@ -16,6 +16,41 @@ import { greetingConfig } from '~/constants/greetings'
 import { taskFlowSidebarGroups, type TaskFlowPageKey } from '~/constants/navigation'
 
 type PageKey = TaskFlowPageKey
+const vKeepVisibleOnResize: Directive<HTMLTextAreaElement> = {
+  mounted(textarea) {
+    let resizing = false
+    let previousHeight = textarea.offsetHeight
+    const scrollContainer = textarea.closest('.tf-app-modal')?.querySelector<HTMLElement>('.overflow-y-auto')
+      || textarea.closest<HTMLElement>('.tf-support-panel')
+    const onPointerDown = (event: PointerEvent) => {
+      const bounds = textarea.getBoundingClientRect()
+      resizing = bounds.right - event.clientX <= 28 && bounds.bottom - event.clientY <= 28
+      previousHeight = textarea.offsetHeight
+    }
+    const onPointerUp = () => { resizing = false }
+    const observer = new ResizeObserver(() => {
+      const nextHeight = textarea.offsetHeight
+      if (resizing && scrollContainer && nextHeight > previousHeight) {
+        requestAnimationFrame(() => {
+          const overflow = textarea.getBoundingClientRect().bottom - scrollContainer.getBoundingClientRect().bottom + 16
+          if (overflow > 0) scrollContainer.scrollTop += overflow
+        })
+      }
+      previousHeight = nextHeight
+    })
+    textarea.addEventListener('pointerdown', onPointerDown)
+    window.addEventListener('pointerup', onPointerUp)
+    observer.observe(textarea)
+    ;(textarea as HTMLTextAreaElement & { resizeCleanup?: () => void }).resizeCleanup = () => {
+      observer.disconnect()
+      textarea.removeEventListener('pointerdown', onPointerDown)
+      window.removeEventListener('pointerup', onPointerUp)
+    }
+  },
+  unmounted(textarea) {
+    ;(textarea as HTMLTextAreaElement & { resizeCleanup?: () => void }).resizeCleanup?.()
+  }
+}
 type ModalKey = 'task' | 'project' | 'event' | 'event-detail' | 'event-delete' | 'report' | 'member' | 'member-profile' | 'member-remove' | 'analytics-user-tasks' | 'team-filter' | 'logout' | null
 type ProjectCardMember = {
   id?: string | number
@@ -5189,8 +5224,8 @@ const iconPath = (name: string) => {
               <div v-if="aiTaskAssistantOpen" class="border-t border-[#DDD2FF] px-4 pb-4 pt-3">
                 <label class="text-xs font-bold text-task-ink">Tell the assistant what you need</label>
                 <div class="relative mt-2">
-                  <textarea v-model="aiTaskPrompt" class="tf-input h-28 w-full resize-none py-3 pl-3 pr-12 leading-5" placeholder="Masalan: Dilafruzga landing page dizaynini juma kunigacha tayyorlash taskini ber, priority high." />
-                  <button type="button" :class="['absolute bottom-3 right-3 grid h-9 w-9 place-items-center rounded-[11px] transition', aiTaskListening ? 'animate-pulse bg-task-danger text-white' : 'bg-task-blueSoft text-task-blue hover:bg-task-blue hover:text-white']" :aria-label="aiTaskListening ? 'Stop listening' : 'Speak task request'" @click="toggleSmartTaskVoice"><svg viewBox="0 0 24 24" class="h-4 w-4" fill="none" stroke="currentColor" stroke-width="1.9"><rect x="9" y="3" width="6" height="12" rx="3"/><path d="M5.5 11.5a6.5 6.5 0 0 0 13 0M12 18v3m-4 0h8"/></svg></button>
+                  <textarea v-keep-visible-on-resize v-model="aiTaskPrompt" class="tf-input min-h-28 w-full resize-y py-3 pl-3 pr-12 leading-5" placeholder="Masalan: Dilafruzga landing page dizaynini juma kunigacha tayyorlash taskini ber, priority high." />
+                  <button type="button" :class="['absolute right-3 top-3 grid h-9 w-9 place-items-center rounded-[11px] transition', aiTaskListening ? 'animate-pulse bg-task-danger text-white' : 'bg-task-blueSoft text-task-blue hover:bg-task-blue hover:text-white']" :aria-label="aiTaskListening ? 'Stop listening' : 'Speak task request'" @click="toggleSmartTaskVoice"><svg viewBox="0 0 24 24" class="h-4 w-4" fill="none" stroke="currentColor" stroke-width="1.9"><rect x="9" y="3" width="6" height="12" rx="3"/><path d="M5.5 11.5a6.5 6.5 0 0 0 13 0M12 18v3m-4 0h8"/></svg></button>
                 </div>
                 <p v-if="aiTaskListening" class="mt-2 text-xs font-semibold text-task-danger">Listening… you can speak now.</p>
                 <p v-if="aiTaskError" class="mt-2 text-xs font-semibold text-task-danger">{{ aiTaskError }}</p>
@@ -5353,7 +5388,7 @@ const iconPath = (name: string) => {
             </div>
             <label class="mt-4 block text-sm font-semibold">
               Description
-              <textarea v-model="form.description" class="tf-input mt-2 h-28 w-full resize-none py-3" placeholder="Add task details, requirements, or notes..." />
+              <textarea v-keep-visible-on-resize v-model="form.description" class="tf-input mt-2 min-h-28 w-full resize-y py-3" placeholder="Add task details, requirements, or notes..." />
             </label>
           </template>
           <template v-else-if="modal === 'event'">
@@ -5459,7 +5494,7 @@ const iconPath = (name: string) => {
             </div>
             <label class="mt-3 block text-sm font-semibold">
               Description
-              <textarea v-model="form.description" class="tf-input mt-2 h-20 w-full resize-none py-3" placeholder="Describe project goals, scope, and objectives..." />
+              <textarea v-keep-visible-on-resize v-model="form.description" class="tf-input mt-2 min-h-20 w-full resize-y py-3" placeholder="Describe project goals, scope, and objectives..." />
             </label>
           </template>
           <template v-else-if="modal === 'project'">
@@ -5582,7 +5617,7 @@ const iconPath = (name: string) => {
             </div>
             <label class="mt-4 block text-sm font-semibold">
               Description
-              <textarea v-model="form.description" class="tf-input mt-2 h-24 w-full resize-none rounded-[14px] px-4 py-3 text-sm" placeholder="Describe project goals, scope, and objectives..." />
+              <textarea v-keep-visible-on-resize v-model="form.description" class="tf-input mt-2 min-h-24 w-full resize-y rounded-[14px] px-4 py-3 text-sm" placeholder="Describe project goals, scope, and objectives..." />
             </label>
           </template>
           <template v-else-if="modal === 'report'">
@@ -5593,7 +5628,7 @@ const iconPath = (name: string) => {
               <AppDatePicker v-model="form.dueDate" label="End Date" align="right" />
             </div>
           </template>
-          <div :class="['flex justify-end gap-2.5 bg-white', modal === 'report' ? 'tf-report-modal-footer' : 'sticky bottom-0', modal === 'project' || modal === 'task' ? '-mx-5 -mb-5 mt-5 px-5 py-3' : modal === 'report' ? '-mx-1 mt-6 border-t border-task-line px-1 pb-1 pt-4' : modal === 'logout' ? '-mx-4 px-4 pt-4' : modal === 'event-detail' || modal === 'event-delete' || modal === 'member-profile' || modal === 'member-remove' ? '-mx-4 -mb-4 mt-7 border-t border-task-line px-4 py-3' : '-mx-4 -mb-4 mt-4 border-t border-task-line px-4 py-3']">
+          <div :class="['flex justify-end gap-2.5 bg-white', modal === 'report' ? 'tf-report-modal-footer' : modal === 'project' || modal === 'task' || modal === 'event' ? '' : 'sticky bottom-0', modal === 'project' || modal === 'task' ? '-mx-5 -mb-5 mt-5 border-t border-task-line px-5 py-3' : modal === 'report' ? '-mx-1 mt-6 border-t border-task-line px-1 pb-1 pt-4' : modal === 'logout' ? '-mx-4 px-4 pt-4' : modal === 'event-detail' || modal === 'event-delete' || modal === 'member-profile' || modal === 'member-remove' ? '-mx-4 -mb-4 mt-7 border-t border-task-line px-4 py-3' : '-mx-4 -mb-4 mt-4 border-t border-task-line px-4 py-3']">
             <button v-if="modal === 'task' && editingTaskId && canDeleteOpenedTask" :disabled="taskSaving" class="mr-auto h-10 rounded-full border border-task-danger bg-white px-5 text-sm font-semibold text-task-danger transition hover:bg-task-dangerSoft disabled:cursor-not-allowed disabled:opacity-60" @click="deleteOpenedTask">Delete Task</button>
             <button v-if="modal === 'event-detail' && canCreateEvent" type="button" class="mr-auto h-10 rounded-full border border-task-danger bg-white px-5 text-sm font-semibold text-task-danger transition hover:bg-task-dangerSoft" @click="requestEventDelete">Delete Event</button>
             <button v-if="modal === 'task' && editingTaskId && taskFormStatus === 'Completed' && canManageDepartment" :disabled="taskSaving" class="mr-auto h-10 rounded-full border border-slate-300 bg-slate-50 px-5 text-sm font-semibold text-slate-600 transition hover:border-task-blue hover:bg-task-blueSoft hover:text-task-blue disabled:cursor-not-allowed disabled:opacity-60" @click="archiveOpenedTask">Archive</button>
@@ -5626,14 +5661,15 @@ const iconPath = (name: string) => {
         <label class="mt-4 block text-xs font-semibold text-task-ink">Tell us more</label>
         <div class="relative mt-2">
         <textarea
+          v-keep-visible-on-resize
           v-model="feedbackDraft"
-          class="tf-input h-36 w-full resize-none rounded-[13px] p-3 pb-8 text-sm leading-5 focus:ring-2 focus:ring-task-blue/15"
+          class="tf-input min-h-36 w-full resize-y rounded-[13px] p-3 text-sm leading-5 focus:ring-2 focus:ring-task-blue/15"
           placeholder="What happened, or what would you like us to improve?"
           maxlength="3000"
           :disabled="feedbackSending"
         />
-          <span class="pointer-events-none absolute bottom-2.5 right-3 text-[10px] text-task-muted">{{ feedbackDraft.length }}/3000</span>
         </div>
+        <p class="mt-1 text-right text-[10px] text-task-muted">{{ feedbackDraft.length }}/3000</p>
         <div class="mt-4 flex items-center gap-3"><button type="button" class="inline-flex h-10 items-center justify-center gap-2 rounded-[11px] border border-dashed border-task-line bg-white px-4 text-xs font-semibold text-task-muted transition hover:border-task-blue hover:text-task-blue disabled:cursor-not-allowed disabled:opacity-60" :disabled="feedbackSending" @click="attachFeedbackScreenshot"><svg viewBox="0 0 24 24" class="h-4 w-4" fill="none" stroke="currentColor" stroke-width="1.8"><path d="m8 12 5-5a3 3 0 0 1 4 4l-7 7a5 5 0 0 1-7-7l7-7" /></svg>{{ feedbackScreenshotName || 'Add screenshot' }}</button><span class="text-[10px] leading-4 text-task-muted">PNG, JPG up to 5 MB<br>or paste with ⌘/Ctrl + V</span></div>
         <input ref="feedbackScreenshotInput" class="hidden" type="file" accept="image/jpeg,image/png,image/webp" @change="handleFeedbackScreenshot" />
         <div v-if="feedbackScreenshotPreview" class="mt-3 flex items-center gap-3 rounded-ui border border-task-line p-2">
