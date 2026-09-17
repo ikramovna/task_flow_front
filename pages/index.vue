@@ -175,6 +175,10 @@ type AnalyticsStaffRow = {
 }
 const analyticsStaffRows = ref<AnalyticsStaffRow[]>([])
 const selectedAnalyticsStaff = ref<AnalyticsStaffRow | null>(null)
+const analyticsTaskRows = ref<Array<Array<string | number>>>([])
+const analyticsTasksLoading = ref(false)
+const analyticsTasksError = ref('')
+let analyticsTasksRequestSequence = 0
 const analyticsStaffTotal = ref(0)
 const analyticsStaffTotalPages = ref(1)
 const analyticsSummary = ref<AnalyticsSummary | null>(null)
@@ -331,7 +335,7 @@ const loadFilteredAnalytics = async () => {
       const staff = item.staff_member || item.staff_member_detail || item.employee || item.employee_detail || item.user || item.staff || {}
       const department = item.department || staff.department || {}
       return {
-        id: String(item.id ?? item.employee_id ?? staff.id ?? ''),
+        id: String(staff.id ?? item.employee_id ?? item.id ?? ''),
         name: String(item.full_name ?? item.name ?? staff.full_name ?? staff.name ?? staff.email ?? 'Member'),
         role: String(item.job_title ?? item.position ?? staff.job_title ?? staff.position ?? staff.role ?? 'Team member'),
         avatar: absoluteMediaUrl(item.avatar ?? item.avatar_url ?? item.profile_picture ?? staff.avatar ?? staff.avatar_url ?? staff.profile_picture),
@@ -967,7 +971,7 @@ const analyticsUserTasks = computed(() => {
   const selectedId = String(selected.id || '')
   const selectedName = selected.name.trim().toLowerCase()
 
-  return tasks.value.filter((task) => {
+  return analyticsTaskRows.value.filter((task) => {
     const assigneeName = String(task[1] || '').toLowerCase()
     if (selectedName && assigneeName.split(',').some(name => name.trim() === selectedName)) return true
     return selectedId && [task[9], task[13], task[18]].some((value) => {
@@ -981,15 +985,38 @@ const analyticsUserTasks = computed(() => {
     }) || String(task[17] || '') === selectedId
   })
 })
-const openAnalyticsUserTasks = (row: AnalyticsStaffRow) => {
+const openAnalyticsUserTasks = async (row: AnalyticsStaffRow) => {
+  const sequence = ++analyticsTasksRequestSequence
   selectedAnalyticsStaff.value = row
   modal.value = 'analytics-user-tasks'
+  analyticsTaskRows.value = []
+  analyticsTasksError.value = ''
+  analyticsTasksLoading.value = true
+  try {
+    const allTasks: Array<Array<string | number>> = []
+    let page = 1
+    let count = 0
+    do {
+      const response = await taskFlowApi.listTasks({ page, page_size: 100 })
+      if (sequence !== analyticsTasksRequestSequence) return
+      const items = taskFlowApi.listItems(response)
+      allTasks.push(...items.map(taskFlowApi.mapTask))
+      count = Number((response as { count?: number }).count ?? allTasks.length)
+      if (!items.length) break
+      page += 1
+    } while (allTasks.length < count)
+    analyticsTaskRows.value = allTasks
+  } catch (error) {
+    if (sequence === analyticsTasksRequestSequence) analyticsTasksError.value = taskFlowApiErrorMessage(error, 'Could not load staff tasks')
+  } finally {
+    if (sequence === analyticsTasksRequestSequence) analyticsTasksLoading.value = false
+  }
 }
 const handleAnalyticsStaffTableClick = (event: MouseEvent) => {
   const rowElement = (event.target as HTMLElement | null)?.closest('tbody tr') as HTMLTableRowElement | null
   if (!rowElement) return
   const row = analyticsWorkloadRows.value[rowElement.sectionRowIndex]
-  if (row) openAnalyticsUserTasks(row)
+  if (row) void openAnalyticsUserTasks(row)
 }
 const analyticsOverdueByStaff = computed(() => {
   const groups = new Map<string, Array<Array<string | number>>>()
@@ -5146,9 +5173,11 @@ const iconPath = (name: string) => {
             <div class="flex items-center gap-3 border-b border-task-line pb-4">
               <span class="relative grid h-12 w-12 shrink-0 place-items-center overflow-hidden rounded-full bg-task-blueSoft text-sm font-bold text-task-blue"><span>{{ initials(selectedAnalyticsStaff.name) }}</span><img v-if="selectedAnalyticsStaff.avatar" :src="selectedAnalyticsStaff.avatar" :alt="selectedAnalyticsStaff.name" class="absolute inset-0 h-full w-full object-cover" /></span>
               <div class="min-w-0"><h3 class="truncate font-bold text-task-ink">{{ selectedAnalyticsStaff.name }}</h3><p class="truncate text-xs text-task-muted">{{ selectedAnalyticsStaff.role }} · {{ selectedAnalyticsStaff.department }}</p></div>
-              <span class="ml-auto rounded-full bg-task-blueSoft px-3 py-1 text-xs font-bold text-task-blue">{{ analyticsUserTasks.length }} tasks</span>
+              <span class="ml-auto rounded-full bg-task-blueSoft px-3 py-1 text-xs font-bold text-task-blue">{{ analyticsTasksLoading ? 'Loading…' : `${analyticsUserTasks.length} tasks` }}</span>
             </div>
-            <div v-if="analyticsUserTasks.length" class="mb-2 mt-3 space-y-2 pb-4">
+            <div v-if="analyticsTasksLoading" class="py-10 text-center text-sm text-task-muted">Loading tasks…</div>
+            <div v-else-if="analyticsTasksError" class="mt-4 rounded-[14px] border border-task-danger/25 bg-task-dangerSoft/40 p-5 text-center"><p class="text-sm font-semibold text-task-danger">{{ analyticsTasksError }}</p><button type="button" class="mt-3 text-sm font-bold text-task-blue" @click="selectedAnalyticsStaff && openAnalyticsUserTasks(selectedAnalyticsStaff)">Try again</button></div>
+            <div v-else-if="analyticsUserTasks.length" class="mb-2 mt-3 space-y-2 pb-4">
               <button v-for="task in analyticsUserTasks" :key="String(task[6] || task[0])" type="button" class="flex w-full items-center gap-3 rounded-[13px] border border-task-line p-3 text-left transition hover:border-task-blue hover:bg-task-blueSoft/40" @click="openAnalyticsTaskDetails(task)">
                 <span :class="['h-2.5 w-2.5 shrink-0 rounded-full', String(task[3]).toLowerCase() === 'completed' ? 'bg-task-success' : String(task[3]).toLowerCase() === 'overdue' ? 'bg-task-danger' : 'bg-task-blue']" />
                 <span class="min-w-0 flex-1"><b class="block truncate text-sm text-task-ink">{{ task[0] }}</b><small class="mt-1 block text-xs text-task-muted">{{ task[3] || 'Not started' }} · Due {{ task[4] || '—' }}</small></span>

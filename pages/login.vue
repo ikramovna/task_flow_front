@@ -123,6 +123,13 @@ const submitLogin = async () => {
 
 <style scoped>
 .tf-auth-page {
+  display: grid;
+  place-items: center;
+  min-height: 100vh;
+  min-height: 100dvh;
+  width: 100%;
+  box-sizing: border-box;
+  padding: 32px 16px;
   --tf-page: #f5f7fb;
   --tf-surface: #ffffff;
   --tf-border: #e5eaf1;
@@ -133,6 +140,11 @@ const submitLogin = async () => {
     radial-gradient(circle at 82% 0%, color-mix(in srgb, var(--tf-accent) 8%, transparent), transparent 30rem),
     var(--tf-page);
   color-scheme: light;
+}
+
+.tf-auth-page > section {
+  width: 100%;
+  max-width: 520px;
 }
 
 .tf-auth-card {
