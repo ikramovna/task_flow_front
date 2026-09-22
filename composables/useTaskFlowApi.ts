@@ -559,7 +559,7 @@ export const useTaskFlowApi = () => {
     return refreshed.access
   }
 
-  const apiFetch = async <T>(path: string, options: Parameters<typeof $fetch<T>>[1] = {}, retry = true): Promise<T> => {
+  const apiFetch = async <T>(path: string, options: Parameters<typeof $fetch<T>>[1] = {}): Promise<T> => {
     const tokens = getStoredTokens()
     const headers = new Headers(options.headers as HeadersInit | undefined)
 
@@ -571,15 +571,9 @@ export const useTaskFlowApi = () => {
         headers
       })
     } catch (error: any) {
-      if (retry && error?.status === 401 && tokens?.refresh) {
-        const access = await refreshToken()
-        const retryHeaders = new Headers(options.headers as HeadersInit | undefined)
-        retryHeaders.set('Authorization', `Bearer ${access}`)
-
-        return await $fetch<T>(`${apiBase}${path}`, {
-          ...options,
-          headers: retryHeaders
-        })
+      if ((error?.status ?? error?.statusCode ?? error?.response?.status) === 401) {
+        logout()
+        await navigateTo('/login', { replace: true })
       }
 
       throw error
@@ -795,6 +789,9 @@ export const useTaskFlowApi = () => {
 
   const getMembersSummary = async () =>
     await apiFetch<MemberSummary>('/members/summary/')
+
+  const getMembersWorkload = async () =>
+    await apiFetch<unknown>('/members/workload/')
 
   const listDepartments = async () =>
     await apiFetch<ListResponse<ApiDepartment>>('/departments/?page_size=200')
@@ -1217,6 +1214,7 @@ export const useTaskFlowApi = () => {
     patchMember,
     deleteMember,
     getMembersSummary,
+    getMembersWorkload,
     listDepartments,
     listEvents,
     getEvent,

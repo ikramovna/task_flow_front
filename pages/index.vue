@@ -587,7 +587,7 @@ const dashboardStats = computed(() => {
   return [...renamedStats, [String(archivedTaskCount.value), 'Completed Tasks', archivedPercent]]
 })
 const taskViewMode = ref<'list' | 'kanban'>('kanban')
-const taskBoardSection = ref<'board' | 'backlog'>('board')
+const taskBoardSection = ref<'board' | 'backlog' | 'workload'>('board')
 const taskAttentionFilter = ref<'all' | 'overdue' | 'today' | 'on_hold' | 'unassigned'>('all')
 const draggedTaskId = ref('')
 const updatingTaskId = ref('')
@@ -4708,11 +4708,13 @@ const iconPath = (name: string) => {
             <div class="flex shrink-0 items-center gap-1 overflow-x-auto">
               <button type="button" :class="['inline-flex h-11 shrink-0 items-center gap-2 rounded-[10px] px-4 text-sm font-semibold transition', taskBoardSection === 'board' && taskViewMode === 'list' && taskScope !== 'archived' ? 'bg-task-blueSoft text-task-blue' : 'text-task-muted hover:text-task-blue']" @click="taskBoardSection = 'board'; taskViewMode = 'list'; taskScope === 'archived' && loadTaskScope('all')"><svg viewBox="0 0 20 20" class="h-4 w-4" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M6 5h11M6 10h11M6 15h11M3 5h.01M3 10h.01M3 15h.01" /></svg>List</button>
               <button type="button" :class="['inline-flex h-11 shrink-0 items-center gap-2 rounded-[10px] px-4 text-sm font-semibold transition', taskBoardSection === 'board' && taskViewMode === 'kanban' && taskScope !== 'archived' ? 'bg-task-blueSoft text-task-blue' : 'text-task-muted hover:text-task-blue']" @click="taskBoardSection = 'board'; taskViewMode = 'kanban'; taskScope === 'archived' && loadTaskScope('all')"><svg viewBox="0 0 20 20" class="h-4 w-4" fill="none" stroke="currentColor" stroke-width="1.7"><rect x="2.5" y="3" width="4" height="14" rx="1.2" /><rect x="8" y="3" width="4" height="9" rx="1.2" /><rect x="13.5" y="3" width="4" height="12" rx="1.2" /></svg>Kanban</button>
+              <button type="button" :aria-pressed="taskBoardSection === 'workload'" :class="['inline-flex h-11 shrink-0 items-center gap-2 rounded-lg px-4 text-sm font-semibold transition', taskBoardSection === 'workload' ? 'bg-task-blueSoft text-task-blue' : 'text-task-muted hover:text-task-blue']" @click="taskBoardSection = 'workload'; taskScope === 'archived' && loadTaskScope('all')"><svg viewBox="0 0 24 24" class="h-4 w-4" fill="none" stroke="currentColor" stroke-width="1.8"><path :d="iconPath('users')" /></svg>Team Overview</button>
               <button v-if="canAddTask && taskScope !== 'archived'" class="tf-primary ml-3 h-11 shrink-0 rounded-[11px] px-5" type="button" @click="openModal('task')"><svg viewBox="0 0 24 24" class="h-4 w-4" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 5v14M5 12h14" /></svg>New Task</button>
             </div>
           </div>
 
-          <div data-task-board class="tf-panel relative scroll-mt-4 p-4 sm:p-5">
+          <TeamWorkload v-if="taskBoardSection === 'workload'" />
+          <div v-else data-task-board class="tf-panel relative scroll-mt-4 p-4 sm:p-5">
             <div class="mb-5 flex flex-col gap-3 xl:flex-row xl:items-center xl:justify-between">
               <div class="flex flex-wrap items-center gap-2"><h2 class="text-lg font-bold">{{ taskScope === 'archived' ? 'Archived Tasks' : taskBoardSection === 'backlog' ? 'Postponed Tasks' : taskViewMode === 'kanban' ? 'Kanban Board' : 'All Active Tasks' }}</h2><span class="rounded-full bg-task-blueSoft px-2.5 py-1 text-[10px] font-extrabold text-task-blue">{{ filteredTasks.length }} tasks</span><span v-if="selectedTaskKeys.length && taskViewMode === 'list'" class="rounded-full bg-task-successSoft px-2.5 py-1 text-[10px] font-extrabold text-task-success">{{ selectedTaskKeys.length }} selected</span><button v-if="taskAttentionFilter !== 'all'" type="button" class="rounded-full bg-task-dangerSoft px-3 py-1 text-[10px] font-bold uppercase text-task-danger" @click="clearTaskAttentionFilter">{{ taskAttentionFilter.replace('_', ' ') }} ×</button></div>
               <div class="flex flex-col gap-2 sm:flex-row sm:flex-wrap sm:items-center">
