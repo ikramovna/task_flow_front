@@ -80,6 +80,7 @@ onBeforeUnmount(() => {
       <span role="status" :class="['tf-telegram-status rounded-full px-3 py-1 text-xs font-semibold', connected === true ? 'is-connected' : connected === false ? 'is-disconnected' : 'is-unknown']">{{ loading ? 'Checking…' : connected === true ? 'Connected' : connected === false ? 'Not connected' : 'Status unavailable' }}</span>
     </div>
     <p class="mt-3 text-sm text-task-muted">Connect Telegram to TaskFlow. Tiko works without a connection.</p>
+    <ProUpgradeCard inline />
     <div v-if="error" role="alert" class="tf-telegram-alert mt-4 flex items-center gap-3 rounded-xl px-4 py-3 text-sm">
       <svg viewBox="0 0 24 24" class="h-5 w-5 shrink-0" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true"><circle cx="12" cy="12" r="10" /><path d="M12 7v6m0 4h.01" /></svg>
       <span class="flex-1">{{ error }}</span>
