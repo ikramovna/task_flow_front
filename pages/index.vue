@@ -464,6 +464,8 @@ const {
   contactInfoOpen, contactInfoSection, isConversationMuted, toggleConversationMuted
 } = useMessagesStore()
 const feedbackDraft = ref('')
+const tikoMode = ref<'feedback' | 'task'>('feedback')
+const tikoTaskBusy = ref(false)
 const feedbackType = ref<'Bug' | 'Suggestion' | 'Feedback'>('Feedback')
 const feedbackScreenshotInput = ref<HTMLInputElement | null>(null)
 const feedbackScreenshotName = ref('')
@@ -4303,7 +4305,7 @@ const handleFeedbackScreenshot = (event: Event) => {
 }
 
 const handleFeedbackPaste = (event: ClipboardEvent) => {
-  if (!supportWidgetOpen.value || feedbackSending.value) return
+  if (!supportWidgetOpen.value || feedbackSending.value || tikoMode.value !== 'feedback') return
   const imageItem = Array.from(event.clipboardData?.items || []).find(item => item.kind === 'file' && item.type.startsWith('image/'))
   const pastedFile = imageItem?.getAsFile()
   if (!pastedFile) return
@@ -5677,14 +5679,19 @@ const iconPath = (name: string) => {
 
     <button v-if="supportWidgetOpen" type="button" class="fixed inset-0 z-[65] bg-transparent" aria-label="Close help support" @click="!feedbackSending && (supportWidgetOpen = false)" />
     <div ref="supportWidgetRoot" class="fixed bottom-5 right-5 z-[70] h-14 w-14" :style="supportWidgetStyle" @paste="handleFeedbackPaste">
-      <div v-if="supportWidgetOpen" :class="['tf-panel tf-support-panel absolute max-h-[calc(100dvh-116px)] w-[390px] max-w-[calc(100vw-32px)] overflow-x-hidden overflow-y-auto overscroll-contain p-5 shadow-2xl', supportPanelPlacement]">
+      <div v-show="supportWidgetOpen" :class="['tf-panel tf-support-panel absolute max-h-[calc(100dvh-116px)] w-[390px] max-w-[calc(100vw-32px)] overflow-x-hidden overflow-y-auto overscroll-contain p-5 shadow-2xl', supportPanelPlacement]">
         <div class="flex touch-none items-start justify-between gap-4" :class="supportWidgetDragging ? 'cursor-grabbing' : 'cursor-move'" @pointerdown="startSupportDrag">
           <div class="flex select-none items-center gap-3">
             <span class="grid h-14 w-14 shrink-0 place-items-center rounded-[16px] bg-gradient-to-br from-task-blueSoft to-white p-0.5 shadow-sm ring-1 ring-task-blue/15"><img src="/images/tiko-assistant.webp" width="192" height="192" alt="Tiko feedback assistant" class="h-full w-full object-contain" /></span>
-            <div><h2 class="text-lg font-extrabold text-task-ink">Tiko</h2><p class="mt-0.5 text-xs font-medium text-task-muted">Feedback Assistant</p></div>
+            <div><h2 class="text-lg font-extrabold text-task-ink">Tiko</h2><p class="mt-0.5 text-xs font-medium text-task-muted">{{ tikoMode === 'task' ? 'Task yaratish' : 'Feedback Assistant' }}</p></div>
           </div>
           <ModalCloseButton size="sm" label="Close support" :disabled="feedbackSending" @pointerdown.stop @click="supportWidgetOpen = false" />
         </div>
+        <div class="mt-4 grid grid-cols-2 gap-2" role="group" aria-label="Tiko rejimi">
+          <button v-for="mode in (['feedback', 'task'] as const)" :key="mode" type="button" class="min-h-10 rounded-ui border border-task-line text-sm font-semibold disabled:opacity-50" :class="tikoMode === mode ? 'bg-task-blue text-white' : 'text-task-muted'" :aria-pressed="tikoMode === mode" :disabled="feedbackSending || tikoTaskBusy" @click="tikoMode = mode">{{ mode === 'task' ? 'Task yaratish' : 'Feedback' }}</button>
+        </div>
+        <TikoTaskCreator v-show="tikoMode === 'task'" :active="supportWidgetOpen && tikoMode === 'task'" @busy="tikoTaskBusy = $event" />
+        <div v-show="tikoMode === 'feedback'">
         <div class="mt-4"><p class="text-sm font-bold text-task-ink">Something not working as expected?</p><p class="mt-1 text-xs leading-5 text-task-muted">Report an issue or share an idea with us.</p></div>
         <div class="tf-support-type-tabs mt-4 grid grid-cols-3 overflow-hidden rounded-[12px] border border-task-line bg-slate-50/70 p-1">
           <button v-for="type in ['Bug', 'Suggestion', 'Feedback']" :key="type" type="button" :class="['tf-support-type flex h-10 items-center justify-center gap-2 rounded-[9px] text-xs font-semibold transition', feedbackType === type ? 'is-active bg-gradient-to-b from-[#4B91EB] to-[#2768C7] text-white shadow-button' : 'text-task-muted hover:bg-white hover:text-task-blue']" @click="feedbackType = type as typeof feedbackType"><svg v-if="type === 'Bug'" viewBox="0 0 24 24" class="h-4 w-4" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M8 9h8v9a4 4 0 0 1-8 0V9Zm-2 4H3m18 0h-3M8 7 6 5m10 2 2-2M9 3h6v4H9V3Z" /></svg><svg v-else-if="type === 'Suggestion'" viewBox="0 0 24 24" class="h-4 w-4" fill="none" stroke="currentColor" stroke-width="1.8"><path d="m12 3 1.2 3.8L17 8l-3.8 1.2L12 13l-1.2-3.8L7 8l3.8-1.2L12 3Zm6 10 .8 2.2L21 16l-2.2.8L18 19l-.8-2.2L15 16l2.2-.8L18 13Z" /></svg><svg v-else viewBox="0 0 24 24" class="h-4 w-4" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M5 4h14a2 2 0 0 1 2 2v9a2 2 0 0 1-2 2H9l-5 4v-4H5a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2Z" /></svg>{{ type }}</button>
@@ -5718,6 +5725,7 @@ const iconPath = (name: string) => {
           <svg v-else viewBox="0 0 24 24" class="h-5 w-5" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M22 2 11 13M22 2l-7 20-4-9-9-4 20-7Z" /></svg>
           {{ feedbackSending ? 'Sending...' : 'Send Feedback →' }}
         </button>
+        </div>
       </div>
       <button type="button" :class="['tf-support-launcher touch-none select-none', supportWidgetOpen ? 'is-open' : '', supportWidgetDragging ? 'is-dragging cursor-grabbing scale-105' : 'cursor-grab']" aria-label="Open or move Tiko support" title="Drag to move · Click to open" @dragstart.prevent @pointerdown="startSupportDrag" @click="toggleSupportWidget">
         <span class="tf-support-greeting" aria-hidden="true"><b>Hi! I'm Tiko 👋</b><small>Ask Tiko <i>✦</i></small></span>

@@ -71,6 +71,10 @@ type ApiTask = {
   archived_by?: string | number | UserBrief | null
 }
 
+export type AiTaskResponse =
+  | { status: 'created'; task: ApiTask & { assignee_name?: string }; message?: string; transcript?: string }
+  | { status: 'needs_clarification'; message: string; transcript?: string }
+
 type TaskPayload = {
   department?: string
   project?: string | null
@@ -671,6 +675,19 @@ export const useTaskFlowApi = () => {
   const patchNotificationPreferences = async (preference: Partial<NotificationPreferences>) =>
     await apiFetch<NotificationPreferences>('/me/preferences/', { method: 'PATCH', body: preference })
 
+  const createAiTask = async (requestId: string, input: { text: string; audio?: never } | { audio: Blob; text?: never }) => {
+    let body: FormData | { request_id: string; text: string }
+    if (input.audio) {
+      body = new FormData()
+      body.append('request_id', requestId)
+      const extension = input.audio.type.includes('mp4') ? 'mp4' : input.audio.type.includes('ogg') ? 'ogg' : 'webm'
+      body.append('audio', input.audio, `voice.${extension}`)
+    } else {
+      body = { request_id: requestId, text: input.text! }
+    }
+    return await apiFetch<AiTaskResponse>('/ai/tasks/', { method: 'POST', body, retry: 0 })
+  }
+
   const sendSupportMessage = async (message: string, screenshot?: File | null) => {
     const form = new FormData()
     form.append('message', message.trim())
@@ -1205,6 +1222,7 @@ export const useTaskFlowApi = () => {
     getNotificationPreferences,
     patchNotificationPreferences,
     sendSupportMessage,
+    createAiTask,
     updateMe,
     listProjects,
     listMembers,
