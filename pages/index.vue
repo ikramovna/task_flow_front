@@ -4579,6 +4579,8 @@ const iconPath = (name: string) => {
               </button>
             </div>
           </section>
+          <ProUpgradeCard v-if="!sidebarCollapsed" compact />
+          <button v-else type="button" class="mx-auto my-3 grid h-10 w-10 place-items-center rounded-xl bg-gradient-to-br from-[#174695] to-[#1a66cc] text-[#ffe59c]" title="Upgrade to Pro" aria-label="Upgrade to Pro" @click="setPage('settings')"><svg viewBox="0 0 24 24" class="h-5 w-5" fill="none" stroke="currentColor" stroke-width="1.8"><path d="m3 7 4.5 4L12 4l4.5 7L21 7l-2 12H5L3 7Z" /><path d="M6 16h12" /></svg></button>
           <div :class="['tf-sidebar-user sticky bottom-0 z-10 mt-3 shrink-0 bg-white', sidebarCollapsed ? 'flex-col justify-center p-1.5' : '']">
           <button type="button" :class="['flex min-w-0 items-center gap-2 text-left', sidebarCollapsed ? 'justify-center' : 'flex-1']" :title="sidebarCollapsed ? profileName : undefined" @click="setPage('settings')">
             <span class="tf-sidebar-avatar">
@@ -5112,6 +5114,7 @@ const iconPath = (name: string) => {
         </section>
 
         <section v-else-if="activePage === 'settings'" class="tf-settings-page space-y-5">
+          <ProUpgradeCard />
           <div class="tf-settings-heading">
             <h1 class="text-3xl font-extrabold tracking-[-0.03em] text-task-ink">Settings</h1>
             <p class="mt-1 text-sm text-task-muted">Manage your profile, security, and connected account.</p>
