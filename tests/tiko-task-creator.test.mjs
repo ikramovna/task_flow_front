@@ -6,7 +6,7 @@ import { runInNewContext } from 'node:vm'
 
 const source = readFileSync(new URL('../components/TikoTaskCreator.vue', import.meta.url), 'utf8')
   .split('<script setup lang="ts">')[1].split('</script>')[0].replace(/^import type .*$/gm, '')
-const script = stripTypeScriptTypes(source) + '\n;({text,audio,result,error,sending,submit,startRecording,stopRecording})'
+const script = stripTypeScriptTypes(source) + '\n;({text,audio,result,error,sending,submit,startRecording,stopRecording,acceptAudio,uploadAudio})'
 function setup(respond, mediaDevices) {
   const calls = []
   let refreshed = 0
@@ -83,4 +83,33 @@ test('closing while permission is pending releases the acquired microphone', asy
   resolve({ getTracks: () => [{ stop: () => stopped++ }] })
   await start
   assert.equal(stopped, 1)
+})
+
+test('20 MB audio is accepted; larger or empty audio is rejected', () => {
+  const ui = setup(() => {})
+  const max = new Blob([new Uint8Array(20 * 1024 * 1024)], { type: 'audio/webm' })
+  assert.equal(ui.acceptAudio(max), true)
+  assert.equal(ui.acceptAudio(new Blob([max, 'x'])), false)
+  assert.match(ui.error.value, /20 MB/)
+  assert.equal(ui.acceptAudio(new Blob([])), false)
+  assert.equal(ui.audio.value, max)
+})
+
+test('oversized audio cannot be submitted even when assigned directly', async () => {
+  const ui = setup(() => {})
+  ui.audio.value = new Blob([new Uint8Array(20 * 1024 * 1024 + 1)])
+  await ui.submit()
+  assert.equal(ui.calls.length, 0)
+})
+
+test('microphone denial still allows an audio upload', async () => {
+  const ui = setup(() => ({ status: 'needs_clarification', message: 'Who?' }), {
+    getUserMedia: async () => { throw Object.assign(new Error('denied'), { name: 'NotAllowedError' }) },
+  })
+  await ui.startRecording()
+  assert.match(ui.error.value, /upload an audio file/)
+  const file = new File(['audio'], 'request.mp3', { type: 'audio/mpeg' })
+  ui.uploadAudio({ target: { files: [file], value: 'request.mp3' } })
+  await ui.submit()
+  assert.equal(ui.calls[0][1].audio, file)
 })

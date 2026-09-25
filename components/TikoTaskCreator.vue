@@ -8,6 +8,31 @@ const store = useTaskFlowStore()
 const text = ref('')
 const audio = shallowRef<Blob | null>(null)
 const audioUrl = ref('')
+const audioInput = ref<HTMLInputElement | null>(null)
+const maxAudioBytes = 20 * 1024 * 1024
+const acceptAudio = (blob: Blob) => {
+  if (!blob.size || blob.size > maxAudioBytes) {
+    error.value = blob.size ? 'Audio must be 20 MB or smaller.' : 'The audio file is empty. Please choose another file.'
+    return false
+  }
+  clearAudio()
+  audio.value = blob
+  audioUrl.value = URL.createObjectURL(blob)
+  error.value = ''
+  result.value = null
+  return true
+}
+const uploadAudio = (event: Event) => {
+  const input = event.target as HTMLInputElement
+  const file = input.files?.[0]
+  input.value = ''
+  if (!file || busy.value) return
+  if (!file.type.startsWith('audio/') && !/\.(webm|mp3|mp4|m4a|wav|ogg|oga|aac|flac)$/i.test(file.name)) {
+    error.value = 'Please choose an audio file.'
+    return
+  }
+  acceptAudio(file)
+}
 const recording = ref(false)
 const starting = ref(false)
 const stopping = ref(false)
@@ -74,7 +99,18 @@ const startRecording = async () => {
     recorder = capture
     const chunks: Blob[] = []
     let failed = false
-    capture.ondataavailable = event => { if (event.data.size) chunks.push(event.data) }
+    let recordedBytes = 0
+    capture.ondataavailable = event => {
+      if (failed || !event.data.size) return
+      recordedBytes += event.data.size
+      if (recordedBytes > maxAudioBytes) {
+        failed = true
+        error.value = 'Recording exceeded 20 MB. Please record a shorter message.'
+        stopRecording()
+        return
+      }
+      chunks.push(event.data)
+    }
     capture.onerror = () => {
       failed = true
       error.value = 'Could not record audio. Try again or enter your request as text.'
@@ -87,19 +123,17 @@ const startRecording = async () => {
       if (disposed || failed) return
       const blob = new Blob(chunks, { type: capture.mimeType || chunks[0]?.type || 'audio/webm' })
       if (!blob.size) { error.value = 'No audio was recorded. Please try again.'; return }
-      clearAudio()
-      audio.value = blob
-      audioUrl.value = URL.createObjectURL(blob)
+      acceptAudio(blob)
     }
-    capture.start()
+    capture.start(1000)
     clearAudio()
     result.value = null
     recording.value = true
   } catch (cause: any) {
     releaseStream()
     error.value = cause?.name === 'NotAllowedError'
-      ? 'Microphone access was denied. Allow access in your browser settings or enter your request as text.'
-      : 'Could not start the microphone. Check your device or enter your request as text.'
+      ? 'Microphone access was denied. You can type your request or upload an audio file instead.'
+      : 'Could not start the microphone. You can type your request or upload an audio file instead.'
   } finally {
     if (version === captureVersion) starting.value = false
   }
@@ -112,6 +146,10 @@ onBeforeUnmount(() => {
 })
 const submit = async () => {
   if (busy.value || (!audio.value && !text.value.trim())) return
+  if (audio.value && audio.value.size > maxAudioBytes) {
+    error.value = 'Audio must be 20 MB or smaller.'
+    return
+  }
   sending.value = true
   error.value = ''
   result.value = null
@@ -156,6 +194,9 @@ const submit = async () => {
       <svg viewBox="0 0 24 24" class="h-5 w-5" :class="recording ? 'text-red-500 animate-pulse' : 'text-task-blue'" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true"><rect x="9" y="2" width="6" height="12" rx="3" /><path d="M5 10v2a7 7 0 0 0 14 0v-2M12 19v3m-4 0h8" /></svg>
       {{ starting ? 'Waiting for microphone…' : stopping ? 'Preparing recording…' : recording ? 'Stop recording' : 'Record voice' }}
     </button>
+    <button type="button" class="min-h-10 rounded-ui border border-task-line px-3 text-sm disabled:opacity-50" :disabled="busy" @click="audioInput?.click()">Upload audio</button>
+    <input ref="audioInput" type="file" accept="audio/*,.webm,.mp4,.m4a" class="hidden" aria-label="Upload audio" :disabled="busy" @change="uploadAudio" />
+    <p class="text-xs text-task-muted">Audio files up to 20 MB. Telegram is not required to create tasks.</p>
     <p v-if="recording" role="status" class="text-xs text-red-500">Recording…</p>
     <div v-if="audioUrl" class="space-y-2">
       <audio :src="audioUrl" controls class="w-full" />
@@ -168,6 +209,7 @@ const submit = async () => {
       <p class="mt-2 text-xs text-task-muted">Please send the complete, corrected request again.</p>
     </div>
     <div v-if="task" role="status" class="space-y-2 rounded-ui border border-task-line p-3 text-sm">
+      <p v-if="result?.message" class="whitespace-pre-line">{{ result.message }}</p>
       <p class="font-bold">Task created: {{ task.title }}</p>
       <p>Assignee: {{ assignee }}</p>
       <p>Deadline: {{ deadline }}</p>

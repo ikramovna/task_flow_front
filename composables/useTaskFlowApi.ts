@@ -681,12 +681,16 @@ export const useTaskFlowApi = () => {
       body = new FormData()
       body.append('request_id', requestId)
       const extension = input.audio.type.includes('mp4') ? 'mp4' : input.audio.type.includes('ogg') ? 'ogg' : 'webm'
-      body.append('audio', input.audio, `voice.${extension}`)
+      body.append('audio', input.audio, input.audio instanceof File ? input.audio.name : `voice.${extension}`)
     } else {
       body = { request_id: requestId, text: input.text! }
     }
     return await apiFetch<AiTaskResponse>('/ai/tasks/', { method: 'POST', body, retry: 0 })
   }
+
+  const getTelegramConnection = () => apiFetch<{ connected: boolean }>('/me/telegram/')
+  const connectTelegram = () => apiFetch<{ connect_url: string }>('/me/telegram/', { method: 'POST', retry: 0 })
+  const disconnectTelegram = () => apiFetch('/me/telegram/', { method: 'DELETE', retry: 0 })
 
   const sendSupportMessage = async (message: string, screenshot?: File | null) => {
     const form = new FormData()
@@ -1223,6 +1227,9 @@ export const useTaskFlowApi = () => {
     patchNotificationPreferences,
     sendSupportMessage,
     createAiTask,
+    getTelegramConnection,
+    connectTelegram,
+    disconnectTelegram,
     updateMe,
     listProjects,
     listMembers,
