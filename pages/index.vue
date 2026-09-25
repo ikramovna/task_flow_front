@@ -4579,8 +4579,8 @@ const iconPath = (name: string) => {
               </button>
             </div>
           </section>
-          <ProUpgradeCard v-if="!sidebarCollapsed" compact />
-          <button v-else type="button" class="mx-auto my-3 grid h-10 w-10 place-items-center rounded-xl bg-gradient-to-br from-[#174695] to-[#1a66cc] text-[#ffe59c]" title="Upgrade to Pro" aria-label="Upgrade to Pro" @click="setPage('settings')"><svg viewBox="0 0 24 24" class="h-5 w-5" fill="none" stroke="currentColor" stroke-width="1.8"><path d="m3 7 4.5 4L12 4l4.5 7L21 7l-2 12H5L3 7Z" /><path d="M6 16h12" /></svg></button>
+          <ProUpgradeCard v-if="!sidebarCollapsed" variant="sidebar" />
+          <ProUpgradeCard v-else variant="icon" />
           <div :class="['tf-sidebar-user sticky bottom-0 z-10 mt-3 shrink-0 bg-white', sidebarCollapsed ? 'flex-col justify-center p-1.5' : '']">
           <button type="button" :class="['flex min-w-0 items-center gap-2 text-left', sidebarCollapsed ? 'justify-center' : 'flex-1']" :title="sidebarCollapsed ? profileName : undefined" @click="setPage('settings')">
             <span class="tf-sidebar-avatar">
@@ -5114,7 +5114,6 @@ const iconPath = (name: string) => {
         </section>
 
         <section v-else-if="activePage === 'settings'" class="tf-settings-page space-y-5">
-          <ProUpgradeCard />
           <div class="tf-settings-heading">
             <h1 class="text-3xl font-extrabold tracking-[-0.03em] text-task-ink">Settings</h1>
             <p class="mt-1 text-sm text-task-muted">Manage your profile, security, and connected account.</p>
@@ -5122,9 +5121,10 @@ const iconPath = (name: string) => {
 
           <div class="tf-settings-grid grid items-start gap-4 xl:grid-cols-[minmax(0,1.15fr)_minmax(0,.85fr)]">
             <div class="tf-panel tf-profile-panel p-5 sm:p-6">
-              <div class="tf-settings-card-heading flex items-start gap-4 border-b border-task-line pb-5">
+              <div class="tf-settings-card-heading flex flex-wrap items-start gap-4 border-b border-task-line pb-5">
                 <span class="tf-settings-icon grid h-12 w-12 shrink-0 place-items-center rounded-2xl bg-task-blueSoft text-task-blue"><svg viewBox="0 0 24 24" class="h-6 w-6" fill="none" stroke="currentColor" stroke-width="1.8"><circle cx="12" cy="7" r="3" /><path d="M5 21v-2a7 7 0 0 1 14 0v2" /></svg></span>
-                <div><h2 class="text-lg font-bold">Personal information</h2><p class="mt-1 text-sm text-task-muted">Keep your profile details up to date.</p></div>
+                <div class="min-w-0 flex-1"><h2 class="text-lg font-bold">Personal information</h2><p class="mt-1 text-sm text-task-muted">Keep your profile details up to date.</p></div>
+                <ProUpgradeCard variant="header" />
               </div>
               <div class="mt-5 flex flex-col gap-5 sm:flex-row sm:items-center">
                 <div class="relative shrink-0"><input ref="profileAvatarInput" class="hidden" type="file" accept="image/*" @change="handleProfileAvatar" /><button type="button" class="group relative block h-28 w-28 rounded-full" aria-label="Change profile image" @click="chooseProfileAvatar"><span class="grid h-full w-full place-items-center overflow-hidden rounded-full bg-gradient-to-br from-task-blueSoft to-[#D8E7F8] text-2xl font-bold text-task-blue ring-4 ring-white shadow-lg"><img v-if="profileAvatarPreview" :src="profileAvatarPreview" alt="Profile avatar preview" class="h-full w-full object-cover transition group-hover:brightness-90" /><span v-else>{{ profileFormInitials }}</span></span><span class="absolute bottom-0 right-0 grid h-10 w-10 place-items-center rounded-full border-4 border-white bg-task-blue text-white shadow-lg"><svg viewBox="0 0 24 24" class="h-4 w-4" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 8h4l2-3h4l2 3h4v11H4V8Z" /><circle cx="12" cy="13" r="3" /></svg></span></button></div>
@@ -5697,8 +5697,17 @@ const iconPath = (name: string) => {
         <div class="mt-4 grid grid-cols-2 gap-2" role="group" aria-label="Tiko mode">
           <button v-for="mode in (['feedback', 'task'] as const)" :key="mode" type="button" class="min-h-10 rounded-ui border border-task-line text-sm font-semibold disabled:opacity-50" :class="tikoMode === mode ? 'bg-task-blue text-white' : 'text-task-muted'" :aria-pressed="tikoMode === mode" :disabled="feedbackSending || tikoTaskBusy" @click="tikoMode = mode">{{ mode === 'task' ? 'Create task' : 'Feedback' }}</button>
         </div>
-        <TikoTaskCreator v-show="tikoMode === 'task'" :active="supportWidgetOpen && tikoMode === 'task'" @busy="tikoTaskBusy = $event" />
-        <div v-show="tikoMode === 'feedback'">
+        <div v-if="tikoMode === 'task'" class="tf-tiko-task-pro relative mt-4 overflow-hidden rounded-[14px]">
+          <div class="tf-tiko-task-locked-content" inert aria-hidden="true"><TikoTaskCreator :active="false" /></div>
+          <div class="tf-tiko-task-lock-overlay">
+            <span class="mx-auto grid h-11 w-11 place-items-center rounded-xl bg-task-blueSoft text-task-blue"><svg viewBox="0 0 24 24" class="h-5 w-5" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true"><rect x="5" y="10" width="14" height="11" rx="2" /><path d="M8 10V7a4 4 0 0 1 8 0v3" /></svg></span>
+            <h3 class="mt-3 text-base font-bold text-task-ink">Create tasks faster with Tiko</h3>
+            <p class="mt-2 text-xs leading-5 text-task-muted">Turn a text or voice request into a task with an assignee and deadline.</p>
+            <ProUpgradeCard class="mt-4" variant="unlock" />
+            <p class="mt-3 text-[11px] text-task-muted">Tiko AI is part of Pro. Activation is coming soon.</p>
+          </div>
+        </div>
+        <div v-else>
         <div class="mt-4"><p class="text-sm font-bold text-task-ink">Something not working as expected?</p><p class="mt-1 text-xs leading-5 text-task-muted">Report an issue or share an idea with us.</p></div>
         <div class="tf-support-type-tabs mt-4 grid grid-cols-3 overflow-hidden rounded-[12px] border border-task-line bg-slate-50/70 p-1">
           <button v-for="type in ['Bug', 'Suggestion', 'Feedback']" :key="type" type="button" :class="['tf-support-type flex h-10 items-center justify-center gap-2 rounded-[9px] text-xs font-semibold transition', feedbackType === type ? 'is-active bg-gradient-to-b from-[#4B91EB] to-[#2768C7] text-white shadow-button' : 'text-task-muted hover:bg-white hover:text-task-blue']" @click="feedbackType = type as typeof feedbackType"><svg v-if="type === 'Bug'" viewBox="0 0 24 24" class="h-4 w-4" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M8 9h8v9a4 4 0 0 1-8 0V9Zm-2 4H3m18 0h-3M8 7 6 5m10 2 2-2M9 3h6v4H9V3Z" /></svg><svg v-else-if="type === 'Suggestion'" viewBox="0 0 24 24" class="h-4 w-4" fill="none" stroke="currentColor" stroke-width="1.8"><path d="m12 3 1.2 3.8L17 8l-3.8 1.2L12 13l-1.2-3.8L7 8l3.8-1.2L12 3Zm6 10 .8 2.2L21 16l-2.2.8L18 19l-.8-2.2L15 16l2.2-.8L18 13Z" /></svg><svg v-else viewBox="0 0 24 24" class="h-4 w-4" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M5 4h14a2 2 0 0 1 2 2v9a2 2 0 0 1-2 2H9l-5 4v-4H5a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2Z" /></svg>{{ type }}</button>
