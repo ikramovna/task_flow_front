@@ -4619,7 +4619,8 @@ const iconPath = (name: string) => {
           <button type="button" class="tf-icon-button md:hidden" aria-label="Open menu" @click="mobileSidebarOpen = true">
             <svg viewBox="0 0 24 24" class="h-5 w-5" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M4 7h16M4 12h16M4 17h16" /></svg>
           </button>
-          <div class="tf-app-title relative z-10 flex min-w-0 flex-1 items-center gap-3.5">
+          <button v-if="activePage === 'settings'" type="button" class="relative z-10 flex min-w-0 flex-1 items-center" aria-label="Go to dashboard" @click="setPage('dashboard')"><img src="/taskflow-logo-compact.webp" width="480" height="146" alt="TaskFlow" class="h-10 w-auto max-w-[160px] object-contain object-left" /></button>
+          <div v-else class="tf-app-title relative z-10 flex min-w-0 flex-1 items-center gap-3.5">
             <span v-if="activePage !== 'dashboard'" :class="['grid h-11 w-11 shrink-0 place-items-center rounded-[14px] bg-gradient-to-br shadow-sm ring-1 ring-white/70', pageAccentClass]">
               <svg viewBox="0 0 24 24" class="h-5 w-5" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path :d="iconPath(pageIconName)" /></svg>
             </span>
@@ -5110,42 +5111,44 @@ const iconPath = (name: string) => {
           </div>
         </section>
 
-        <section v-else-if="activePage === 'settings'" class="space-y-4">
-          <div class="tf-panel relative overflow-hidden px-6 py-7 sm:px-8">
-            <div class="relative z-10"><h2 class="text-2xl font-bold tracking-[-0.02em]">Account Settings</h2><p class="mt-2 text-sm text-task-muted">Update your profile information and password to keep your account secure.</p></div>
-            <div class="absolute inset-y-0 right-0 w-80 bg-gradient-to-l from-task-blueSoft to-transparent" />
-            <svg viewBox="0 0 120 120" class="absolute right-8 top-1/2 h-28 w-28 -translate-y-1/2 text-task-blue opacity-20" fill="none" stroke="currentColor" stroke-width="5"><path d="M60 8 99 24v30c0 25-15 46-39 58C36 100 21 79 21 54V24L60 8Z" /><rect x="44" y="52" width="32" height="27" rx="5" /><path d="M50 52v-8a10 10 0 0 1 20 0v8" /></svg>
+        <section v-else-if="activePage === 'settings'" class="tf-settings-page space-y-5">
+          <div class="tf-settings-heading">
+            <h1 class="text-3xl font-extrabold tracking-[-0.03em] text-task-ink">Settings</h1>
+            <p class="mt-1 text-sm text-task-muted">Manage your profile, security, and connected account.</p>
           </div>
 
-          <div class="tf-settings-grid grid items-stretch gap-4 xl:grid-cols-[1.15fr_.85fr]">
-            <div class="tf-panel tf-profile-panel h-full p-5 sm:p-7">
-              <div class="flex flex-col gap-5 sm:flex-row sm:items-center">
+          <div class="tf-settings-grid grid items-start gap-4 xl:grid-cols-[minmax(0,1.15fr)_minmax(0,.85fr)]">
+            <div class="tf-panel tf-profile-panel p-5 sm:p-6">
+              <div class="tf-settings-card-heading flex items-start gap-4 border-b border-task-line pb-5">
+                <span class="tf-settings-icon grid h-12 w-12 shrink-0 place-items-center rounded-2xl bg-task-blueSoft text-task-blue"><svg viewBox="0 0 24 24" class="h-6 w-6" fill="none" stroke="currentColor" stroke-width="1.8"><circle cx="12" cy="7" r="3" /><path d="M5 21v-2a7 7 0 0 1 14 0v2" /></svg></span>
+                <div><h2 class="text-lg font-bold">Personal information</h2><p class="mt-1 text-sm text-task-muted">Keep your profile details up to date.</p></div>
+              </div>
+              <div class="mt-5 flex flex-col gap-5 sm:flex-row sm:items-center">
                 <div class="relative shrink-0"><input ref="profileAvatarInput" class="hidden" type="file" accept="image/*" @change="handleProfileAvatar" /><button type="button" class="group relative block h-28 w-28 rounded-full" aria-label="Change profile image" @click="chooseProfileAvatar"><span class="grid h-full w-full place-items-center overflow-hidden rounded-full bg-gradient-to-br from-task-blueSoft to-[#D8E7F8] text-2xl font-bold text-task-blue ring-4 ring-white shadow-lg"><img v-if="profileAvatarPreview" :src="profileAvatarPreview" alt="Profile avatar preview" class="h-full w-full object-cover transition group-hover:brightness-90" /><span v-else>{{ profileFormInitials }}</span></span><span class="absolute bottom-0 right-0 grid h-10 w-10 place-items-center rounded-full border-4 border-white bg-task-blue text-white shadow-lg"><svg viewBox="0 0 24 24" class="h-4 w-4" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 8h4l2-3h4l2 3h4v11H4V8Z" /><circle cx="12" cy="13" r="3" /></svg></span></button></div>
-                <div class="min-w-0 flex-1"><h3 class="truncate text-2xl font-bold">{{ profileName }}</h3><span class="mt-2 inline-flex rounded-full bg-task-blueSoft px-3 py-1 text-xs font-bold text-task-blue">{{ accountRoleLabel }}</span><div class="mt-4 space-y-2 text-sm text-task-muted"><p class="flex items-center gap-2"><svg viewBox="0 0 24 24" class="h-4 w-4" fill="none" stroke="currentColor" stroke-width="1.8"><path :d="iconPath('mail')" /></svg>{{ profileForm.email || 'No email' }}</p><p class="flex items-center gap-2"><svg viewBox="0 0 24 24" class="h-4 w-4" fill="none" stroke="currentColor" stroke-width="1.8"><path :d="iconPath('phone')" /></svg>{{ profileForm.phone || 'No phone' }}</p></div></div>
+                <div class="min-w-0 flex-1"><h3 class="truncate text-2xl font-bold">{{ profileName }}</h3><span class="mt-2 inline-flex rounded-full bg-task-blueSoft px-3 py-1 text-xs font-bold text-task-blue">{{ accountRoleLabel }}</span></div>
               </div>
 
-              <div class="mt-7 grid gap-4 md:grid-cols-2"><label class="text-sm font-semibold">First Name<input v-model="profileForm.firstName" class="tf-input mt-2 h-12 w-full" /></label><label class="text-sm font-semibold">Last Name<input v-model="profileForm.lastName" class="tf-input mt-2 h-12 w-full" /></label><label class="md:col-span-2 text-sm font-semibold">Email Address<input v-model="profileForm.email" class="tf-input mt-2 h-12 w-full" readonly /></label><label class="text-sm font-semibold">Phone Number<input v-model="profileForm.phone" class="tf-input mt-2 h-12 w-full" inputmode="numeric" placeholder="+998 91 638 31 91" @input="handleProfilePhoneInput" /></label><label class="text-sm font-semibold">Job Title<input v-model="profileForm.jobTitle" class="tf-input mt-2 h-12 w-full" /></label></div>
-              <button class="tf-primary mt-6 h-12 w-full rounded-xl text-base" @click="saveSettings('Profile')"><svg viewBox="0 0 24 24" class="h-5 w-5" fill="none" stroke="currentColor" stroke-width="2"><path d="m5 12 4 4L19 6" /></svg>Save Changes</button>
+              <div class="mt-5 grid gap-4 sm:grid-cols-2"><label class="text-sm font-semibold">First name<input v-model="profileForm.firstName" class="tf-input mt-2 h-12 w-full" /></label><label class="text-sm font-semibold">Last name<input v-model="profileForm.lastName" class="tf-input mt-2 h-12 w-full" /></label><label class="sm:col-span-2 text-sm font-semibold">Email address<input v-model="profileForm.email" class="tf-input mt-2 h-12 w-full" readonly /></label><label class="sm:col-span-2 text-sm font-semibold">Phone number<input v-model="profileForm.phone" class="tf-input mt-2 h-12 w-full" inputmode="numeric" placeholder="+998 91 638 31 91" @input="handleProfilePhoneInput" /></label><label class="sm:col-span-2 text-sm font-semibold">Job title<input v-model="profileForm.jobTitle" class="tf-input mt-2 h-12 w-full" /></label></div>
+              <div class="mt-5 flex justify-end border-t border-task-line pt-4"><button class="tf-primary h-11 w-full rounded-xl px-5 text-sm sm:w-auto" @click="saveSettings('Profile')"><svg viewBox="0 0 24 24" class="h-4 w-4" fill="none" stroke="currentColor" stroke-width="2"><path d="M5 4h13l2 2v14H4V4h1Zm2 0v6h9V4M7 20v-7h10v7" /></svg>Save changes</button></div>
             </div>
 
-            <div class="tf-settings-side flex h-full flex-col gap-4">
-              <TelegramConnection />
-              <div class="tf-panel tf-security-panel flex flex-1 flex-col p-5 sm:p-7">
-                <div class="flex items-start gap-3"><span class="grid h-10 w-10 place-items-center rounded-xl bg-task-blueSoft text-task-blue"><svg viewBox="0 0 24 24" class="h-5 w-5" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M12 3 20 6v6c0 5-3 8-8 10-5-2-8-5-8-10V6l8-3Z" /></svg></span><div><h2 class="text-xl font-bold">Security</h2><p class="mt-1 text-sm text-task-muted">Change your password to keep your account safe.</p></div></div>
+            <div class="tf-settings-side flex min-w-0 flex-col gap-4">
+              <div class="tf-panel tf-security-panel flex flex-col p-5 sm:p-6">
+                <div class="flex items-start gap-4"><span class="tf-settings-icon grid h-12 w-12 shrink-0 place-items-center rounded-2xl bg-task-blueSoft text-task-blue"><svg viewBox="0 0 24 24" class="h-6 w-6" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M12 3 20 6v6c0 5-3 8-8 10-5-2-8-5-8-10V6l8-3Z" /></svg></span><div><h2 class="text-lg font-bold">Security</h2><p class="mt-1 text-sm text-task-muted">Change your account password.</p></div></div>
                 <div v-for="(field, index) in passwordFields" :key="field.key" class="mt-5"><label class="text-sm font-semibold">{{ index === 0 ? 'Current Password' : index === 1 ? 'New Password' : 'Confirm New Password' }}</label><div class="relative mt-2"><input v-model="passwordForm[field.key]" class="tf-input h-12 w-full pl-11 pr-12" :placeholder="field.placeholder" :type="passwordInputType(field.key)" /><svg viewBox="0 0 24 24" class="pointer-events-none absolute left-3.5 top-1/2 h-4 w-4 -translate-y-1/2 text-task-muted" fill="none" stroke="currentColor" stroke-width="1.8"><rect x="5" y="10" width="14" height="11" rx="2" /><path d="M8 10V7a4 4 0 0 1 8 0v3" /></svg><button type="button" class="absolute right-3 top-1/2 grid h-8 w-8 -translate-y-1/2 place-items-center rounded-full text-task-muted transition hover:bg-task-blueSoft hover:text-task-blue" :aria-label="passwordVisible[field.key] ? 'Hide password' : 'Show password'" @click="togglePasswordVisibility(field.key)"><svg viewBox="0 0 24 24" class="h-5 w-5" fill="none" stroke="currentColor" stroke-width="1.8"><path :d="iconPath(passwordVisible[field.key] ? 'eyeOff' : 'eye')" /></svg></button></div></div>
                 <div v-if="passwordForm.next" class="mt-3 flex items-center gap-2"><div class="flex flex-1 gap-1"><span v-for="i in 4" :key="i" :class="['h-1.5 flex-1 rounded-full', passwordForm.next.length >= i * 3 ? 'bg-task-success' : 'bg-slate-200']" /></div><span class="text-xs font-semibold text-task-success">{{ passwordForm.next.length >= 10 ? 'Strong' : 'Keep going' }}</span></div>
-                <div class="mt-auto pt-6">
-                  <button class="tf-primary h-12 w-full rounded-xl text-base" @click="saveSettings('Password')"><svg viewBox="0 0 24 24" class="h-4 w-4" fill="none" stroke="currentColor" stroke-width="2"><rect x="5" y="10" width="14" height="11" rx="2" /><path d="M8 10V7a4 4 0 0 1 8 0v3" /></svg>Update Password</button>
+                <div class="mt-auto flex justify-end pt-6">
+                  <button class="tf-primary h-11 w-full rounded-xl px-5 text-sm sm:ml-auto sm:w-auto" @click="saveSettings('Password')"><svg viewBox="0 0 24 24" class="h-4 w-4" fill="none" stroke="currentColor" stroke-width="2"><rect x="5" y="10" width="14" height="11" rx="2" /><path d="M8 10V7a4 4 0 0 1 8 0v3" /></svg>Update password</button>
                 </div>
               </div>
-
-              <div class="tf-panel tf-account-summary p-4 sm:p-5">
-                <div class="flex items-start gap-3"><span class="grid h-9 w-9 place-items-center rounded-[11px] bg-task-blueSoft text-task-blue"><svg viewBox="0 0 24 24" class="h-4 w-4" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M12 3v9l6 3M12 21a9 9 0 1 1 9-9" /></svg></span><div><h2 class="text-lg font-bold">Account Summary</h2><p class="mt-0.5 text-xs text-task-muted">Overview of your account information.</p></div></div>
+              <TelegramConnection />
+            </div>
+            <div class="tf-panel tf-account-summary p-4 sm:p-5">
+                <div class="flex items-start gap-3"><span class="grid h-9 w-9 place-items-center rounded-[11px] bg-task-blueSoft text-task-blue"><svg viewBox="0 0 24 24" class="h-4 w-4" fill="none" stroke="currentColor" stroke-width="1.8"><rect x="5" y="3" width="14" height="18" rx="2" /><path d="M8 8h8M8 12h8M8 16h5" /></svg></span><div><h2 class="text-lg font-bold">Account summary</h2><p class="mt-0.5 text-xs text-task-muted">Overview of your account information.</p></div></div>
                 <div class="mt-4 grid grid-cols-2 gap-3">
                   <div class="flex items-center gap-2.5"><span class="grid h-10 w-10 shrink-0 place-items-center rounded-[12px] bg-task-blueSoft text-task-blue"><svg viewBox="0 0 24 24" class="h-5 w-5" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M7 3v4m10-4v4M4 9h16M5 5h14v15H5V5Z" /></svg></span><div class="min-w-0"><p class="text-[11px] font-medium text-task-muted">Joined Date</p><p class="mt-0.5 truncate text-xs font-bold text-task-ink">{{ accountJoinedDate }}</p></div></div>
                   <div class="flex items-center gap-2.5"><span :class="['grid h-10 w-10 shrink-0 place-items-center rounded-[12px]', currentUserActive ? 'bg-task-successSoft text-task-success' : 'bg-task-dangerSoft text-task-danger']"><svg viewBox="0 0 24 24" class="h-5 w-5" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M12 3 20 6v6c0 5-3 8-8 10-5-2-8-5-8-10V6l8-3Zm-3 9 2 2 4-4" /></svg></span><div><p class="text-[11px] font-medium text-task-muted">Account Status</p><p class="mt-0.5 text-xs font-bold text-task-ink">{{ currentUserActive ? 'Active' : 'Inactive' }}</p></div></div>
                 </div>
-              </div>
             </div>
           </div>
         </section>

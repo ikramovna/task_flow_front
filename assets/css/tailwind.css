@@ -4153,24 +4153,35 @@ html:not(.tf-dark) .tf-app-modal > div:nth-child(2) { background: #ffffff; }
 .tf-dark .tf-summary-card--7 .tf-summary-icon { background: #263348; }
 
 .tf-settings-grid {
-  align-items: stretch;
+  align-items: start;
+}
+
+.tf-settings-page {
+  padding: clamp(4px, 1.4vw, 18px);
+}
+
+.tf-settings-page .tf-panel {
+  border-radius: 16px;
+  box-shadow: 0 12px 34px -28px rgb(31 68 116 / .42), 0 2px 8px rgb(31 68 116 / .04);
+}
+
+.tf-settings-icon {
+  background: linear-gradient(145deg, #edf5ff, #e5f0ff);
+  color: #1768d7;
 }
 
 .tf-profile-panel {
   display: flex;
   flex-direction: column;
+  min-width: 0;
 }
 
 .tf-profile-panel > .grid {
   width: 100%;
 }
 
-.tf-profile-panel > .tf-primary {
-  margin-top: 1.5rem;
-}
-
 .tf-settings-side {
-  display: contents;
+  min-width: 0;
 }
 
 .tf-security-panel {
@@ -4182,8 +4193,8 @@ html:not(.tf-dark) .tf-app-modal > div:nth-child(2) { background: #ffffff; }
   display: grid;
   grid-template-columns: minmax(230px, .65fr) minmax(0, 1.35fr);
   align-items: center;
-  min-height: 116px;
-  gap: 2rem;
+  min-height: 84px;
+  gap: 1.5rem;
   padding-left: 1.75rem;
   padding-right: 1.75rem;
 }
@@ -4195,14 +4206,60 @@ html:not(.tf-dark) .tf-app-modal > div:nth-child(2) { background: #ffffff; }
 .tf-profile-panel .tf-input,
 .tf-security-panel .tf-input {
   height: 48px;
-  border-radius: 12px;
+  border-radius: 10px;
+  border-color: #cfdef4;
+  background: var(--tf-surface);
+}
+
+.tf-telegram-status.is-connected {
+  background: #e7f8ef;
+  color: #16804c;
+}
+
+.tf-telegram-status.is-disconnected {
+  background: #edf4ff;
+  color: #165db6;
+}
+
+.tf-telegram-status.is-unknown {
+  background: #fff1e6;
+  color: #9a4715;
+}
+
+.tf-telegram-alert {
+  border: 1px solid #ffd2ad;
+  background: #fff8f2;
+  color: #8e3f10;
+}
+
+.tf-telegram-connect {
+  border-color: #1768dd;
+  color: #135bb9;
+  background: var(--tf-surface);
+  box-shadow: 0 0 0 1px rgb(23 104 221 / .08);
+  transition: background-color .15s ease, box-shadow .15s ease;
+}
+
+.tf-telegram-connect:hover:not(:disabled) {
+  background: #eef5ff;
+  box-shadow: 0 0 0 3px rgb(23 104 221 / .08);
+}
+
+.tf-dark .tf-settings-icon { background: #183b65; color: #90c4ff; }
+.tf-dark .tf-profile-panel .tf-input,
+.tf-dark .tf-security-panel .tf-input { border-color: #315174; background: #10253e; }
+.tf-dark .tf-telegram-status.is-connected { background: #123a2b; color: #7ee1ac; }
+.tf-dark .tf-telegram-status.is-disconnected { background: #173961; color: #9cc7ff; }
+.tf-dark .tf-telegram-status.is-unknown { background: #49301f; color: #ffc28d; }
+.tf-dark .tf-telegram-alert { border-color: #754522; background: #3b281f; color: #ffc28d; }
+.tf-dark .tf-telegram-connect { border-color: #4b91eb; background: #10253e; color: #9ac8ff; }
+.tf-dark .tf-telegram-connect:hover:not(:disabled) { background: #17365b; }
+
+@media (max-width: 639px) {
+  .tf-account-summary > .mt-4 { grid-template-columns: 1fr; }
 }
 
 @media (max-width: 1279px) {
-  .tf-settings-side {
-    display: flex;
-  }
-
   .tf-account-summary {
     display: block;
     min-height: auto;

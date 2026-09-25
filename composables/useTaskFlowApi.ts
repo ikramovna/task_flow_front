@@ -688,7 +688,12 @@ export const useTaskFlowApi = () => {
     return await apiFetch<AiTaskResponse>('/ai/tasks/', { method: 'POST', body, retry: 0 })
   }
 
-  const getTelegramConnection = () => apiFetch<{ connected: boolean }>('/me/telegram/')
+  const getTelegramConnection = () => apiFetch<{
+    is_connected: boolean
+    telegram_username: string
+    notifications_enabled: boolean
+    connected_at: string | null
+  }>('/me/telegram/')
   const connectTelegram = () => apiFetch<{ connect_url: string }>('/me/telegram/', { method: 'POST', retry: 0 })
   const disconnectTelegram = () => apiFetch('/me/telegram/', { method: 'DELETE', retry: 0 })
 
