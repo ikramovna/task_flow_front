@@ -26,13 +26,13 @@ const assignee = computed(() => {
   const person = task.value?.main_assignee_detail
   return person?.full_name || [person?.first_name, person?.last_name].filter(Boolean).join(' ') || person?.email
     || task.value?.assignee_details?.map(user => user.full_name || [user.first_name, user.last_name].filter(Boolean).join(' ') || user.email).filter(Boolean).join(', ')
-    || task.value?.assignee_name || 'Belgilanmagan'
+    || task.value?.assignee_name || 'Unassigned'
 })
 const deadline = computed(() => {
   const value = task.value?.due_date
-  if (!value) return 'Belgilanmagan'
+  if (!value) return 'Not set'
   const date = new Date(value)
-  return Number.isNaN(date.getTime()) ? value : date.toLocaleDateString('uz-UZ')
+  return Number.isNaN(date.getTime()) ? value : date.toLocaleDateString('en-GB')
 })
 const clearAudio = () => {
   if (audioUrl.value) URL.revokeObjectURL(audioUrl.value)
@@ -57,7 +57,7 @@ const startRecording = async () => {
   if (busy.value) return
   error.value = ''
   if (!navigator.mediaDevices?.getUserMedia || typeof MediaRecorder === 'undefined') {
-    error.value = 'Bu brauzerda mikrofon mavjud emas. HTTPS orqali oching yoki matn kiriting.'
+    error.value = 'Microphone recording is unavailable. Open the site over HTTPS or enter your request as text.'
     return
   }
   const version = ++captureVersion
@@ -77,7 +77,7 @@ const startRecording = async () => {
     capture.ondataavailable = event => { if (event.data.size) chunks.push(event.data) }
     capture.onerror = () => {
       failed = true
-      error.value = 'Ovozni yozib bo‘lmadi. Qayta urinib ko‘ring yoki matn kiriting.'
+      error.value = 'Could not record audio. Try again or enter your request as text.'
       stopRecording()
     }
     capture.onstop = () => {
@@ -86,7 +86,7 @@ const startRecording = async () => {
       releaseStream()
       if (disposed || failed) return
       const blob = new Blob(chunks, { type: capture.mimeType || chunks[0]?.type || 'audio/webm' })
-      if (!blob.size) { error.value = 'Ovoz yozilmadi. Qayta urinib ko‘ring.'; return }
+      if (!blob.size) { error.value = 'No audio was recorded. Please try again.'; return }
       clearAudio()
       audio.value = blob
       audioUrl.value = URL.createObjectURL(blob)
@@ -98,8 +98,8 @@ const startRecording = async () => {
   } catch (cause: any) {
     releaseStream()
     error.value = cause?.name === 'NotAllowedError'
-      ? 'Mikrofonga ruxsat berilmadi. Brauzer sozlamalarida ruxsat bering yoki matn kiriting.'
-      : 'Mikrofonni ishga tushirib bo‘lmadi. Qurilmani tekshiring yoki matn kiriting.'
+      ? 'Microphone access was denied. Allow access in your browser settings or enter your request as text.'
+      : 'Could not start the microphone. Check your device or enter your request as text.'
   } finally {
     if (version === captureVersion) starting.value = false
   }
@@ -121,8 +121,8 @@ const submit = async () => {
       pending = { id: crypto.randomUUID(), text: draft, audio: audio.value }
     }
     const response = await api.createAiTask(pending.id, pending.audio ? { audio: pending.audio } : { text: pending.text })
-    if (response.status !== 'created' && response.status !== 'needs_clarification') throw new Error('Kutilmagan javob olindi.')
-    if (response.status === 'created' && !response.task?.id) throw new Error('Task ma’lumotlari to‘liq kelmadi.')
+    if (response.status !== 'created' && response.status !== 'needs_clarification') throw new Error('Unexpected response received.')
+    if (response.status === 'created' && !response.task?.id) throw new Error('Incomplete task details received.')
     result.value = response
     pending = null
     clearAudio()
@@ -130,18 +130,17 @@ const submit = async () => {
       text.value = ''
       const [details] = await Promise.allSettled([api.getTask(String(response.task.id)), store.loadBackendData()])
       if (details.status === 'fulfilled') result.value = { ...response, task: { ...response.task, ...details.value } }
-      if (store.apiError.value) error.value = 'Task yaratildi, lekin ro‘yxatni yangilab bo‘lmadi. Sahifani yangilang.'
+      if (store.apiError.value) error.value = 'Your task was created, but the task list could not be updated. Please refresh the page.'
     }
   } catch (cause: any) {
     const status = cause?.statusCode || cause?.status || cause?.response?.status
-    const detail = cause?.data?.message || cause?.data?.detail
-    error.value = status === 413 ? 'Ovoz fayli juda katta. Qisqaroq yozuv yuboring.'
-      : status === 429 ? 'So‘rovlar ko‘payib ketdi. Birozdan keyin qayta urinib ko‘ring.'
-        : status === 400 && typeof detail === 'string' ? detail
-        : status === 401 ? 'Sessiya tugadi. Qayta tizimga kiring.'
-        : status === 403 ? 'Task yaratish uchun ruxsat yetarli emas.'
-        : status === 415 ? 'Bu ovoz formati qabul qilinmadi. Matn orqali yuboring.'
-        : 'So‘rovni bajarib bo‘lmadi. Internet aloqasini tekshiring va qayta urinib ko‘ring.'
+    error.value = status === 413 ? 'The audio file is too large. Please send a shorter recording.'
+      : status === 429 ? 'Too many requests. Please try again shortly.'
+        : status === 400 ? 'Your request could not be accepted. Check the task details or record your audio again.'
+        : status === 401 ? 'Your session has expired. Please sign in again.'
+        : status === 403 ? 'You do not have permission to create tasks.'
+        : status === 415 ? 'This audio format is not supported. Please send your request as text.'
+        : 'Could not complete your request. Check your internet connection and try again.'
   } finally {
     sending.value = false
   }
@@ -150,33 +149,33 @@ const submit = async () => {
 
 <template>
   <form class="mt-4 space-y-3" @submit.prevent="submit">
-    <p class="text-xs leading-5 text-task-muted">Task, mas’ul xodim va deadline haqida yozing yoki ovoz yozib yuboring.</p>
-    <label for="tiko-task-text" class="block text-xs font-semibold">Task so‘rovi</label>
-    <textarea id="tiko-task-text" v-model="text" class="tf-input min-h-32 w-full resize-y rounded-[13px] p-3 text-sm" placeholder="Muslima Zokirjonovaga websiteni fix qilish, deadline 23 may" :disabled="busy || !!audio" />
+    <p class="text-xs leading-5 text-task-muted">Describe the task, assignee, and deadline, or record a voice message.</p>
+    <label for="tiko-task-text" class="block text-xs font-semibold">Task request</label>
+    <textarea id="tiko-task-text" v-model="text" class="tf-input min-h-32 w-full resize-y rounded-[13px] p-3 text-sm" placeholder="Assign Muslima Zokirjonova to fix the website by May 23" :disabled="busy || !!audio" />
     <button type="button" class="flex min-h-10 items-center gap-2 rounded-ui border border-task-line px-3 text-sm disabled:opacity-50" :disabled="sending || starting || stopping" :aria-pressed="recording" @click="recording ? stopRecording() : startRecording()">
       <svg viewBox="0 0 24 24" class="h-5 w-5" :class="recording ? 'text-red-500 animate-pulse' : 'text-task-blue'" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true"><rect x="9" y="2" width="6" height="12" rx="3" /><path d="M5 10v2a7 7 0 0 0 14 0v-2M12 19v3m-4 0h8" /></svg>
-      {{ starting ? 'Mikrofon kutilmoqda…' : stopping ? 'Yozuv tayyorlanmoqda…' : recording ? 'Yozishni to‘xtatish' : 'Ovoz yozish' }}
+      {{ starting ? 'Waiting for microphone…' : stopping ? 'Preparing recording…' : recording ? 'Stop recording' : 'Record voice' }}
     </button>
-    <p v-if="recording" role="status" class="text-xs text-red-500">Ovoz yozilmoqda…</p>
+    <p v-if="recording" role="status" class="text-xs text-red-500">Recording…</p>
     <div v-if="audioUrl" class="space-y-2">
       <audio :src="audioUrl" controls class="w-full" />
-      <p class="text-xs text-task-muted">Faqat ovoz yuboriladi. Matn yuborish uchun yozuvni o‘chiring.</p>
-      <button type="button" class="text-xs text-task-blue" :disabled="busy" @click="clearAudio">Yozuvni o‘chirish</button>
+      <p class="text-xs text-task-muted">Only the recording will be sent. Remove it to send text instead.</p>
+      <button type="button" class="text-xs text-task-blue" :disabled="busy" @click="clearAudio">Remove recording</button>
     </div>
     <p v-if="error" role="alert" class="text-sm text-red-500">{{ error }}</p>
     <div v-if="result?.status === 'needs_clarification'" role="status" class="rounded-ui border border-task-line p-3 text-sm">
       <p>{{ result.message }}</p>
-      <p class="mt-2 text-xs text-task-muted">To‘liq tuzatilgan so‘rovni qayta yuboring.</p>
+      <p class="mt-2 text-xs text-task-muted">Please send the complete, corrected request again.</p>
     </div>
     <div v-if="task" role="status" class="space-y-2 rounded-ui border border-task-line p-3 text-sm">
-      <p class="font-bold">Task yaratildi: {{ task.title }}</p>
-      <p>Mas’ul: {{ assignee }}</p>
+      <p class="font-bold">Task created: {{ task.title }}</p>
+      <p>Assignee: {{ assignee }}</p>
       <p>Deadline: {{ deadline }}</p>
-      <NuxtLink :to="`/tasks/${encodeURIComponent(String(task.id))}`" class="inline-block font-semibold text-task-blue">Taskni ochish →</NuxtLink>
+      <NuxtLink :to="`/tasks/${encodeURIComponent(String(task.id))}`" class="inline-block font-semibold text-task-blue">Open task →</NuxtLink>
     </div>
     <button type="submit" class="tf-primary min-h-12 w-full rounded-[12px] text-sm disabled:opacity-50" :disabled="busy || (!text.trim() && !audio)">
-      {{ sending ? 'Tahlil qilinmoqda…' : 'Task yaratish' }}
+      {{ sending ? 'Analyzing…' : 'Create task' }}
     </button>
-    <p v-if="sending" role="status" class="sr-only">Tahlil qilinmoqda…</p>
+    <p v-if="sending" role="status" class="sr-only">Analyzing…</p>
   </form>
 </template>

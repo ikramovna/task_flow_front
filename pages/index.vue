@@ -5683,12 +5683,12 @@ const iconPath = (name: string) => {
         <div class="flex touch-none items-start justify-between gap-4" :class="supportWidgetDragging ? 'cursor-grabbing' : 'cursor-move'" @pointerdown="startSupportDrag">
           <div class="flex select-none items-center gap-3">
             <span class="grid h-14 w-14 shrink-0 place-items-center rounded-[16px] bg-gradient-to-br from-task-blueSoft to-white p-0.5 shadow-sm ring-1 ring-task-blue/15"><img src="/images/tiko-assistant.webp" width="192" height="192" alt="Tiko feedback assistant" class="h-full w-full object-contain" /></span>
-            <div><h2 class="text-lg font-extrabold text-task-ink">Tiko</h2><p class="mt-0.5 text-xs font-medium text-task-muted">{{ tikoMode === 'task' ? 'Task yaratish' : 'Feedback Assistant' }}</p></div>
+            <div><h2 class="text-lg font-extrabold text-task-ink">Tiko</h2><p class="mt-0.5 text-xs font-medium text-task-muted">{{ tikoMode === 'task' ? 'Create task' : 'Feedback Assistant' }}</p></div>
           </div>
           <ModalCloseButton size="sm" label="Close support" :disabled="feedbackSending" @pointerdown.stop @click="supportWidgetOpen = false" />
         </div>
-        <div class="mt-4 grid grid-cols-2 gap-2" role="group" aria-label="Tiko rejimi">
-          <button v-for="mode in (['feedback', 'task'] as const)" :key="mode" type="button" class="min-h-10 rounded-ui border border-task-line text-sm font-semibold disabled:opacity-50" :class="tikoMode === mode ? 'bg-task-blue text-white' : 'text-task-muted'" :aria-pressed="tikoMode === mode" :disabled="feedbackSending || tikoTaskBusy" @click="tikoMode = mode">{{ mode === 'task' ? 'Task yaratish' : 'Feedback' }}</button>
+        <div class="mt-4 grid grid-cols-2 gap-2" role="group" aria-label="Tiko mode">
+          <button v-for="mode in (['feedback', 'task'] as const)" :key="mode" type="button" class="min-h-10 rounded-ui border border-task-line text-sm font-semibold disabled:opacity-50" :class="tikoMode === mode ? 'bg-task-blue text-white' : 'text-task-muted'" :aria-pressed="tikoMode === mode" :disabled="feedbackSending || tikoTaskBusy" @click="tikoMode = mode">{{ mode === 'task' ? 'Create task' : 'Feedback' }}</button>
         </div>
         <TikoTaskCreator v-show="tikoMode === 'task'" :active="supportWidgetOpen && tikoMode === 'task'" @busy="tikoTaskBusy = $event" />
         <div v-show="tikoMode === 'feedback'">

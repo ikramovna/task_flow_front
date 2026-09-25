@@ -24,11 +24,21 @@ export default defineNuxtRouteMiddleware((to) => {
   }
   const isAuthenticated = hasCookieToken || hasClientToken
 
+  // Static hosting initially serves the requested route's prerendered HTML.
+  // Switching routes during hydration can retain its root attributes (for
+  // example dashboard's tf-shell on the login page). Load the destination
+  // document instead; later navigations remain client-side.
+  const nuxtApp = useNuxtApp()
+  const redirect = (path: string) => navigateTo(path, {
+    replace: true,
+    external: Boolean(nuxtApp.isHydrating && nuxtApp.payload.serverRendered)
+  })
+
   if (!isAuthenticated && !publicRoutes.includes(to.path)) {
-    return navigateTo('/login')
+    return redirect('/login')
   }
 
   if (isAuthenticated && to.path === '/login') {
-    return navigateTo('/')
+    return redirect('/')
   }
 })
