@@ -73,6 +73,9 @@ type ApiTask = {
 
 export type AiTaskResponse =
   | { status: 'created'; task: ApiTask & { assignee_name?: string }; message?: string; transcript?: string }
+  | { status: 'updated'; task: ApiTask & { assignee_name?: string }; message: string; transcript?: string }
+  | { status: 'needs_confirmation'; task: Pick<ApiTask, 'id' | 'title'>; confirmation_code: string; message: string; transcript?: string }
+  | { status: 'deleted'; task: Pick<ApiTask, 'id' | 'title'>; message: string; transcript?: string }
   | { status: 'needs_clarification'; message: string; transcript?: string }
 
 type TaskPayload = {

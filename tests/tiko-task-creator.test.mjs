@@ -5,22 +5,23 @@ import { stripTypeScriptTypes } from 'node:module'
 import { runInNewContext } from 'node:vm'
 
 const source = readFileSync(new URL('../components/TikoTaskCreator.vue', import.meta.url), 'utf8')
-  .split('<script setup lang="ts">')[1].split('</script>')[0].replace(/^import type .*$/gm, '')
-const script = stripTypeScriptTypes(source) + '\n;({text,audio,result,error,sending,submit,startRecording,stopRecording,acceptAudio,uploadAudio})'
+  .split('<script setup lang="ts">')[1].split('</script>')[0].replace(/^import .*$/gm, '')
+const script = stripTypeScriptTypes(source) + '\n;({text,audio,result,error,sending,confirmation,deleteRetry,submit,startRecording,stopRecording,acceptAudio,uploadAudio,cancelDelete,confirmDelete,retryDelete})'
 function setup(respond, mediaDevices) {
   const calls = []
   let refreshed = 0
   let nextId = 0
+  const state = { value: { tasks: [['Old task', '', '', '', '', '', '123']], dashboardRecentTasks: [{ id: '123' }], dashboardDeadlines: [{ id: '123' }] } }
   const context = {
     defineProps: () => ({ active: true }), defineEmits: () => () => {},
     ref: value => ({ value }), shallowRef: value => ({ value }),
     computed: getter => ({ get value() { return getter() } }), watch: () => {}, onBeforeUnmount: () => {},
     useTaskFlowApi: () => ({ createAiTask: async (...args) => { calls.push(args); return respond(...args) }, getTask: async id => ({ id, title: 'Fix website', main_assignee_detail: { full_name: 'Muslima' } }) }),
-    useTaskFlowStore: () => ({ loadBackendData: async () => { refreshed++ }, apiError: { value: '' } }),
+    useTaskFlowStore: () => ({ state, loadBackendData: async () => { refreshed++ }, apiError: { value: '' } }),
     crypto: { randomUUID: () => `uuid-${++nextId}` }, URL, Blob, navigator: { mediaDevices },
     MediaRecorder: class { static isTypeSupported() { return true } },
   }
-  return { ...runInNewContext(script, context), calls, refreshed: () => refreshed }
+  return { ...runInNewContext(script, context), calls, state, refreshed: () => refreshed }
 }
 
 test('network retries retain ID; changed input gets a new ID', async () => {
@@ -112,4 +113,57 @@ test('microphone denial still allows an audio upload', async () => {
   ui.uploadAudio({ target: { files: [file], value: 'request.mp3' } })
   await ui.submit()
   assert.equal(ui.calls[0][1].audio, file)
+})
+
+test('an edit refreshes task details and list', async () => {
+  const ui = setup(() => ({ status: 'updated', message: 'Priority updated.', task: { id: '123', title: 'Fix website' } }))
+  ui.text.value = 'Edit my last created task: set priority to high'
+  await ui.submit()
+  assert.equal(ui.result.value.status, 'updated')
+  assert.equal(ui.result.value.task.main_assignee_detail.full_name, 'Muslima')
+  assert.equal(ui.refreshed(), 1)
+})
+
+test('cancelling delete confirmation makes no second API call', async () => {
+  const ui = setup(() => ({ status: 'needs_confirmation', message: 'Confirm deletion.', confirmation_code: 'abc123', task: { id: '123', title: 'Old task' } }))
+  ui.text.value = 'Delete my last created task'
+  await ui.submit()
+  assert.equal(ui.confirmation.value.task.title, 'Old task')
+  ui.cancelDelete()
+  assert.equal(ui.confirmation.value, null)
+  assert.equal(ui.calls.length, 1)
+})
+
+test('confirmed delete uses a fresh ID and removes the task', async () => {
+  const ui = setup((id, payload) => payload.text?.startsWith('CONFIRM DELETE ')
+    ? { status: 'deleted', message: 'Task deleted.', task: { id: '123', title: 'Old task' } }
+    : { status: 'needs_confirmation', message: 'Confirm deletion.', confirmation_code: 'abc123', task: { id: '123', title: 'Old task' } })
+  ui.text.value = 'Delete my last created task'
+  await ui.submit()
+  await ui.confirmDelete()
+  assert.notEqual(ui.calls[0][0], ui.calls[1][0])
+  assert.equal(ui.calls[1][1].text, 'CONFIRM DELETE abc123')
+  assert.equal(ui.confirmation.value, null)
+  assert.equal(ui.state.value.tasks.length, 0)
+  assert.equal(ui.state.value.dashboardRecentTasks.length, 0)
+  assert.equal(ui.state.value.dashboardDeadlines.length, 0)
+  assert.equal(ui.refreshed(), 1)
+})
+
+test('failed confirmation retries with the same ID and code', async () => {
+  let confirmations = 0
+  const ui = setup((id, payload) => {
+    if (!payload.text?.startsWith('CONFIRM DELETE ')) return { status: 'needs_confirmation', message: 'Confirm deletion.', confirmation_code: 'abc123', task: { id: '123', title: 'Old task' } }
+    if (++confirmations === 1) throw new Error('network')
+    return { status: 'deleted', message: 'Task deleted.', task: { id: '123', title: 'Old task' } }
+  })
+  ui.text.value = 'Delete my last created task'
+  await ui.submit()
+  await ui.confirmDelete()
+  assert.ok(ui.deleteRetry.value)
+  await ui.submit()
+  assert.equal(ui.calls.length, 2)
+  await ui.retryDelete()
+  assert.equal(ui.calls[1][0], ui.calls[2][0])
+  assert.equal(ui.deleteRetry.value, null)
 })

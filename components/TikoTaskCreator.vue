@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import type { AiTaskResponse } from '~/composables/useTaskFlowApi'
+import AppConfirmModal from '~/components/ui/AppConfirmModal.vue'
 
 const props = defineProps<{ active: boolean }>()
 const emit = defineEmits<{ busy: [value: boolean] }>()
@@ -39,6 +40,8 @@ const stopping = ref(false)
 const sending = ref(false)
 const error = ref('')
 const result = ref<AiTaskResponse | null>(null)
+const confirmation = ref<Extract<AiTaskResponse, { status: 'needs_confirmation' }> | null>(null)
+const deleteRetry = ref<{ id: string; text: string } | null>(null)
 let pending: { id: string; text: string; audio: Blob | null } | null = null
 let recorder: MediaRecorder | null = null
 let stream: MediaStream | null = null
@@ -46,7 +49,7 @@ let disposed = false
 let captureVersion = 0
 const busy = computed(() => starting.value || stopping.value || recording.value || sending.value)
 watch(busy, value => emit('busy', value), { flush: 'sync' })
-const task = computed(() => result.value?.status === 'created' ? result.value.task : null)
+const task = computed(() => result.value?.status === 'created' || result.value?.status === 'updated' ? result.value.task : null)
 const assignee = computed(() => {
   const person = task.value?.main_assignee_detail
   return person?.full_name || [person?.first_name, person?.last_name].filter(Boolean).join(' ') || person?.email
@@ -138,42 +141,52 @@ const startRecording = async () => {
     if (version === captureVersion) starting.value = false
   }
 }
-watch(() => props.active, active => { if (!active) stopRecording() })
+watch(() => props.active, active => {
+  if (!active) {
+    stopRecording()
+    confirmation.value = null
+  }
+})
 onBeforeUnmount(() => {
   disposed = true
   stopRecording()
   clearAudio()
 })
-const submit = async () => {
-  if (busy.value || (!audio.value && !text.value.trim())) return
-  if (audio.value && audio.value.size > maxAudioBytes) {
-    error.value = 'Audio must be 20 MB or smaller.'
-    return
-  }
+const sendRequest = async (request: { id: string; text: string; audio: Blob | null }, confirmingDelete = false) => {
   sending.value = true
   error.value = ''
   result.value = null
   try {
-    const draft = audio.value ? '' : text.value.trim()
-    if (!pending || pending.text !== draft || pending.audio !== audio.value) {
-      pending = { id: crypto.randomUUID(), text: draft, audio: audio.value }
-    }
-    const response = await api.createAiTask(pending.id, pending.audio ? { audio: pending.audio } : { text: pending.text })
-    if (response.status !== 'created' && response.status !== 'needs_clarification') throw new Error('Unexpected response received.')
-    if (response.status === 'created' && !response.task?.id) throw new Error('Incomplete task details received.')
+    const response = await api.createAiTask(request.id, request.audio ? { audio: request.audio } : { text: request.text })
+    if (!['created', 'updated', 'needs_confirmation', 'deleted', 'needs_clarification'].includes(response.status)) throw new Error('Unexpected response received.')
+    if (response.status !== 'needs_clarification' && !response.task?.id) throw new Error('Incomplete task details received.')
+    if (response.status === 'needs_confirmation' && (!response.confirmation_code || !response.task.title)) throw new Error('Incomplete delete confirmation received.')
     result.value = response
     pending = null
+    deleteRetry.value = null
     clearAudio()
-    if (response.status === 'created') {
+    if (response.status === 'needs_confirmation') {
+      confirmation.value = response
+    } else if (response.status === 'deleted') {
+      confirmation.value = null
+      text.value = ''
+      store.state.value.tasks = store.state.value.tasks.filter(row => String(row[6]) !== String(response.task.id))
+      store.state.value.dashboardRecentTasks = store.state.value.dashboardRecentTasks.filter(item => String(item.id) !== String(response.task.id))
+      store.state.value.dashboardDeadlines = store.state.value.dashboardDeadlines.filter(item => String(item.id) !== String(response.task.id))
+      await store.loadBackendData()
+      if (store.apiError.value) error.value = 'The task was deleted, but the task list could not be refreshed. Please refresh the page.'
+    } else if (response.status === 'created' || response.status === 'updated') {
       text.value = ''
       const [details] = await Promise.allSettled([api.getTask(String(response.task.id)), store.loadBackendData()])
       if (details.status === 'fulfilled') result.value = { ...response, task: { ...response.task, ...details.value } }
-      if (store.apiError.value) error.value = 'Your task was created, but the task list could not be updated. Please refresh the page.'
+      if (store.apiError.value) error.value = 'The task was saved, but the task list could not be refreshed. Please refresh the page.'
     }
   } catch (cause: any) {
     const status = cause?.statusCode || cause?.status || cause?.response?.status
+    if (confirmingDelete && status === 400) deleteRetry.value = null
     error.value = status === 413 ? 'The audio file is too large. Please send a shorter recording.'
       : status === 429 ? 'Too many requests. Please try again shortly.'
+        : status === 400 && confirmingDelete ? 'The confirmation has expired or is invalid. Please request deletion again.'
         : status === 400 ? 'Your request could not be accepted. Check the task details or record your audio again.'
         : status === 401 ? 'Your session has expired. Please sign in again.'
         : status === 403 ? 'You do not have permission to create tasks.'
@@ -183,19 +196,47 @@ const submit = async () => {
     sending.value = false
   }
 }
+const submit = async () => {
+  if (busy.value || confirmation.value || deleteRetry.value || (!audio.value && !text.value.trim())) return
+  if (audio.value && audio.value.size > maxAudioBytes) {
+    error.value = 'Audio must be 20 MB or smaller.'
+    return
+  }
+  const draft = audio.value ? '' : text.value.trim()
+  if (!pending || pending.text !== draft || pending.audio !== audio.value) {
+    pending = { id: crypto.randomUUID(), text: draft, audio: audio.value }
+  }
+  await sendRequest(pending)
+}
+const cancelDelete = () => {
+  if (sending.value) return
+  confirmation.value = null
+  result.value = null
+}
+const confirmDelete = async () => {
+  if (!confirmation.value || busy.value) return
+  const code = confirmation.value.confirmation_code
+  confirmation.value = null
+  deleteRetry.value = { id: crypto.randomUUID(), text: `CONFIRM DELETE ${code}` }
+  await retryDelete()
+}
+const retryDelete = async () => {
+  if (!deleteRetry.value || busy.value) return
+  await sendRequest({ ...deleteRetry.value, audio: null }, true)
+}
 </script>
 
 <template>
   <form class="mt-4 space-y-3" @submit.prevent="submit">
-    <p class="text-xs leading-5 text-task-muted">Describe the task, assignee, and deadline, or record a voice message.</p>
+    <p class="text-xs leading-5 text-task-muted">Create, edit, or delete a task by typing or recording a request.</p>
     <label for="tiko-task-text" class="block text-xs font-semibold">Task request</label>
-    <textarea id="tiko-task-text" v-model="text" class="tf-input min-h-32 w-full resize-y rounded-[13px] p-3 text-sm" placeholder="Assign Muslima Zokirjonova to fix the website by May 23" :disabled="busy || !!audio" />
-    <button type="button" class="flex min-h-10 items-center gap-2 rounded-ui border border-task-line px-3 text-sm disabled:opacity-50" :disabled="sending || starting || stopping" :aria-pressed="recording" @click="recording ? stopRecording() : startRecording()">
+    <textarea id="tiko-task-text" v-model="text" class="tf-input min-h-32 w-full resize-y rounded-[13px] p-3 text-sm" placeholder="Edit my last created task: set priority to high" :disabled="busy || !!audio || !!confirmation || !!deleteRetry" />
+    <button type="button" class="flex min-h-10 items-center gap-2 rounded-ui border border-task-line px-3 text-sm disabled:opacity-50" :disabled="sending || starting || stopping || !!deleteRetry" :aria-pressed="recording" @click="recording ? stopRecording() : startRecording()">
       <svg viewBox="0 0 24 24" class="h-5 w-5" :class="recording ? 'text-red-500 animate-pulse' : 'text-task-blue'" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true"><rect x="9" y="2" width="6" height="12" rx="3" /><path d="M5 10v2a7 7 0 0 0 14 0v-2M12 19v3m-4 0h8" /></svg>
       {{ starting ? 'Waiting for microphone…' : stopping ? 'Preparing recording…' : recording ? 'Stop recording' : 'Record voice' }}
     </button>
-    <button type="button" class="min-h-10 rounded-ui border border-task-line px-3 text-sm disabled:opacity-50" :disabled="busy" @click="audioInput?.click()">Upload audio</button>
-    <input ref="audioInput" type="file" accept="audio/*,.webm,.mp4,.m4a" class="hidden" aria-label="Upload audio" :disabled="busy" @change="uploadAudio" />
+    <button type="button" class="min-h-10 rounded-ui border border-task-line px-3 text-sm disabled:opacity-50" :disabled="busy || !!deleteRetry" @click="audioInput?.click()">Upload audio</button>
+    <input ref="audioInput" type="file" accept="audio/*,.webm,.mp4,.m4a" class="hidden" aria-label="Upload audio" :disabled="busy || !!deleteRetry" @change="uploadAudio" />
     <p class="text-xs text-task-muted">Audio files up to 20 MB. Telegram is not required to create tasks.</p>
     <p v-if="recording" role="status" class="text-xs text-red-500">Recording…</p>
     <div v-if="audioUrl" class="space-y-2">
@@ -208,16 +249,24 @@ const submit = async () => {
       <p>{{ result.message }}</p>
       <p class="mt-2 text-xs text-task-muted">Please send the complete, corrected request again.</p>
     </div>
+    <div v-if="result?.status === 'deleted'" role="status" class="rounded-ui border border-task-line p-3 text-sm">
+      <p class="font-bold">{{ result.message || `Task deleted: ${result.task.title}` }}</p>
+    </div>
     <div v-if="task" role="status" class="space-y-2 rounded-ui border border-task-line p-3 text-sm">
       <p v-if="result?.message" class="whitespace-pre-line">{{ result.message }}</p>
-      <p class="font-bold">Task created: {{ task.title }}</p>
+      <p class="font-bold">Task {{ result?.status === 'updated' ? 'updated' : 'created' }}: {{ task.title }}</p>
       <p>Assignee: {{ assignee }}</p>
       <p>Deadline: {{ deadline }}</p>
       <NuxtLink :to="`/tasks/${encodeURIComponent(String(task.id))}`" class="inline-block font-semibold text-task-blue">Open task →</NuxtLink>
     </div>
-    <button type="submit" class="tf-primary min-h-12 w-full rounded-[12px] text-sm disabled:opacity-50" :disabled="busy || (!text.trim() && !audio)">
-      {{ sending ? 'Analyzing…' : 'Create task' }}
+    <div v-if="deleteRetry" class="flex flex-wrap gap-2">
+      <button type="button" class="tf-primary min-h-11 flex-1 rounded-xl px-4 text-sm disabled:opacity-50" :disabled="busy" @click="retryDelete">{{ sending ? 'Analyzing…' : 'Retry confirmed deletion' }}</button>
+      <button type="button" class="min-h-11 rounded-xl border border-task-line px-4 text-sm disabled:opacity-50" :disabled="busy" @click="deleteRetry = null; store.loadBackendData()">Dismiss</button>
+    </div>
+    <button v-else type="submit" class="tf-primary min-h-12 w-full rounded-[12px] text-sm disabled:opacity-50" :disabled="busy || !!confirmation || (!text.trim() && !audio)">
+      {{ sending ? 'Analyzing…' : 'Send request' }}
     </button>
     <p v-if="sending" role="status" class="sr-only">Analyzing…</p>
   </form>
+  <AppConfirmModal v-if="confirmation" title="Delete task?" :message="`Delete “${confirmation.task.title}”? This action cannot be undone.`" confirm-label="Delete task" cancel-label="Cancel" @confirm="confirmDelete" @cancel="cancelDelete" />
 </template>
