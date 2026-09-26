@@ -4581,7 +4581,7 @@ const iconPath = (name: string) => {
           </section>
           <ProUpgradeCard v-if="!sidebarCollapsed" variant="sidebar" />
           <ProUpgradeCard v-else variant="icon" />
-          <div :class="['tf-sidebar-user sticky bottom-0 z-10 mt-3 shrink-0 bg-white', sidebarCollapsed ? 'flex-col justify-center p-1.5' : '']">
+          <div :class="['tf-sidebar-user sticky bottom-0 z-10 mt-1 shrink-0 bg-white', sidebarCollapsed ? 'flex-col justify-center p-1.5' : '']">
           <button type="button" :class="['flex min-w-0 items-center gap-2 text-left', sidebarCollapsed ? 'justify-center' : 'flex-1']" :title="sidebarCollapsed ? profileName : undefined" @click="setPage('settings')">
             <span class="tf-sidebar-avatar">
               <img v-if="savedProfile.avatar" :src="savedProfile.avatar" alt="Profile avatar" class="h-full w-full rounded-full object-cover" />

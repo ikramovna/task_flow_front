@@ -52,14 +52,14 @@ onBeforeUnmount(() => document.removeEventListener('keydown', onKeydown))
 .tf-pro-trigger:hover { transform: translateY(-1px); border-color: #60a5fa; box-shadow: 0 10px 20px -13px #2064b8; }
 .tf-pro-trigger:focus-visible, .tf-pro-close:focus-visible, .tf-pro-dialog-button:focus-visible { outline: 3px solid #60a5fa; outline-offset: 2px; }
 .tf-pro-trigger svg { width: 20px; height: 20px; flex: none; color: #e4a400; }
-.tf-pro-trigger--sidebar { width: calc(100% - 16px); margin: auto 8px 12px; background: linear-gradient(125deg, #dceeff, #b9d8ff); }
+.tf-pro-trigger--sidebar { width: calc(100% - 16px); margin: auto 8px 0; background: linear-gradient(125deg, #dceeff, #b9d8ff); }
 .tf-pro-trigger--header { margin-left: auto; }
-.tf-pro-trigger--icon { width: 42px; min-height: 42px; margin: 12px auto; padding: 0; }
+.tf-pro-trigger--icon { width: 42px; min-height: 42px; margin: auto auto 0; padding: 0; }
 .tf-pro-trigger--unlock { border-color: #a7c8f5; background: linear-gradient(135deg, #e9f3ff, #fff); box-shadow: 0 14px 34px -19px #061a3b; }
 .tf-pro-trigger--unlock svg { color: #2369bf; }
-:global(.tf-dark) .tf-pro-trigger { border-color: #45698c; background: linear-gradient(145deg, #1d3e62, #244768); color: #f4f8ff; box-shadow: inset 0 1px rgb(255 255 255 / .1), 0 8px 20px -15px #000; }
-:global(.tf-dark) .tf-pro-trigger:hover { border-color: #75b8ff; }
-:global(.tf-dark) .tf-pro-trigger svg { color: #ffd967; }
+:global(.tf-dark .tf-pro-trigger) { border-color: #45698c; background: linear-gradient(145deg, #1b3859, #254a72); color: #f4f8ff; box-shadow: inset 0 1px rgb(255 255 255 / .1), 0 8px 20px -15px #000; }
+:global(.tf-dark .tf-pro-trigger:hover) { border-color: #75b8ff; background: linear-gradient(145deg, #244d78, #2d5b89); }
+:global(.tf-dark .tf-pro-trigger svg) { color: #ffd967; }
 .tf-pro-overlay { position: fixed; z-index: 200; inset: 0; display: grid; place-items: center; overflow-y: auto; padding: 18px; background: rgb(8 17 36 / .65); backdrop-filter: blur(5px); }
 .tf-pro-dialog { position: relative; width: min(100%, 520px); max-height: calc(100dvh - 36px); overflow-y: auto; border: 1px solid #d7e4f6; border-radius: 21px; background: #fff; padding: 28px; color: #172033; box-shadow: 0 30px 80px -24px #071a3a; }
 .tf-pro-close { position: absolute; top: 14px; right: 17px; display: grid; width: 32px; height: 32px; place-items: center; border-radius: 8px; color: #667085; font-size: 26px; line-height: 1; }

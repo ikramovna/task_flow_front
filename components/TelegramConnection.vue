@@ -100,7 +100,7 @@ onBeforeUnmount(() => {
 .tf-telegram-lock-symbol { color: #2369bf; }
 .tf-telegram-lock-symbol svg { width: 27px; height: 27px; }
 .tf-telegram-lock-title { max-width: 260px; color: #173b68; font-size: 13px; font-weight: 800; }
-:global(.tf-dark) .tf-telegram-lock-overlay { background: linear-gradient(125deg, rgb(13 29 49 / .52), rgb(15 31 52 / .7)); }
-:global(.tf-dark) .tf-telegram-lock-symbol { color: #c3ddff; }
-:global(.tf-dark) .tf-telegram-lock-title { color: #eaf4ff; }
+:global(.tf-dark .tf-telegram-lock-overlay) { background: linear-gradient(125deg, rgb(15 32 53 / .84), rgb(24 46 72 / .9)); }
+:global(.tf-dark .tf-telegram-lock-symbol) { color: #a9d2ff; }
+:global(.tf-dark .tf-telegram-lock-title) { color: #f0f7ff; }
 </style>
