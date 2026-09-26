@@ -22,7 +22,8 @@ useHead({
 })
 
 if (import.meta.server) {
-  const forceLightTheme = ['/login', '/logout', '/forgot-password', '/reset-password'].includes(currentRoute.path)
+  const path = currentRoute.path.replace(/\/+$/, '') || '/'
+  const forceLightTheme = ['/login', '/logout', '/forgot-password', '/reset-password'].includes(path)
   useHead({
     htmlAttrs: {
       class: !forceLightTheme && initialThemeCookie.value === 'Dark' ? 'tf-dark' : undefined,

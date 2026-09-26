@@ -1,8 +1,11 @@
 export default defineNuxtRouteMiddleware((to) => {
   const publicRoutes = ['/login', '/logout', '/forgot-password', '/reset-password']
+  // Static hosting canonicalizes page directories with a trailing slash.
+  // Treat /login and /login/ as the same route before checking access.
+  const path = to.path.replace(/\/+$/, '') || '/'
   // A saved token can be expired or invalid. Keep sign-in accessible so it
   // cannot bounce back to the dashboard before the session is verified.
-  if (publicRoutes.includes(to.path)) return
+  if (publicRoutes.includes(path)) return
 
   // During SSR the cookie is the shared source of truth. Redirecting before
   // rendering prevents the server from sending dashboard markup that the

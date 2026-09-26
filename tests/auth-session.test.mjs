@@ -73,6 +73,14 @@ test('login remains accessible with stored tokens on the server and during hydra
   }
 })
 
+test('public routes with trailing slashes do not start a login redirect loop', () => {
+  for (const server of [true, false]) {
+    const ui = setup(() => {}, { server })
+    for (const path of ['/login/', '/logout/', '/forgot-password/', '/reset-password/']) ui.middleware({ path })
+    assert.equal(ui.redirects.length, 0)
+  }
+})
+
 test('protected routes require a complete token pair, with client storage fallback', () => {
   const partial = setup(() => {}, { cookies: { 'taskflow-access': 'old' }, server: true })
   partial.middleware({ path: '/' })
