@@ -508,14 +508,21 @@ const parseAnalyticsItem = (item: string | Record<string, unknown>) => {
   return { label: item }
 }
 
+const isTokenPair = (value: unknown): value is ApiTokens => {
+  if (!value || typeof value !== 'object') return false
+  const tokens = value as Partial<ApiTokens>
+  return typeof tokens.access === 'string' && Boolean(tokens.access.trim())
+    && typeof tokens.refresh === 'string' && Boolean(tokens.refresh.trim())
+}
+
 const getStoredTokens = (): ApiTokens | null => {
   const accessCookie = useCookie<string | null>('taskflow-access')
   const refreshCookie = useCookie<string | null>('taskflow-refresh')
 
-  if (accessCookie.value && refreshCookie.value) {
+  if (isTokenPair({ access: accessCookie.value, refresh: refreshCookie.value })) {
     return {
-      access: accessCookie.value,
-      refresh: refreshCookie.value
+      access: accessCookie.value!,
+      refresh: refreshCookie.value!
     }
   }
 
@@ -523,13 +530,15 @@ const getStoredTokens = (): ApiTokens | null => {
 
   try {
     const stored = JSON.parse(localStorage.getItem(authStorageKey) || '{}')
-    if (typeof stored.access === 'string' && typeof stored.refresh === 'string') return stored
+    if (isTokenPair(stored)) return stored
   } catch {
     return null
   }
 
   return null
 }
+
+export const taskFlowHasSession = () => Boolean(getStoredTokens())
 
 const saveStoredTokens = (tokens: Partial<ApiTokens> & Record<string, unknown>) => {
   const accessCookie = useCookie<string | null>('taskflow-access', { sameSite: 'lax', maxAge: 60 * 60 * 24 * 30 })
@@ -540,19 +549,43 @@ const saveStoredTokens = (tokens: Partial<ApiTokens> & Record<string, unknown>) 
 
   if (!import.meta.client) return
 
-  const current = JSON.parse(localStorage.getItem(authStorageKey) || '{}')
-  localStorage.setItem(authStorageKey, JSON.stringify({
-    ...current,
-    ...tokens
-  }))
+  try {
+    let current: Record<string, unknown> = {}
+    try {
+      const stored = JSON.parse(localStorage.getItem(authStorageKey) || '{}')
+      if (stored && typeof stored === 'object' && !Array.isArray(stored)) current = stored
+    } catch {
+      // Replace corrupted storage; it must not prevent a successful login.
+    }
+    localStorage.setItem(authStorageKey, JSON.stringify({ ...current, ...tokens }))
+  } catch {
+    // Cookies still provide the session when browser storage is unavailable.
+  }
 }
+
+const tokenRefreshRequests = new WeakMap<object, { revision: number; promise: Promise<string> }>()
 
 export const useTaskFlowApi = () => {
   const config = useRuntimeConfig()
   const apiBase = String(config.public.apiBase || '').replace(/\/$/, '')
   const meCache = useState<MeProfile | null>('taskflow:me-cache', () => null)
+  const authRevision = useState<number>('taskflow:auth-revision', () => 0)
+  const nuxtApp = useNuxtApp()
 
-  const refreshToken = async () => {
+  const refreshToken = () => {
+    const revision = authRevision.value
+    const pending = tokenRefreshRequests.get(nuxtApp)
+    if (pending?.revision === revision) return pending.promise
+    const promise = performTokenRefresh(revision)
+    const entry = { revision, promise }
+    tokenRefreshRequests.set(nuxtApp, entry)
+    void promise.finally(() => {
+      if (tokenRefreshRequests.get(nuxtApp) === entry) tokenRefreshRequests.delete(nuxtApp)
+    }).catch(() => {})
+    return promise
+  }
+
+  const performTokenRefresh = async (revision: number) => {
     const tokens = getStoredTokens()
     if (!tokens?.refresh) throw new Error('Refresh token is missing')
 
@@ -561,28 +594,49 @@ export const useTaskFlowApi = () => {
       body: { refresh: tokens.refresh }
     })
 
+    if (authRevision.value !== revision) throw new Error('The sign-in session changed.')
+    if (typeof refreshed.access !== 'string' || !refreshed.access.trim()) throw new Error('Invalid token refresh response.')
     saveStoredTokens(refreshed)
+    await nextTick()
 
     return refreshed.access
   }
 
   const apiFetch = async <T>(path: string, options: Parameters<typeof $fetch<T>>[1] = {}): Promise<T> => {
     const tokens = getStoredTokens()
+    const revision = authRevision.value
     const headers = new Headers(options.headers as HeadersInit | undefined)
 
     if (tokens?.access) headers.set('Authorization', `Bearer ${tokens.access}`)
 
-    try {
-      return await $fetch<T>(`${apiBase}${path}`, {
+    const send = () => $fetch<T>(`${apiBase}${path}`, {
         ...options,
         headers
       })
+    const isUnauthorized = (error: any) => (error?.status ?? error?.statusCode ?? error?.response?.status) === 401
+
+    try {
+      return await send()
     } catch (error: any) {
-      if ((error?.status ?? error?.statusCode ?? error?.response?.status) === 401) {
-        logout()
-        await navigateTo('/login', { replace: true })
+      if (!isUnauthorized(error) || authRevision.value !== revision) throw error
+
+      if (tokens?.refresh) {
+        try {
+          // A parallel request may already have refreshed this session.
+          const current = getStoredTokens()
+          const access = current?.access && current.access !== tokens.access ? current.access : await refreshToken()
+          if (authRevision.value !== revision) throw new Error('The sign-in session changed.')
+          headers.set('Authorization', `Bearer ${access}`)
+          return await send()
+        } catch (retryError) {
+          if (!isUnauthorized(retryError) || authRevision.value !== revision) throw retryError
+          error = retryError
+        }
       }
 
+      logout()
+      await nextTick()
+      await navigateTo('/login', { replace: true })
       throw error
     }
   }
@@ -593,6 +647,8 @@ export const useTaskFlowApi = () => {
       body: { email, password }
     })
 
+    if (!isTokenPair(tokens)) throw new Error('The server returned an invalid sign-in response. Please try again.')
+    authRevision.value++
     meCache.value = null
     saveStoredTokens({
       ...tokens,
@@ -600,6 +656,7 @@ export const useTaskFlowApi = () => {
       remember,
       loggedInAt: new Date().toISOString()
     })
+    await nextTick()
 
     return tokens
   }
@@ -625,13 +682,14 @@ export const useTaskFlowApi = () => {
     const accessCookie = useCookie<string | null>('taskflow-access')
     const refreshCookie = useCookie<string | null>('taskflow-refresh')
 
+    authRevision.value++
     accessCookie.value = null
     refreshCookie.value = null
     meCache.value = null
 
     if (import.meta.client) {
-      localStorage.removeItem(authStorageKey)
-      sessionStorage.removeItem(authStorageKey)
+      try { localStorage.removeItem(authStorageKey) } catch {}
+      try { sessionStorage.removeItem(authStorageKey) } catch {}
     }
   }
 

@@ -33,6 +33,7 @@ const iconPath = (name: string) => {
 }
 
 const submitLogin = async () => {
+  if (isSubmitting.value) return
   errorMessage.value = ''
 
   if (!email.value.trim()) {
@@ -48,7 +49,7 @@ const submitLogin = async () => {
   isSubmitting.value = true
 
   try {
-    await api.login(email.value, password.value, rememberMe.value)
+    await api.login(email.value.trim(), password.value, rememberMe.value)
     taskFlowStore.reset()
     notifications.reset()
     await navigateTo('/')
