@@ -654,6 +654,8 @@ body {
 .tf-performance-trend-card .text-task-muted { color: #7b8798 !important; }
 .tf-performance-grid { color: #dbe4ef; }
 .tf-performance-tooltip { border: 1px solid #e4e9f1; background: rgb(255 255 255 / .96); color: #66758a; backdrop-filter: blur(10px); }
+.tf-performance-axis { gap: 4px; padding-inline: 2px; }
+.tf-performance-axis span { min-width: 0; overflow: hidden; padding-top: 6px; text-overflow: ellipsis; white-space: nowrap; font-size: 11px; font-weight: 650; letter-spacing: .01em; }
 .tf-dark .tf-performance-trend-card { background: #172033 !important; color: #e8f0fb !important; }
 .tf-dark .tf-performance-trend-card .text-task-ink { color: #f1f6fd !important; }
 .tf-dark .tf-performance-trend-card .text-task-muted { color: #91a3ba !important; }
@@ -2142,7 +2144,73 @@ html:not(.tf-dark) .tf-shell:has(.tf-reports-page) .tf-report-modal-footer { bac
 
 .tf-member-modal-body {
   overflow-x: hidden;
-  padding-bottom: 0;
+  padding: 20px !important;
+  padding-bottom: 0 !important;
+  scrollbar-gutter: stable;
+}
+
+.tf-member-modal-body label {
+  line-height: 1.35;
+}
+
+.tf-member-modal-body .tf-input,
+.tf-member-modal-body .tf-dropdown-button {
+  font-size: 14px;
+}
+
+.tf-member-edit-hero { display: flex; align-items: center; gap: 14px; margin: -4px -2px 18px; }
+.tf-member-edit-icon { display: grid; width: 48px; height: 48px; flex: none; place-items: center; border-radius: 14px; background: var(--tf-accent-soft); color: var(--tf-accent); }
+.tf-member-edit-icon svg { width: 25px; height: 25px; }
+.tf-member-edit-kicker { margin: 0 0 2px; color: var(--tf-accent); font-size: 10px; font-weight: 800; letter-spacing: .12em; text-transform: uppercase; }
+.tf-member-edit-hero h3 { color: var(--tf-ink); font-size: 21px; font-weight: 800; line-height: 1.2; }
+.tf-member-edit-hero p:last-child { margin-top: 3px; color: var(--tf-muted); font-size: 13px; }
+.tf-member-edit-profile { border: 1px solid var(--tf-border); border-radius: 16px; padding: 18px; background: color-mix(in srgb, var(--tf-panel) 72%, var(--tf-accent-soft)); }
+.tf-member-edit-avatar { display: grid; width: 72px; height: 72px; flex: none; place-items: center; overflow: hidden; border: 2px solid var(--tf-accent); border-radius: 999px; background: var(--tf-accent-soft); color: var(--tf-accent); font-size: 18px; font-weight: 800; }
+.tf-member-edit-avatar img { width: 100%; height: 100%; object-fit: cover; }
+.tf-member-edit-profile h4 { color: var(--tf-ink); font-size: 18px; font-weight: 800; }
+.tf-member-edit-profile > div:first-child p { margin-top: 2px; color: var(--tf-muted); font-size: 13px; }
+.tf-member-status { display: inline-flex; align-items: center; gap: 6px; margin-top: 8px; border-radius: 999px; padding: 4px 9px; font-size: 11px; font-weight: 800; }
+.tf-member-status i { width: 8px; height: 8px; border-radius: 999px; background: currentColor; }
+.tf-member-status.is-active { background: color-mix(in srgb, #22c55e 16%, transparent); color: #16a34a; }
+.tf-member-status.is-inactive { background: color-mix(in srgb, #94a3b8 18%, transparent); color: #64748b; }
+.tf-member-readonly { display: inline-flex; align-items: center; gap: 6px; margin-left: auto; color: var(--tf-muted); font-size: 11px; }
+.tf-member-readonly svg { width: 16px; height: 16px; }
+.tf-member-profile-meta { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 0; margin-top: 18px; padding-top: 16px; border-top: 1px solid var(--tf-border); }
+.tf-member-profile-meta > div { min-width: 0; padding: 0 14px; border-left: 1px solid var(--tf-border); }
+.tf-member-profile-meta > div:first-child { padding-left: 0; border-left: 0; }
+.tf-member-profile-meta small, .tf-member-role-field > small, .tf-member-access-toggle small { display: block; margin-top: 4px; color: var(--tf-muted); font-size: 11px; font-weight: 500; }
+.tf-member-profile-meta b { display: block; margin-top: 5px; overflow: hidden; color: var(--tf-ink); font-size: 13px; text-overflow: ellipsis; white-space: nowrap; }
+.tf-member-access-heading { margin: 24px 0 14px; }
+.tf-member-access-heading h3 { color: var(--tf-ink); font-size: 18px; font-weight: 800; }
+.tf-member-access-heading p { margin-top: 3px; color: var(--tf-muted); font-size: 12px; }
+.tf-member-role-field > small { margin-top: 6px; }
+.tf-member-access-toggle { display: flex; align-items: center; gap: 12px; margin-top: 18px; border: 1px solid var(--tf-border); border-radius: 15px; padding: 14px; cursor: pointer; }
+.tf-member-access-symbol { display: grid; width: 42px; height: 42px; flex: none; place-items: center; border-radius: 12px; background: var(--tf-accent-soft); color: var(--tf-accent); }
+.tf-member-access-symbol svg { width: 21px; height: 21px; }
+.tf-member-access-toggle b { display: block; color: var(--tf-ink); font-size: 14px; }
+.tf-member-access-toggle input { position: absolute; width: 1px; height: 1px; opacity: 0; }
+.tf-member-access-toggle > i { position: relative; width: 54px; height: 30px; flex: none; border-radius: 999px; background: #94a3b8; transition: .2s ease; }
+.tf-member-access-toggle > i::after { position: absolute; top: 4px; left: 4px; width: 22px; height: 22px; border-radius: 999px; background: #fff; box-shadow: 0 2px 5px rgb(15 23 42 / .25); content: ''; transition: .2s ease; }
+.tf-member-access-toggle:has(input:checked) > i { background: var(--tf-accent); }
+.tf-member-access-toggle:has(input:checked) > i::after { transform: translateX(24px); }
+.tf-member-edit-note { display: flex; align-items: center; gap: 8px; margin-top: 16px; color: var(--tf-muted); font-size: 12px; }
+.tf-member-edit-note svg { width: 17px; height: 17px; flex: none; }
+.tf-dark .tf-member-edit-profile, .tf-dark .tf-member-access-toggle { background: #0f2239; }
+.tf-dark .tf-member-status.is-active { color: #69e58e; }
+
+@media (max-width: 640px) {
+  .tf-member-readonly { display: none; }
+  .tf-member-profile-meta { grid-template-columns: 1fr; gap: 10px; }
+  .tf-member-profile-meta > div, .tf-member-profile-meta > div:first-child { padding: 0; border: 0; }
+  .tf-member-edit-profile { padding: 14px; }
+}
+
+.tf-member-modal-footer {
+  margin-inline: -20px !important;
+  margin-bottom: -20px !important;
+  padding: 14px 20px !important;
+  border-top: 1px solid var(--tf-border);
+  box-shadow: 0 -10px 24px -24px rgb(15 23 42 / .55);
 }
 
 .tf-member-role-menu {
