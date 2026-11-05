@@ -70,6 +70,10 @@ type ApiTask = {
   archived_at?: string | null
   archived_by?: string | number | UserBrief | null
   attachments?: TaskAttachment[]
+  attachments_count?: number
+  attachment_count?: number
+  files_count?: number
+  has_attachments?: boolean
 }
 
 export type TaskAttachment = {
@@ -1170,7 +1174,8 @@ export const useTaskFlowApi = () => {
       (typeof task.created_by === 'object' ? task.created_by : task.created_by == null ? null : { id: task.created_by })
     ),
     task.effort_score ?? 3,
-    task.project || ''
+    task.project || '',
+    Number(task.attachments_count ?? task.attachment_count ?? task.files_count ?? task.attachments?.length ?? (task.has_attachments ? 1 : 0)) || 0
   ]
 
   const mapProject = (project: ApiProject) => [

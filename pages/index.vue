@@ -2,6 +2,7 @@
 import type { Directive, Ref } from 'vue'
 import type { AnalyticsCard, AnalyticsSummary, ApiChatMessage, ApiConversation, TaskAttachment } from '~/composables/useTaskFlowApi'
 import GreetingCard from '~/components/GreetingCard.vue'
+import TaskAttachmentBadge from '~/components/TaskAttachmentBadge.vue'
 import HelpPage from '~/components/pages/HelpPage.vue'
 import ReportsPage from '~/components/pages/ReportsPage.vue'
 import ReportPreviewModal from '~/components/reports/ReportPreviewModal.vue'
@@ -602,6 +603,7 @@ const taskAttachments = ref<TaskAttachment[]>([])
 const downloadingTaskAttachment = ref<string | number | null>(null)
 const maxTaskFiles = 10
 const maxTaskFileBytes = 20 * 1024 * 1024
+const taskAttachmentCountOf = (task: Array<string | number>) => Number(task[23] || 0)
 const taskAttachmentName = (attachment: TaskAttachment) => attachment.file_name || attachment.filename || attachment.name || 'Attachment'
 const taskAttachmentSize = (attachment: TaskAttachment) => {
   const bytes = Number(attachment.size ?? attachment.file_size)
@@ -3750,7 +3752,13 @@ const submitModal = async () => {
             openedTaskCanChangeStatus.value ? mainAssigneeStatusPayload : nonStatusPayload
           )
         : await taskFlowApi.createTask({ ...payload, files: selectedTaskFiles.value })
-      if (editingTaskId.value) replaceTaskRow(editingTaskId.value, taskFlowApi.mapTask(saved))
+      if (editingTaskId.value) {
+        const mapped = taskFlowApi.mapTask(saved)
+        if (saved.attachments === undefined && saved.attachments_count === undefined && saved.attachment_count === undefined && saved.files_count === undefined && saved.has_attachments === undefined) {
+          mapped[23] = taskAttachmentCountOf(openedTask.value || [])
+        }
+        replaceTaskRow(editingTaskId.value, mapped)
+      }
       else state.value.tasks.unshift(taskFlowApi.mapTask(saved))
       await refreshProjectsFromBackend()
       notify(editingTaskId.value ? 'Task updated successfully' : 'Task created successfully', 'success')
@@ -4817,7 +4825,7 @@ const iconPath = (name: string) => {
           <div v-if="taskScope === 'archived'" class="grid gap-3 sm:grid-cols-2 xl:grid-cols-3">
             <article v-for="task in paginatedTasks" :key="String(task[6])" class="tf-archive-card rounded-[16px] border p-4 transition hover:shadow-card">
               <div class="flex items-start justify-between gap-3"><div class="min-w-0"><span class="tf-archive-badge inline-flex rounded-full px-2 py-1 text-[10px] font-bold uppercase tracking-wide">Archived</span><h3 class="mt-2 line-clamp-2 font-bold text-task-ink">{{ task[0] }}</h3></div><button v-if="canManageDepartment" type="button" class="tf-archive-restore inline-flex h-9 shrink-0 items-center gap-2 rounded-[10px] border px-3 text-xs font-bold text-task-blue transition" @click="unarchiveTask(task)"><svg viewBox="0 0 24 24" class="h-4 w-4" fill="none" stroke="currentColor" stroke-width="1.9"><path d="M4 7h16v13H4V7Zm-1-4h18v4H3V3Zm6 9h6" /></svg>Restore</button></div>
-              <div class="mt-4 flex flex-wrap gap-2"><span :class="['tf-pill', badgeClass(String(task[2]))]">{{ task[2] }}</span><span :class="['tf-pill', badgeClass(String(task[3]))]">{{ task[3] }}</span></div>
+              <div class="mt-4 flex flex-wrap gap-2"><span :class="['tf-pill', badgeClass(String(task[2]))]">{{ task[2] }}</span><span :class="['tf-pill', badgeClass(String(task[3]))]">{{ task[3] }}</span><TaskAttachmentBadge v-if="taskAttachmentCountOf(task)" /></div>
               <div class="mt-4 flex items-center justify-between border-t border-task-line pt-3 text-xs text-task-muted"><span>{{ task[1] }}</span><span>Archived {{ task[15] ? dashboardDateTime(task[15]) : '—' }}</span></div>
             </article>
             <div v-if="!paginatedTasks.length" class="col-span-full rounded-[16px] border border-dashed border-task-line py-16 text-center"><p class="font-semibold text-task-ink">Archive is empty</p><p class="mt-1 text-sm text-task-muted">Completed tasks can be archived here.</p></div>
@@ -4826,7 +4834,7 @@ const iconPath = (name: string) => {
             <div class="mb-4 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between"><div><h3 class="font-bold text-task-ink">Postponed</h3><p class="mt-1 text-xs text-task-muted">Ideas and tasks planned for later. Move a task to To Do when it is ready.</p></div><button v-if="canAddTask" type="button" class="tf-primary h-10 rounded-[11px]" @click="openModal('task')"><span class="text-lg leading-none">+</span>New Task</button></div>
             <div v-if="backlogTasks.length" class="grid gap-3 sm:grid-cols-2 xl:grid-cols-3">
               <article v-for="task in backlogTasks" :key="String(task[6] || `${task[0]}-${task[4]}`)" class="tf-kanban-card cursor-pointer" @click="openTaskFromCard(task)">
-                <div class="flex items-start justify-between gap-3"><div class="min-w-0"><span class="inline-flex rounded-full bg-slate-200 px-2 py-1 text-[10px] font-bold uppercase tracking-wide text-slate-600">For later</span><h4 class="mt-2 line-clamp-2 text-sm font-bold text-task-ink">{{ task[0] }}</h4></div><span :class="['tf-pill shrink-0', badgeClass(String(task[2]))]">{{ task[2] }}</span></div>
+                <div class="flex items-start justify-between gap-3"><div class="min-w-0"><span class="inline-flex rounded-full bg-slate-200 px-2 py-1 text-[10px] font-bold uppercase tracking-wide text-slate-600">For later</span><h4 class="mt-2 line-clamp-2 text-sm font-bold text-task-ink">{{ task[0] }}</h4><TaskAttachmentBadge v-if="taskAttachmentCountOf(task)" class="mt-2" /></div><span :class="['tf-pill shrink-0', badgeClass(String(task[2]))]">{{ task[2] }}</span></div>
                 <div class="mt-4 flex items-center justify-between border-t border-task-line pt-3 text-xs text-task-muted"><span>{{ task[4] }}</span><button type="button" class="font-bold text-task-blue transition hover:text-task-blueDark" :disabled="updatingTaskId === String(task[6]) || !task[6]" @click.stop="updateTaskStatus(task, 'not_started')">Move to To Do →</button></div>
               </article>
             </div>
@@ -4838,7 +4846,7 @@ const iconPath = (name: string) => {
             <tbody class="divide-y divide-task-line">
               <tr v-for="(task, taskIndex) in taskListPageTasks" :key="String(task[6] || `${task[0]}-${task[4]}`)" :class="['cursor-pointer', isTaskSelected(task) ? 'is-selected' : '']" @click="openTaskFromCard(task)">
                 <td class="p-3"><input type="checkbox" class="tf-task-checkbox" :checked="isTaskSelected(task)" :aria-label="`Select ${task[0]}`" @click.stop @change="toggleTaskSelection(task)" /></td>
-                <td class="p-3"><p class="font-bold text-task-ink"><template v-if="taskSearch.trim()">{{ highlightedSearchText(String(task[0]), taskSearch).before }}<mark v-if="highlightedSearchText(String(task[0]), taskSearch).match" class="tf-search-highlight">{{ highlightedSearchText(String(task[0]), taskSearch).match }}</mark>{{ highlightedSearchText(String(task[0]), taskSearch).after }}</template><template v-else>{{ task[0] }}</template></p><p class="mt-1 max-w-64 truncate text-[11px] text-task-muted">{{ task[7] || 'Team task' }}</p></td>
+                <td class="p-3"><p class="font-bold text-task-ink"><template v-if="taskSearch.trim()">{{ highlightedSearchText(String(task[0]), taskSearch).before }}<mark v-if="highlightedSearchText(String(task[0]), taskSearch).match" class="tf-search-highlight">{{ highlightedSearchText(String(task[0]), taskSearch).match }}</mark>{{ highlightedSearchText(String(task[0]), taskSearch).after }}</template><template v-else>{{ task[0] }}</template></p><TaskAttachmentBadge v-if="taskAttachmentCountOf(task)" class="mt-1" /><p class="mt-1 max-w-64 truncate text-[11px] text-task-muted">{{ task[7] || 'Team task' }}</p></td>
                 <td class="p-3"><span class="inline-flex rounded-full bg-task-lavender px-2.5 py-1 text-[11px] font-semibold text-[#8057D5]">{{ task[7] || 'General' }}</span></td>
                 <td class="p-3"><div class="flex items-center gap-2"><span class="grid h-7 w-7 shrink-0 place-items-center overflow-hidden rounded-full bg-task-blueSoft text-[9px] font-bold text-task-blue"><img v-if="taskAssigneeDetailsOf(task)[0]?.avatar" :src="taskAssigneeDetailsOf(task)[0]?.avatar" :alt="String(task[1])" class="h-full w-full object-cover" /><span v-else>{{ initials(String(task[1])) }}</span></span><span class="max-w-36 truncate text-task-ink">{{ task[1] }}</span></div></td>
                 <td class="p-3"><span :class="['tf-pill', badgeClass(String(task[2]))]">{{ task[2] }}</span></td>
@@ -4878,7 +4886,7 @@ const iconPath = (name: string) => {
                   @dragend="draggedTaskId = ''"
                   @click="openTaskFromCard(task)"
                 >
-                  <div class="flex items-start justify-between gap-3"><div class="min-w-0"><h4 :class="['line-clamp-2 text-[13px] font-bold leading-[1.4] tracking-[-0.01em] text-task-ink', column.key === 'completed' ? 'line-through opacity-65' : '']"><template v-if="taskSearch.trim()">{{ highlightedSearchText(String(task[0]), taskSearch).before }}<mark v-if="highlightedSearchText(String(task[0]), taskSearch).match" class="tf-search-highlight">{{ highlightedSearchText(String(task[0]), taskSearch).match }}</mark>{{ highlightedSearchText(String(task[0]), taskSearch).after }}</template><template v-else>{{ task[0] }}</template></h4><span v-if="taskIsHiddenOf(task)" class="tf-hidden-badge mt-2"><svg viewBox="0 0 24 24" class="h-3 w-3" fill="none" stroke="currentColor" stroke-width="2"><rect x="5" y="10" width="14" height="11" rx="2" /><path d="M8 10V7a4 4 0 0 1 8 0v3" /></svg>Hidden</span></div></div>
+                  <div class="flex items-start justify-between gap-3"><div class="min-w-0"><h4 :class="['line-clamp-2 text-[13px] font-bold leading-[1.4] tracking-[-0.01em] text-task-ink', column.key === 'completed' ? 'line-through opacity-65' : '']"><template v-if="taskSearch.trim()">{{ highlightedSearchText(String(task[0]), taskSearch).before }}<mark v-if="highlightedSearchText(String(task[0]), taskSearch).match" class="tf-search-highlight">{{ highlightedSearchText(String(task[0]), taskSearch).match }}</mark>{{ highlightedSearchText(String(task[0]), taskSearch).after }}</template><template v-else>{{ task[0] }}</template></h4><span v-if="taskIsHiddenOf(task)" class="tf-hidden-badge mt-2"><svg viewBox="0 0 24 24" class="h-3 w-3" fill="none" stroke="currentColor" stroke-width="2"><rect x="5" y="10" width="14" height="11" rx="2" /><path d="M8 10V7a4 4 0 0 1 8 0v3" /></svg>Hidden</span><TaskAttachmentBadge v-if="taskAttachmentCountOf(task)" class="mt-2" /></div></div>
                   <p v-if="task[7]" class="mt-2 inline-flex max-w-full items-center gap-1.5 truncate text-xs font-medium text-slate-500"><svg viewBox="0 0 24 24" class="h-3.5 w-3.5 shrink-0 text-task-blue" fill="none" stroke="currentColor" stroke-width="1.8"><path :d="iconPath('folder')" /></svg>{{ task[7] }}</p>
 
                   <div v-if="column.key !== 'in_progress'" class="mt-4 flex items-center gap-3 border-t border-slate-100 pt-3">
@@ -5533,7 +5541,7 @@ const iconPath = (name: string) => {
                 </li>
               </ul>
             </div>
-            <div v-if="taskModalMode === 'view' && taskAttachments.length" class="mt-4 text-sm font-semibold">
+            <div v-if="taskModalMode !== 'create' && taskAttachments.length" class="mt-4 text-sm font-semibold">
               Attachments
               <ul class="mt-2 space-y-1.5">
                 <li v-for="(attachment, index) in taskAttachments" :key="attachment.id ?? index" class="flex items-center justify-between gap-3 rounded-lg border border-task-line px-3 py-2">

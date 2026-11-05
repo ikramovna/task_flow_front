@@ -85,6 +85,8 @@ test('task creation uploads each file with FormData and downloads attachments wi
   assert.deepEqual([...upload.options.body.getAll('assignees')], ['user-1', 'user-2'])
   assert.deepEqual([...upload.options.body.getAll('files')].map(file => file.name), ['one.txt', 'two.txt'])
   assert.equal(created.attachments[0].file_name, 'notes.txt')
+  assert.equal(ui.api.mapTask(created)[23], 1)
+  assert.equal(ui.api.mapTask({ title: 'Another task', attachments_count: 2 })[23], 2)
 
   await ui.api.downloadTaskAttachment(attachment.download_url)
   assert.equal(ui.calls[1].url, 'https://app.example.test/media/notes.txt')
