@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import type { Directive, Ref } from 'vue'
-import type { AnalyticsCard, AnalyticsSummary, ApiChatMessage, ApiConversation } from '~/composables/useTaskFlowApi'
+import type { AnalyticsCard, AnalyticsSummary, ApiChatMessage, ApiConversation, TaskAttachment } from '~/composables/useTaskFlowApi'
 import GreetingCard from '~/components/GreetingCard.vue'
 import HelpPage from '~/components/pages/HelpPage.vue'
 import ReportsPage from '~/components/pages/ReportsPage.vue'
@@ -597,6 +597,51 @@ const editingTaskId = ref('')
 const taskModalMode = ref<'create' | 'edit' | 'view'>('create')
 const taskModalReturnToAnalytics = ref(false)
 const taskSaving = ref(false)
+const selectedTaskFiles = ref<File[]>([])
+const taskAttachments = ref<TaskAttachment[]>([])
+const downloadingTaskAttachment = ref<string | number | null>(null)
+const maxTaskFiles = 10
+const maxTaskFileBytes = 20 * 1024 * 1024
+const taskAttachmentName = (attachment: TaskAttachment) => attachment.file_name || attachment.filename || attachment.name || 'Attachment'
+const taskAttachmentSize = (attachment: TaskAttachment) => {
+  const bytes = Number(attachment.size ?? attachment.file_size)
+  if (!Number.isFinite(bytes) || bytes < 0) return 'Size unavailable'
+  return bytes >= 1024 * 1024 ? `${(bytes / (1024 * 1024)).toFixed(1)} MB` : `${Math.ceil(bytes / 1024)} KB`
+}
+const selectTaskFiles = (event: Event) => {
+  const input = event.target as HTMLInputElement
+  const files = Array.from(input.files || [])
+  input.value = ''
+  if (selectedTaskFiles.value.length + files.length > maxTaskFiles) {
+    notifyError('You can attach up to 10 files to a task.')
+    return
+  }
+  const oversized = files.find(file => file.size > maxTaskFileBytes)
+  if (oversized) {
+    notifyError(`${oversized.name} exceeds the 20 MB file limit.`)
+    return
+  }
+  selectedTaskFiles.value.push(...files)
+}
+const downloadTaskFile = async (attachment: TaskAttachment, index: number) => {
+  if (!attachment.download_url || downloadingTaskAttachment.value !== null) return
+  downloadingTaskAttachment.value = attachment.id ?? index
+  try {
+    const blob = await taskFlowApi.downloadTaskAttachment(attachment.download_url)
+    const url = URL.createObjectURL(blob)
+    const link = document.createElement('a')
+    link.href = url
+    link.download = taskAttachmentName(attachment)
+    document.body.appendChild(link)
+    link.click()
+    link.remove()
+    window.setTimeout(() => URL.revokeObjectURL(url), 1000)
+  } catch (error) {
+    notifyError(taskFlowApiErrorMessage(error, 'Attachment download failed'))
+  } finally {
+    downloadingTaskAttachment.value = null
+  }
+}
 const projectPage = ref(1)
 const teamPage = ref(1)
 const pageSize = 10
@@ -2677,6 +2722,8 @@ const openModal = (value: Exclude<ModalKey, null>) => {
   if (value === 'task') {
     editingTaskId.value = ''
     taskModalMode.value = 'create'
+    selectedTaskFiles.value = []
+    taskAttachments.value = []
     aiTaskAssistantOpen.value = false
     aiTaskPrompt.value = ''
     aiTaskDraft.value = null
@@ -3279,6 +3326,8 @@ const openTask = async (task: Array<string | number>, mode: 'view' | 'edit', fro
   taskSaving.value = true
   try {
     const details = await taskFlowApi.getTask(id)
+    selectedTaskFiles.value = []
+    taskAttachments.value = details.attachments || []
     const mapped = taskFlowApi.mapTask(details)
     replaceTaskRow(id, mapped)
     editingTaskId.value = id
@@ -3679,6 +3728,15 @@ const submitModal = async () => {
       is_hidden: taskIsHidden.value
     }
 
+    if (!editingTaskId.value && selectedTaskFiles.value.length > maxTaskFiles) {
+      notifyError('You can attach up to 10 files to a task.')
+      return
+    }
+    if (!editingTaskId.value && selectedTaskFiles.value.some(file => file.size > maxTaskFileBytes)) {
+      notifyError('Each attachment must be 20 MB or smaller.')
+      return
+    }
+
     taskSaving.value = true
     try {
       const { status: _status, progress: _progress, ...nonStatusPayload } = payload
@@ -3691,11 +3749,18 @@ const submitModal = async () => {
             editingTaskId.value,
             openedTaskCanChangeStatus.value ? mainAssigneeStatusPayload : nonStatusPayload
           )
-        : await taskFlowApi.createTask(payload)
+        : await taskFlowApi.createTask({ ...payload, files: selectedTaskFiles.value })
       if (editingTaskId.value) replaceTaskRow(editingTaskId.value, taskFlowApi.mapTask(saved))
       else state.value.tasks.unshift(taskFlowApi.mapTask(saved))
       await refreshProjectsFromBackend()
       notify(editingTaskId.value ? 'Task updated successfully' : 'Task created successfully', 'success')
+      if (!editingTaskId.value && selectedTaskFiles.value.length) {
+        editingTaskId.value = String(saved.id || '')
+        taskAttachments.value = saved.attachments || []
+        selectedTaskFiles.value = []
+        taskModalMode.value = 'view'
+        return
+      }
     } catch (error) {
       console.error('Task create failed.', error)
       notifyError(taskFlowApiErrorMessage(error, 'Task create failed'))
@@ -5457,6 +5522,26 @@ const iconPath = (name: string) => {
               Description
               <textarea v-keep-visible-on-resize v-model="form.description" class="tf-input mt-2 min-h-28 w-full resize-y py-3" placeholder="Add task details, requirements, or notes..." />
             </label>
+            <div v-if="taskModalMode === 'create'" class="mt-4 text-sm font-semibold">
+              Attachments <span class="font-normal text-task-muted">(optional)</span>
+              <input type="file" multiple class="tf-input mt-2 block w-full cursor-pointer py-2" :disabled="taskSaving || selectedTaskFiles.length >= maxTaskFiles" @change="selectTaskFiles" />
+              <p class="mt-1.5 text-xs font-normal text-task-muted">Up to 10 files, 20 MB each</p>
+              <ul v-if="selectedTaskFiles.length" class="mt-2 space-y-1.5">
+                <li v-for="(file, index) in selectedTaskFiles" :key="`${file.name}-${index}`" class="flex items-center justify-between gap-3 rounded-lg border border-task-line px-3 py-2">
+                  <span class="min-w-0 truncate">{{ file.name }} <span class="font-normal text-task-muted">({{ taskAttachmentSize({ size: file.size }) }})</span></span>
+                  <button type="button" class="shrink-0 text-xs text-task-danger" :aria-label="`Remove ${file.name}`" @click="selectedTaskFiles.splice(index, 1)">Remove</button>
+                </li>
+              </ul>
+            </div>
+            <div v-if="taskModalMode === 'view' && taskAttachments.length" class="mt-4 text-sm font-semibold">
+              Attachments
+              <ul class="mt-2 space-y-1.5">
+                <li v-for="(attachment, index) in taskAttachments" :key="attachment.id ?? index" class="flex items-center justify-between gap-3 rounded-lg border border-task-line px-3 py-2">
+                  <span class="min-w-0 truncate">{{ taskAttachmentName(attachment) }} <span class="font-normal text-task-muted">({{ taskAttachmentSize(attachment) }})</span></span>
+                  <button type="button" class="shrink-0 text-xs font-semibold text-task-blue disabled:opacity-50" :disabled="!attachment.download_url || downloadingTaskAttachment !== null" @click="downloadTaskFile(attachment, index)">Download</button>
+                </li>
+              </ul>
+            </div>
           </template>
           <template v-else-if="modal === 'event'">
             <label v-if="canChooseDepartment" class="mb-4 block text-sm font-semibold">

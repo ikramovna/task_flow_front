@@ -35,6 +35,7 @@ function setup(respond, { stored, cookies = {}, blockedStorage = false, server =
   }
   const context = {
     Headers, URL, FormData, Blob, console,
+    window: { location: { origin: 'https://app.example.test' } },
     localStorage: browserStorage, sessionStorage: browserStorage,
     useCookie: key => {
       let value = cookieJar.get(key)
@@ -52,7 +53,7 @@ function setup(respond, { stored, cookies = {}, blockedStorage = false, server =
     },
     navigateTo: (path, options) => { redirects.push({ path, options }); return path },
     $fetch: async (url, options) => {
-      calls.push({ url, token: options.headers?.get('Authorization') })
+      calls.push({ url, token: options.headers?.get('Authorization'), options })
       return await respond(url, options)
     },
     defineNuxtRouteMiddleware: handler => handler,
@@ -64,6 +65,32 @@ function setup(respond, { stored, cookies = {}, blockedStorage = false, server =
   return { api: useTaskFlowApi(), newApi: useTaskFlowApi, taskFlowHasSession, middleware, storage, cookieJar, calls, redirects }
 }
 const initialCookies = { 'taskflow-access': 'expired-access', 'taskflow-refresh': 'valid-refresh' }
+
+test('task creation uploads each file with FormData and downloads attachments with Bearer auth', async () => {
+  const attachment = { file_name: 'notes.txt', size: 5, download_url: '/media/notes.txt' }
+  const ui = setup((url) => url.endsWith('/tasks/') ? { id: 'task-1', title: 'Review', attachments: [attachment] } : new Blob(['notes']), {
+    cookies: { 'taskflow-access': 'access', 'taskflow-refresh': 'refresh' }
+  })
+  const files = [new File(['one'], 'one.txt'), new File(['two'], 'two.txt')]
+  const created = await ui.api.createTask({
+    department: 'dept-1', title: 'Review', description: '', status: 'not_started', priority: 'medium',
+    effort_score: 3, category: '', assignees: ['user-1', 'user-2'], due_date: '2026-11-05',
+    progress: 0, is_hidden: false, files
+  })
+  const upload = ui.calls[0]
+  assert.equal(upload.url, '/api/v1/tasks/')
+  assert.equal(upload.token, 'Bearer access')
+  assert.equal(upload.options.headers.get('Content-Type'), null)
+  assert.ok(upload.options.body instanceof FormData)
+  assert.deepEqual([...upload.options.body.getAll('assignees')], ['user-1', 'user-2'])
+  assert.deepEqual([...upload.options.body.getAll('files')].map(file => file.name), ['one.txt', 'two.txt'])
+  assert.equal(created.attachments[0].file_name, 'notes.txt')
+
+  await ui.api.downloadTaskAttachment(attachment.download_url)
+  assert.equal(ui.calls[1].url, 'https://app.example.test/media/notes.txt')
+  assert.equal(ui.calls[1].token, 'Bearer access')
+  assert.equal(ui.calls[1].options.responseType, 'blob')
+})
 
 test('login remains accessible with stored tokens on the server and during hydration', () => {
   for (const server of [true, false]) {

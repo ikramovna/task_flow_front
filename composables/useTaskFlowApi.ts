@@ -69,6 +69,17 @@ type ApiTask = {
   is_archived?: boolean
   archived_at?: string | null
   archived_by?: string | number | UserBrief | null
+  attachments?: TaskAttachment[]
+}
+
+export type TaskAttachment = {
+  id?: string | number
+  file_name?: string
+  filename?: string
+  name?: string
+  size?: number
+  file_size?: number
+  download_url?: string
 }
 
 export type AiTaskResponse =
@@ -91,6 +102,7 @@ type TaskPayload = {
   due_date: string
   progress: number
   is_hidden: boolean
+  files?: File[]
 }
 
 type ApiProject = {
@@ -609,7 +621,7 @@ export const useTaskFlowApi = () => {
 
     if (tokens?.access) headers.set('Authorization', `Bearer ${tokens.access}`)
 
-    const send = () => $fetch<T>(`${apiBase}${path}`, {
+    const send = () => $fetch<T>(/^https?:\/\//i.test(path) ? path : `${apiBase}${path}`, {
         ...options,
         headers
       })
@@ -932,11 +944,28 @@ export const useTaskFlowApi = () => {
     return await apiFetch<ListResponse<ApiMember>>(`/tasks/assignees/?${params}`)
   }
 
-  const createTask = async (task: TaskPayload) =>
-    await apiFetch<ApiTask>('/tasks/', {
-      method: 'POST',
-      body: task
+  const createTask = async (task: TaskPayload) => {
+    const form = new FormData()
+    Object.entries(task).forEach(([key, value]) => {
+      if (key === 'files' || value === null || value === undefined) return
+      if (key === 'assignees') {
+        task.assignees.forEach((id) => form.append('assignees', String(id)))
+      } else {
+        form.append(key, String(value))
+      }
     })
+    task.files?.forEach((file) => form.append('files', file))
+    return await apiFetch<ApiTask>('/tasks/', {
+      method: 'POST',
+      body: form
+    })
+  }
+
+  const downloadTaskAttachment = async (downloadUrl: string) => {
+    const base = new URL(`${apiBase}/`, window.location.origin)
+    const url = new URL(downloadUrl, downloadUrl.startsWith('/') ? base.origin : base).toString()
+    return await apiFetch<Blob>(url, { responseType: 'blob' })
+  }
 
   const updateTask = async (id: string, task: TaskPayload) =>
     await apiFetch<ApiTask>(`/tasks/${id}/`, {
@@ -1333,6 +1362,7 @@ export const useTaskFlowApi = () => {
     patchProject,
     deleteProject,
     createTask,
+    downloadTaskAttachment,
     getTask,
     listTasks,
     searchTaskAssignees,
