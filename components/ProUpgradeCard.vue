@@ -38,7 +38,6 @@ onBeforeUnmount(() => document.removeEventListener('keydown', onKeydown))
         <ul class="tf-pro-benefits">
           <li><span class="tf-pro-benefit-icon" aria-hidden="true">✦</span><span><strong>Create tasks automatically</strong><small>Tell Tiko what needs doing by text or voice. It can create the task with a title, assignee, and deadline.</small></span></li>
           <li><span class="tf-pro-benefit-icon" aria-hidden="true">↗</span><span><strong>Save time on updates</strong><small>Ask Tiko to edit a task in plain language instead of opening and changing each field yourself.</small></span></li>
-          <li><span class="tf-pro-benefit-icon" aria-hidden="true">✓</span><span><strong>Stay connected in Telegram</strong><small>Connect your account and manage task requests through the bot, including voice messages.</small></span></li>
         </ul>
         <p class="tf-pro-payment-note">Pro access and Payme checkout are being prepared. Payments and activation are not available yet.</p>
         <button type="button" class="tf-pro-dialog-button" @click="close">Got it</button>
